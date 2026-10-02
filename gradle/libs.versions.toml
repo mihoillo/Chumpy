@@ -1,16 +1,18 @@
 [versions]
 agp = "9.4.1"
 kotlin = "2.4.20"
+ksp = "2.3.12"
 compileSdk = "37"
 targetSdk = "36"
 minSdk = "26"
-ndk = "29.0.14206865"
-cmake = "3.22.1"
 compose = "1.12.1"
 material3 = "1.5.0-alpha28"
 activity = "1.13.0"
 lifecycle = "2.11.0"
 coreKtx = "1.18.0"
+room = "2.8.5"
+work = "2.12.0"
+serialization = "1.11.0"
 
 [libraries]
 androidx-annotation = "androidx.annotation:annotation:1.9.1"
@@ -26,6 +28,10 @@ compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling", version.ref = 
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview", version.ref = "compose" }
 material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
 kotlinx-coroutines-android = "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0"
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 zxing-core = { module = "com.google.zxing:core", version = "3.5.3" }
 jsr305 = "com.google.code.findbugs:jsr305:3.0.2"
 junit = "junit:junit:4.13.2"
@@ -35,3 +41,5 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
