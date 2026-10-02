@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Twemoji's rainbow flag (1f3f3-fe0f-200d-1f308, CC-BY 4.0), lifted verbatim from the bundled
+     twemoji.ttf COLR layers and cropped to the glyph's own box (512 x 370 font units). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20.4dp"
+    android:height="14.74dp"
+    android:viewportWidth="512"
+    android:viewportHeight="370">
+    <path
+        android:fillColor="#880082"
+        android:pathData="M0 313V306H512V313Q512 337 495.5 353.5Q479 370 455 370H57Q33 370 16.5 353.5Q0 337 0 313Z" />
+    <path
+        android:fillColor="#3558A0"
+        android:pathData="M0 243H512V308H0Z" />
+    <path
+        android:fillColor="#138F3E"
+        android:pathData="M0 183H512V247H0Z" />
+    <path
+        android:fillColor="#FAD220"
+        android:pathData="M0 121H512V185H0Z" />
+    <path
+        android:fillColor="#FF7300"
+        android:pathData="M0 59H512V123H0Z" />
+    <path
+        android:fillColor="#FF000E"
+        android:pathData="M455 0Q479 0 495.5 16.5Q512 33 512 57V62H0V57Q0 33 16.5 16.5Q33 0 57 0Z" />
+</vector>

@@ -1,0 +1,9 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.cxx/
+v2rayNG/
+hiddify/
+wg-adhdium.conf

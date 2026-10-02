@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The short haptic pokes on the settings buttons go through the Vibrator directly. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <application
+        android:name=".AdhdiumApp"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ADHDium"
+        tools:targetApi="36">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Long-pressing the Quick Settings tile opens the app. -->
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            The wallpaper picker, a one-off deep dive from the interface settings rather than
+            a navbar destination: two pages (preview, settings) under one bar. Back (gesture
+            or button) simply finishes it.
+        -->
+        <activity
+            android:name=".ui.wallpapers.WallpaperActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+
+        <!--
+            Everything that has to outlive the UI lives in ":tunnel": this control service,
+            GoBackend's VpnService (declared in the tunnel module) and the wireguard-go runtime.
+            The UI process talks to it over AIDL and can be killed at any time.
+        -->
+        <service
+            android:name=".core.TunnelService"
+            android:exported="false"
+            android:process=":tunnel" />
+
+        <!--
+            Same ":tunnel" process as TunnelCore, so the tile keeps toggling the VPN while
+            the UI process is not running. Clicking without a config or VPN consent just
+            opens the app.
+        -->
+        <service
+            android:name=".core.QuickTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_off"
+            android:label="@string/app_name"
+            android:process=":tunnel"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

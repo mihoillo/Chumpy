@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The launcher icon art is full-color now, so its tile is plain white everywhere: no
+         accent tinting, on any API level. -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="window_background">#FEF7FF</color>
+</resources>
