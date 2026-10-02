@@ -313,105 +313,105 @@ private fun SubscriptionCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Box {
-            Column(
+            Row(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                // The leading column: the database tile on its square backing — the
+                // list's rows wear the round one, the card keeps the square — the
+                // reload button under it: the subscription's face, and its refresh,
+                // stacked.
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    // The leading column: the database tile on its square backing — the
-                    // list's rows wear the round one, the card keeps the square — the
-                    // reload button under it: the subscription's face, and its refresh,
-                    // stacked.
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.secondaryContainer,
+                        contentColor = colors.onSecondaryContainer,
+                        modifier = Modifier.size(48.dp),
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = colors.secondaryContainer,
-                            contentColor = colors.onSecondaryContainer,
-                            modifier = Modifier.size(48.dp),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_database),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_database),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
                         }
-                        UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
                     }
-                    Column(Modifier.weight(1f)) {
-                        // The title flips between the subscription's name — the last
-                        // update's stamp riding at its level, flush against the right
-                        // edge — and the chooser's call to action as the list comes and
-                        // goes.
-                        AnimatedContent(
-                            targetState = expanded,
-                            transitionSpec = {
-                                (fadeIn(motion.defaultEffectsSpec()) +
-                                    slideInVertically(motion.defaultSpatialSpec()) { it / 2 }) togetherWith
-                                    fadeOut(motion.defaultEffectsSpec())
-                            },
-                            label = "subscription title",
-                        ) { chooser ->
-                            if (chooser) {
+                    UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
+                }
+                Column(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    // The title flips between the subscription's name — the last
+                    // update's stamp riding at its level, flush against the right
+                    // edge — and the chooser's call to action as the list comes and
+                    // goes.
+                    AnimatedContent(
+                        targetState = expanded,
+                        transitionSpec = {
+                            (fadeIn(motion.defaultEffectsSpec()) +
+                                slideInVertically(motion.defaultSpatialSpec()) { it / 2 }) togetherWith
+                                fadeOut(motion.defaultEffectsSpec())
+                        },
+                        label = "subscription title",
+                    ) { chooser ->
+                        if (chooser) {
+                            Text(
+                                text = stringResource(R.string.subscription_choose),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = contentColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = stringResource(R.string.subscription_choose),
+                                    text = subscription?.name?.takeIf { it.isNotBlank() }
+                                        ?: stringResource(R.string.subscription_none),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = contentColor,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
                                 )
-                            } else {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = subscription?.name?.takeIf { it.isNotBlank() }
-                                            ?: stringResource(R.string.subscription_none),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = contentColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    subscription?.let { sub ->
-                                        updatedText(sub)?.let { stamp ->
-                                            Text(
-                                                text = stamp,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = supportingColor,
-                                                maxLines = 1,
-                                                modifier = Modifier.padding(start = 8.dp),
-                                            )
-                                        }
+                                subscription?.let { sub ->
+                                    updatedText(sub)?.let { stamp ->
+                                        Text(
+                                            text = stamp,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = supportingColor,
+                                            maxLines = 1,
+                                            modifier = Modifier.padding(start = 8.dp),
+                                        )
                                     }
                                 }
                             }
                         }
                     }
-                }
-                subscription?.let { sub ->
-                    // What the panel reports flies out from under the header as the chooser
-                    // opens, and settles back as it folds: the bars run the card's full
-                    // width, the numbers wait under them.
-                    AnimatedVisibility(
-                        visible = !expanded,
-                        enter = fadeIn(motion.defaultEffectsSpec()) +
-                            expandVertically(motion.defaultSpatialSpec()) +
-                            slideInVertically(motion.defaultSpatialSpec()) { it / 2 },
-                        exit = fadeOut(motion.defaultEffectsSpec()) +
-                            shrinkVertically(motion.defaultSpatialSpec()) +
-                            slideOutVertically(motion.defaultSpatialSpec()) { it },
-                    ) {
-                        SubscriptionInfo(
-                            subscription = sub,
-                            supportingColor = supportingColor,
-                            endInset = 32.dp,
-                        )
+                    subscription?.let { sub ->
+                        // What the panel reports flies out from under the header as the
+                        // chooser opens, and settles back as it folds: the bars follow
+                        // the text right down the column, running to the card's right
+                        // edge, the numbers waiting under them.
+                        AnimatedVisibility(
+                            visible = !expanded,
+                            enter = fadeIn(motion.defaultEffectsSpec()) +
+                                expandVertically(motion.defaultSpatialSpec()) +
+                                slideInVertically(motion.defaultSpatialSpec()) { it / 2 },
+                            exit = fadeOut(motion.defaultEffectsSpec()) +
+                                shrinkVertically(motion.defaultSpatialSpec()) +
+                                slideOutVertically(motion.defaultSpatialSpec()) { it },
+                        ) {
+                            SubscriptionInfo(
+                                subscription = sub,
+                                supportingColor = supportingColor,
+                                textInset = 32.dp,
+                            )
+                        }
                     }
                 }
             }
@@ -728,24 +728,23 @@ private fun SubscriptionRow(
  * What the panel reports about a subscription, drawn the way hiddify draws it: the
  * bandwidth's remaining share — the bar holds what's left, draining as traffic is spent —
  * and the days remaining beside it, over a 30-day stretch. The bars come first, right
- * after the header, running to the card's end; the numbers wait under them, the server
+ * after the header, running to the column's end; the numbers wait under them, the server
  * list's own supporting size. Both take the traffic-light tiers: red under a quarter,
- * amber under half, the theme's primary while it's healthy.
+ * amber under half, the theme's primary while it's healthy. [textInset] keeps the
+ * numbers clear of whatever anchors at the foot (the card's chevron) without pulling
+ * the bars short.
  */
 @Composable
 private fun SubscriptionInfo(
     subscription: SubscriptionEntity,
     supportingColor: Color,
-    endInset: Dp = 0.dp,
+    textInset: Dp = 0.dp,
 ) {
     val colors = MaterialTheme.colorScheme
     val used = subscription.uploadBytes + subscription.downloadBytes
     val expire = subscription.expireEpochSeconds
     if (subscription.totalBytes <= 0 && expire <= 0) return
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.padding(end = endInset),
-    ) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (subscription.totalBytes > 0) {
             val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
                 subscription.totalBytes).coerceIn(0f, 1f)
@@ -754,6 +753,7 @@ private fun SubscriptionInfo(
                 progress = ratio,
                 color = usageColor(ratio, colors),
                 trackColor = supportingColor,
+                textInset = textInset,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -773,6 +773,7 @@ private fun SubscriptionInfo(
                 progress = if (secondsLeft <= 0) 1f else dayFraction,
                 color = color,
                 trackColor = supportingColor,
+                textInset = textInset,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -780,13 +781,14 @@ private fun SubscriptionInfo(
 }
 
 /** One reported measure: its drain on top, its number under it — the server list's
- *  supporting size for the reading. */
+ *  supporting size for the reading, [textInset] keeping it clear of the foot. */
 @Composable
 private fun UsageItem(
     title: String,
     progress: Float,
     color: Color,
     trackColor: Color,
+    textInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -805,6 +807,7 @@ private fun UsageItem(
             color = trackColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(end = textInset),
         )
     }
 }
