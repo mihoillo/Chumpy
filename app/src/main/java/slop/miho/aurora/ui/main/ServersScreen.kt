@@ -2,6 +2,7 @@ package slop.miho.aurora.ui.main
 
 import androidx.core.graphics.ColorUtils
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
@@ -15,6 +16,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -274,9 +276,10 @@ private fun ServersHeader(state: ServersUiState) {
  * The subscription card, the devices screen's row language grown up: the database tile
  * on its square backing — the list's rows wear the round one; the card keeps the square,
  * like it always did — with the reload button tucked under it, the subscription's name
- * over what the panel reports. The card's own tap unfolds the subscription list — the
- * info flies out from under the name as it does, and the title flips to the chooser's
- * call to action — while the button's tap is a different ask: pulling new servers in.
+ * over what the panel reports. The card's own tap trades the card for the chooser's ask:
+ * the report rides down and out of view, and on the same backing steps in the ask —
+ * the database tile alone, the call to action, the arrow that folds it back — while the
+ * button's tap stays a different ask: pulling new servers in.
  */
 @Composable
 private fun SubscriptionCard(
@@ -316,62 +319,68 @@ private fun SubscriptionCard(
         contentColor = contentColor,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Box {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // The leading column: the database tile on its square backing — the
-                // list's rows wear the round one, the card keeps the square — the
-                // reload button under it: the subscription's face, and its refresh,
-                // stacked.
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = colors.secondaryContainer,
-                        contentColor = colors.onSecondaryContainer,
-                        modifier = Modifier.size(48.dp),
+        // The card itself trades faces: opening, the report rides down and out of view
+        // while the chooser's ask drops in from above on the same backing; closing,
+        // the report climbs back up and the ask retracts. The height follows the swap.
+        AnimatedContent(
+            targetState = expanded,
+            transitionSpec = {
+                val direction = if (targetState) 1 else -1
+                // The height rides along with the face swap, unclipped while it goes.
+                ContentTransform(
+                    targetContentEnter = slideInVertically(motion.defaultSpatialSpec()) {
+                        -direction * it / 2
+                    } + fadeIn(motion.defaultEffectsSpec()),
+                    initialContentExit = slideOutVertically(motion.defaultSpatialSpec()) {
+                        direction * it / 2
+                    } + fadeOut(motion.defaultEffectsSpec()),
+                    sizeTransform = SizeTransform(clip = false),
+                )
+            },
+            label = "subscription card",
+        ) { chooser ->
+            if (chooser) {
+                SubscriptionChooserFace(
+                    contentColor = contentColor,
+                    supportingColor = supportingColor,
+                )
+            } else {
+                Box {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_database),
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                            )
+                        // The leading column: the database tile on its square backing — the
+                        // list's rows wear the round one, the card keeps the square — the
+                        // reload button under it: the subscription's face, and its refresh,
+                        // stacked.
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = colors.secondaryContainer,
+                                contentColor = colors.onSecondaryContainer,
+                                modifier = Modifier.size(48.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_database),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                            }
+                            UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
                         }
-                    }
-                    UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
-                }
-                Column(
-                    Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    // The title flips between the subscription's name — the last
-                    // update's stamp riding at its level, flush against the right
-                    // edge — and the chooser's call to action as the list comes and
-                    // goes.
-                    AnimatedContent(
-                        targetState = expanded,
-                        transitionSpec = {
-                            (fadeIn(motion.defaultEffectsSpec()) +
-                                slideInVertically(motion.defaultSpatialSpec()) { it / 2 }) togetherWith
-                                fadeOut(motion.defaultEffectsSpec())
-                        },
-                        label = "subscription title",
-                    ) { chooser ->
-                        if (chooser) {
-                            Text(
-                                text = stringResource(R.string.subscription_choose),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = contentColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        } else {
+                        Column(
+                            Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            // The subscription's name — the last update's stamp riding at
+                            // its level, flush against the right edge.
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = subscription?.name?.takeIf { it.isNotBlank() }
@@ -394,44 +403,84 @@ private fun SubscriptionCard(
                                     }
                                 }
                             }
+                            subscription?.let { sub ->
+                                // What the panel reports: the bars run to the column's
+                                // end, the numbers wait under them, the traffic eaten
+                                // under the days.
+                                SubscriptionInfo(
+                                    subscription = sub,
+                                    supportingColor = supportingColor,
+                                    textInset = 32.dp,
+                                )
+                            }
                         }
                     }
-                    subscription?.let { sub ->
-                        // What the panel reports flies out from under the header as the
-                        // chooser opens, and settles back as it folds: the bars follow
-                        // the text right down the column, running to the card's right
-                        // edge, the numbers waiting under them.
-                        AnimatedVisibility(
-                            visible = !expanded,
-                            enter = fadeIn(motion.defaultEffectsSpec()) +
-                                expandVertically(motion.defaultSpatialSpec()) +
-                                slideInVertically(motion.defaultSpatialSpec()) { it / 2 },
-                            exit = fadeOut(motion.defaultEffectsSpec()) +
-                                shrinkVertically(motion.defaultSpatialSpec()) +
-                                slideOutVertically(motion.defaultSpatialSpec()) { it },
-                        ) {
-                            SubscriptionInfo(
-                                subscription = sub,
-                                supportingColor = supportingColor,
-                                textInset = 32.dp,
-                            )
-                        }
-                    }
+                    // The chevron points the card's own tap at the list it unfolds —
+                    // anchored at the card's foot, clear of the bars above it.
+                    Icon(
+                        painter = painterResource(R.drawable.ic_chevron_right),
+                        contentDescription = stringResource(R.string.subscription_expand),
+                        tint = supportingColor,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = 16.dp)
+                            .size(24.dp)
+                            .graphicsLayer { rotationZ = 90f },
+                    )
                 }
             }
-            // The chevron points the card's own tap at the list it unfolds, flipping as
-            // it does — anchored at the card's foot, clear of the bars above it.
-            Icon(
-                painter = painterResource(R.drawable.ic_chevron_right),
-                contentDescription = stringResource(R.string.subscription_expand),
-                tint = supportingColor,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 16.dp)
-                    .size(24.dp)
-                    .graphicsLayer { rotationZ = if (expanded) 270f else 90f },
-            )
         }
+    }
+}
+
+/**
+ * The chooser's own face, the card the report card becomes while the list is open: the
+ * same backing, carrying only the database tile at its full size, the call to action,
+ * and the arrow that folds the chooser back.
+ */
+@Composable
+private fun SubscriptionChooserFace(
+    contentColor: Color,
+    supportingColor: Color,
+) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = colors.secondaryContainer,
+            contentColor = colors.onSecondaryContainer,
+            modifier = Modifier.size(48.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_database),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.subscription_choose),
+            style = MaterialTheme.typography.bodyLarge,
+            color = contentColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_right),
+            contentDescription = stringResource(R.string.subscription_collapse),
+            tint = supportingColor,
+            modifier = Modifier
+                .size(24.dp)
+                .graphicsLayer { rotationZ = 270f },
+        )
     }
 }
 
