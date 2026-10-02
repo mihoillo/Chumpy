@@ -10,10 +10,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.SizeTransform
@@ -168,52 +166,59 @@ fun ServersScreen(
                 item { ErrorCard(message = stringResource(R.string.subscription_update_failed, error)) }
             }
 
-            // The card and the chooser it unfolds travel as one item: an animated-away
-            // dropdown would still collect spacedBy on both sides, leaving the card
-            // twice as far from the chips as the chips are from the servers.
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SubscriptionCard(
-                        subscription = selectedSubscription,
-                        isUpdating = state.isUpdating,
-                        expanded = dropdownOpen,
-                        onToggle = { dropdownOpen = !dropdownOpen },
-                        onUpdate = onUpdate,
-                    )
-
-                    // The chooser unfolds: the subscription list rides out from under the
-                    // card while the servers step aside with a fade — one ask at a time.
-                    SubscriptionAppear(visible = dropdownOpen) {
-                        SubscriptionDropdown(
-                            subscriptions = subscriptions,
-                            selectedId = selectedSubscription?.id,
-                            onSelect = { id ->
-                                dropdownOpen = false
-                                if (id != selectedSubscription?.id) onSelectSubscription(id)
-                            },
-                            onAdd = { addOpen = true },
-                            onDeleteRequest = { deleteTarget = it },
-                        )
-                    }
-                }
+                SubscriptionCard(
+                    subscription = selectedSubscription,
+                    isUpdating = state.isUpdating,
+                    expanded = dropdownOpen,
+                    onToggle = { dropdownOpen = !dropdownOpen },
+                    onUpdate = onUpdate,
+                )
             }
 
+            // The chooser and the servers trade the space under the card as one piece:
+            // opening, the servers step aside with a fade while the subscription list
+            // rises in; closing, the list folds back up under the card. The height rides
+            // along, drawn unclipped — no rows vanishing into a cropped slab — and since
+            // the slot never sits empty, the card keeps its one 8dp step to the chips.
             item {
-                // The servers fade back in once the chooser folds away.
                 val motion = MaterialTheme.motionScheme
-                AnimatedVisibility(
-                    visible = !dropdownOpen,
-                    enter = fadeIn(motion.defaultEffectsSpec()),
-                    exit = fadeOut(motion.defaultEffectsSpec()),
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ServersHeader(state = state)
-                        ServerGroup(
-                            profiles = state.profiles,
-                            selectedId = state.selectedProfileId,
-                            flagStyle = flagStyle,
-                            onSelect = onSelect,
+                AnimatedContent(
+                    targetState = dropdownOpen,
+                    transitionSpec = {
+                        ContentTransform(
+                            targetContentEnter = fadeIn(motion.defaultEffectsSpec()) +
+                                slideInVertically(motion.defaultSpatialSpec()) { it / 8 },
+                            initialContentExit = fadeOut(motion.defaultEffectsSpec()) +
+                                slideOutVertically(motion.defaultSpatialSpec()) { -it / 8 },
+                            sizeTransform = SizeTransform(clip = false),
                         )
+                    },
+                    label = "servers trade",
+                ) { open ->
+                    if (open) {
+                        Column(Modifier.padding(top = 8.dp)) {
+                            SubscriptionDropdown(
+                                subscriptions = subscriptions,
+                                selectedId = selectedSubscription?.id,
+                                onSelect = { id ->
+                                    dropdownOpen = false
+                                    if (id != selectedSubscription?.id) onSelectSubscription(id)
+                                },
+                                onAdd = { addOpen = true },
+                                onDeleteRequest = { deleteTarget = it },
+                            )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ServersHeader(state = state)
+                            ServerGroup(
+                                profiles = state.profiles,
+                                selectedId = state.selectedProfileId,
+                                flagStyle = flagStyle,
+                                onSelect = onSelect,
+                            )
+                        }
                     }
                 }
             }
@@ -1456,20 +1461,3 @@ private fun hslColor(hue: Float, saturation: Float, lightness: Float): Color =
 
 /** The pride lap: 12 s, the RAINBOW accent's own cycle time. */
 private const val PRIDE_CYCLE_MS = 12_000
-
-/** The subscription list rides out from under the card and folds back under it again. */
-@Composable
-private fun SubscriptionAppear(visible: Boolean, content: @Composable () -> Unit) {
-    val motion = MaterialTheme.motionScheme
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(motion.defaultEffectsSpec()) +
-            expandVertically(motion.defaultSpatialSpec()) +
-            slideInVertically(motion.defaultSpatialSpec()) { it / 4 },
-        exit = fadeOut(motion.defaultEffectsSpec()) +
-            shrinkVertically(motion.defaultSpatialSpec()) +
-            slideOutVertically(motion.defaultSpatialSpec()) { it / 4 },
-    ) {
-        content()
-    }
-}
