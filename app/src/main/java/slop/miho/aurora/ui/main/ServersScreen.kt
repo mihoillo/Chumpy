@@ -684,7 +684,7 @@ private fun SubscriptionRow(
                 }
             },
             supportingContent = {
-                SubscriptionInfo(
+                SubscriptionRowInfo(
                     subscription = subscription,
                     supportingColor = supportingColor,
                 )
@@ -725,14 +725,13 @@ private fun SubscriptionRow(
 }
 
 /**
- * What the panel reports about a subscription, drawn the way hiddify draws it: the
- * bandwidth's remaining share — the bar holds what's left, draining as traffic is spent —
- * and the days remaining beside it, over a 30-day stretch. The bars come first, right
- * after the header, running to the column's end; the numbers wait under them, the server
- * list's own supporting size. Both take the traffic-light tiers: red under a quarter,
- * amber under half, the theme's primary while it's healthy. [textInset] keeps the
- * numbers clear of whatever anchors at the foot (the card's chevron) without pulling
- * the bars short.
+ * What the panel reports about a subscription, drawn the way hiddify draws its main
+ * tile: the bars come first, right after the header, running to the column's end; the
+ * numbers wait under them, the server list's own supporting size; the traffic eaten —
+ * consumption over the quota, hiddify's "used / total" — rides the line after the days.
+ * Both take the traffic-light tiers: red under a quarter, amber under half, the theme's
+ * primary while it's healthy. [textInset] keeps the numbers clear of whatever anchors
+ * at the foot (the card's chevron) without pulling the bars short.
  */
 @Composable
 private fun SubscriptionInfo(
@@ -744,39 +743,112 @@ private fun SubscriptionInfo(
     val used = subscription.uploadBytes + subscription.downloadBytes
     val expire = subscription.expireEpochSeconds
     if (subscription.totalBytes <= 0 && expire <= 0) return
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (subscription.totalBytes > 0) {
-            val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
-                subscription.totalBytes).coerceIn(0f, 1f)
-            UsageItem(
-                title = stringResource(R.string.subscription_bw_remaining, (ratio * 100).toInt()),
-                progress = ratio,
-                color = usageColor(ratio, colors),
-                trackColor = supportingColor,
-                textInset = textInset,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        if (expire > 0) {
-            val secondsLeft = expire - System.currentTimeMillis() / 1000
-            val daysLeft = secondsLeft / 86_400
-            val title = when {
-                daysLeft > 365 -> stringResource(R.string.subscription_days_infinite)
-                daysLeft >= 1 -> stringResource(R.string.subscription_days_remaining, daysLeft)
-                secondsLeft > 0 -> stringResource(R.string.subscription_hours_left, secondsLeft / 3_600)
-                else -> stringResource(R.string.subscription_expired)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (subscription.totalBytes > 0) {
+                val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
+                    subscription.totalBytes).coerceIn(0f, 1f)
+                UsageItem(
+                    title = stringResource(R.string.subscription_bw_remaining, (ratio * 100).toInt()),
+                    progress = ratio,
+                    color = usageColor(ratio, colors),
+                    trackColor = supportingColor,
+                    textInset = textInset,
+                    modifier = Modifier.weight(1f),
+                )
             }
-            val dayFraction = (secondsLeft.toFloat() / (86_400f * 30f)).coerceIn(0f, 1f)
-            val color = if (secondsLeft <= 0) colors.error else usageColor(dayFraction, colors)
-            UsageItem(
-                title = title,
-                progress = if (secondsLeft <= 0) 1f else dayFraction,
-                color = color,
-                trackColor = supportingColor,
-                textInset = textInset,
+            if (expire > 0) {
+                val secondsLeft = expire - System.currentTimeMillis() / 1000
+                val dayFraction = (secondsLeft.toFloat() / (86_400f * 30f)).coerceIn(0f, 1f)
+                val color = if (secondsLeft <= 0) colors.error else usageColor(dayFraction, colors)
+                UsageItem(
+                    title = daysTitle(expire) ?: "",
+                    progress = if (secondsLeft <= 0) 1f else dayFraction,
+                    color = color,
+                    trackColor = supportingColor,
+                    textInset = textInset,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        // The traffic eaten: hiddify's consumption over the quota, the line after the
+        // days.
+        if (subscription.totalBytes > 0) {
+            Text(
+                text = stringResource(
+                    R.string.subscription_consumed,
+                    formatBytes(used),
+                    formatBytes(subscription.totalBytes),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = supportingColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(end = textInset),
+            )
+        }
+    }
+}
+
+/**
+ * The compact line the subscription rows carry instead of the bars: the days on the
+ * left, the traffic eaten on the right — hiddify's one-line tile, mirrored.
+ */
+@Composable
+private fun SubscriptionRowInfo(
+    subscription: SubscriptionEntity,
+    supportingColor: Color,
+) {
+    val used = subscription.uploadBytes + subscription.downloadBytes
+    val days = daysTitle(subscription.expireEpochSeconds)
+    val traffic = if (subscription.totalBytes > 0) {
+        stringResource(
+            R.string.subscription_consumed,
+            formatBytes(used),
+            formatBytes(subscription.totalBytes),
+        )
+    } else {
+        null
+    }
+    if (days == null && traffic == null) return
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        days?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodyMedium,
+                color = supportingColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
         }
+        traffic?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodyMedium,
+                color = supportingColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** The days-remaining reading both the bars' numbers and the rows' line share. */
+@Composable
+private fun daysTitle(expireEpochSeconds: Long): String? {
+    if (expireEpochSeconds <= 0) return null
+    val secondsLeft = expireEpochSeconds - System.currentTimeMillis() / 1000
+    val daysLeft = secondsLeft / 86_400
+    return when {
+        daysLeft > 365 -> stringResource(R.string.subscription_days_infinite)
+        daysLeft >= 1 -> stringResource(R.string.subscription_days_remaining, daysLeft)
+        secondsLeft > 0 -> stringResource(R.string.subscription_hours_left, secondsLeft / 3_600)
+        else -> stringResource(R.string.subscription_expired)
     }
 }
 
@@ -818,6 +890,20 @@ private fun usageColor(ratio: Float, colors: ColorScheme): Color = when {
     ratio < 0.25f -> colors.error
     ratio < 0.45f -> colors.tertiary
     else -> colors.primary
+}
+
+/** Bytes in the panel's own units, down to whole kilobytes. */
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    if (bytes < 1024) return "$bytes B"
+    val units = listOf("KiB", "MiB", "GiB", "TiB")
+    var value = bytes.toDouble()
+    var unit = -1
+    while (value >= 1024.0 && unit < units.lastIndex) {
+        value /= 1024.0
+        unit++
+    }
+    return String.format(java.util.Locale.US, "%.1f %s", value, units[unit])
 }
 
 /**
