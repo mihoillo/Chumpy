@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -546,12 +547,11 @@ private fun SubscriptionDropdown(
 }
 
 /**
- * The add row, the list's standing invitation: the rows' own anatomy, copied — the
- * [Surface] подложка with the segmented shape, the [ListItem] inside it, the round
- * 40dp tile the rows wear when unselected — so it reads as one more of them, asking
- * where they report.
+ * The add row, the list's standing invitation: the row's own anatomy — the [Surface]
+ * подложка with the segmented shape, the square 40dp tile the card's database tile
+ * wears in miniature — pinned to 72dp so the tile and the label sit dead center with
+ * the same 16dp breathing room above and below, matching the report rows' height.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AddSubscriptionRow(
     onClick: () -> Unit,
@@ -561,56 +561,45 @@ private fun AddSubscriptionRow(
     val colors = MaterialTheme.colorScheme
     val poke = rememberHapticPoke()
     Surface(
+        onClick = {
+            poke()
+            onClick()
+        },
         shape = shape,
         color = color,
         contentColor = colors.onSurface,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        ListItem(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(shape)
-                .combinedClickable(
-                    role = Role.Button,
-                    onClick = {
-                        poke()
-                        onClick()
-                    },
-                ),
-            headlineContent = {
-                Text(
-                    text = stringResource(R.string.subscription_add),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            },
-            leadingContent = {
-                Surface(
-                    shape = CircleShape,
-                    color = colors.secondaryContainer,
-                    contentColor = colors.onSecondaryContainer,
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_add),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
+                .heightIn(min = 72.dp)
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = colors.secondaryContainer,
+                contentColor = colors.onSecondaryContainer,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_add),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
-            },
-            colors = ListItemDefaults.colors(
-                // The row's Surface already paints the container; painting it here again
-                // stacked the translucent color twice, leaving these rows denser than the
-                // rest of the app's.
-                containerColor = Color.Transparent,
-                headlineColor = colors.onSurface,
-                supportingColor = colors.onSurfaceVariant,
-                leadingIconColor = colors.onSurface,
-            ),
-            tonalElevation = 0.dp,
-        )
+            }
+            Text(
+                text = stringResource(R.string.subscription_add),
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
