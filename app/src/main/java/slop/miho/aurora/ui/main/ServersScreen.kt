@@ -165,30 +165,33 @@ fun ServersScreen(
                 item { ErrorCard(message = stringResource(R.string.subscription_update_failed, error)) }
             }
 
+            // The card and the chooser it unfolds travel as one item: an animated-away
+            // dropdown would still collect spacedBy on both sides, leaving the card
+            // twice as far from the chips as the chips are from the servers.
             item {
-                SubscriptionCard(
-                    subscription = selectedSubscription,
-                    isUpdating = state.isUpdating,
-                    expanded = dropdownOpen,
-                    onToggle = { dropdownOpen = !dropdownOpen },
-                    onUpdate = onUpdate,
-                )
-            }
-
-            // The chooser unfolds: the subscription list rides out from under the card
-            // while the servers step aside with a fade — one ask at a time.
-            item {
-                SubscriptionAppear(visible = dropdownOpen) {
-                    SubscriptionDropdown(
-                        subscriptions = subscriptions,
-                        selectedId = selectedSubscription?.id,
-                        onSelect = { id ->
-                            dropdownOpen = false
-                            if (id != selectedSubscription?.id) onSelectSubscription(id)
-                        },
-                        onAdd = { addOpen = true },
-                        onDeleteRequest = { deleteTarget = it },
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SubscriptionCard(
+                        subscription = selectedSubscription,
+                        isUpdating = state.isUpdating,
+                        expanded = dropdownOpen,
+                        onToggle = { dropdownOpen = !dropdownOpen },
+                        onUpdate = onUpdate,
                     )
+
+                    // The chooser unfolds: the subscription list rides out from under the
+                    // card while the servers step aside with a fade — one ask at a time.
+                    SubscriptionAppear(visible = dropdownOpen) {
+                        SubscriptionDropdown(
+                            subscriptions = subscriptions,
+                            selectedId = selectedSubscription?.id,
+                            onSelect = { id ->
+                                dropdownOpen = false
+                                if (id != selectedSubscription?.id) onSelectSubscription(id)
+                            },
+                            onAdd = { addOpen = true },
+                            onDeleteRequest = { deleteTarget = it },
+                        )
+                    }
                 }
             }
 
@@ -543,11 +546,12 @@ private fun SubscriptionDropdown(
 }
 
 /**
- * The add row, the list's standing invitation: a row like the rest of them — same
- * Surface подложка, same segmented shape, same 40dp square tile — with the label sized
- * with the other rows' names and anchored at the top, the way the two-line rows sit
- * their headlines, so the eye reads one list, not two layouts.
+ * The add row, the list's standing invitation: the rows' own anatomy, copied — the
+ * [Surface] подложка with the segmented shape, the [ListItem] inside it, the round
+ * 40dp tile the rows wear when unselected — so it reads as one more of them, asking
+ * where they report.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AddSubscriptionRow(
     onClick: () -> Unit,
@@ -557,42 +561,56 @@ private fun AddSubscriptionRow(
     val colors = MaterialTheme.colorScheme
     val poke = rememberHapticPoke()
     Surface(
-        onClick = {
-            poke()
-            onClick()
-        },
         shape = shape,
         color = color,
         contentColor = colors.onSurface,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = colors.secondaryContainer,
-                contentColor = colors.onSecondaryContainer,
-                modifier = Modifier.size(40.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_add),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
+        ListItem(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = {
+                        poke()
+                        onClick()
+                    },
+                ),
+            headlineContent = {
+                Text(
+                    text = stringResource(R.string.subscription_add),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            leadingContent = {
+                Surface(
+                    shape = CircleShape,
+                    color = colors.secondaryContainer,
+                    contentColor = colors.onSecondaryContainer,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_add),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                 }
-            }
-            Text(
-                text = stringResource(R.string.subscription_add),
-                style = MaterialTheme.typography.bodyLarge,
-                color = colors.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+            },
+            colors = ListItemDefaults.colors(
+                // The row's Surface already paints the container; painting it here again
+                // stacked the translucent color twice, leaving these rows denser than the
+                // rest of the app's.
+                containerColor = Color.Transparent,
+                headlineColor = colors.onSurface,
+                supportingColor = colors.onSurfaceVariant,
+                leadingIconColor = colors.onSurface,
+            ),
+            tonalElevation = 0.dp,
+        )
     }
 }
 
@@ -910,7 +928,7 @@ private fun daysTitle(expireEpochSeconds: Long): String? {
 
 /** The traffic eaten over the limit: hiddify's "used / total" — and when the panel
  *  keeps the quota to itself (total=0, the common unlimited case) the limit still
- *  shows, as hiddify shows it: the infinity sign. */
+ *  shows, spelled out. */
 @Composable
 private fun consumedText(subscription: SubscriptionEntity): String? {
     val used = subscription.uploadBytes + subscription.downloadBytes
@@ -918,7 +936,11 @@ private fun consumedText(subscription: SubscriptionEntity): String? {
     return stringResource(
         R.string.subscription_consumed,
         formatBytes(used),
-        if (subscription.totalBytes > 0) formatBytes(subscription.totalBytes) else "∞",
+        if (subscription.totalBytes > 0) {
+            formatBytes(subscription.totalBytes)
+        } else {
+            stringResource(R.string.subscription_unlimited)
+        },
     )
 }
 

@@ -50,6 +50,7 @@
     <string name="subscription_hours_left">%1$d h left</string>
     <string name="subscription_expired">expired</string>
     <string name="subscription_consumed">%1$s / %2$s</string>
+    <string name="subscription_unlimited">unlimited</string>
     <string name="subscription_updated_at">Updated at %1$s</string>
     <string name="subscription_updated_ago">Updated %1$s ago</string>
     <string name="subscription_delete_title">Delete this subscription?</string>
