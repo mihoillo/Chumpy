@@ -177,20 +177,26 @@ fun ServersScreen(
             }
 
             // The chooser and the servers trade the space under the card as one piece:
-            // opening, the servers step aside with a fade while the subscription list
-            // rises in; closing, the list folds back up under the card. The height rides
-            // along, drawn unclipped — no rows vanishing into a cropped slab — and since
-            // the slot never sits empty, the card keeps its one 8dp step to the chips.
+            // opening, the servers drop out of view downward — the same leave the report
+            // card takes — while the subscription list rises in; closing, the list folds
+            // back up under the card and the servers climb back up after it. The height
+            // rides along, drawn unclipped — no rows vanishing into a cropped slab — and
+            // since the slot never sits empty, the card keeps its one 8dp step to the
+            // chips.
             item {
                 val motion = MaterialTheme.motionScheme
                 AnimatedContent(
                     targetState = dropdownOpen,
                     transitionSpec = {
+                        // The servers only ever leave downward and return from below;
+                        // the list rises in and folds back up.
                         ContentTransform(
                             targetContentEnter = fadeIn(motion.defaultEffectsSpec()) +
                                 slideInVertically(motion.defaultSpatialSpec()) { it / 8 },
                             initialContentExit = fadeOut(motion.defaultEffectsSpec()) +
-                                slideOutVertically(motion.defaultSpatialSpec()) { -it / 8 },
+                                slideOutVertically(motion.defaultSpatialSpec()) {
+                                    if (targetState) it / 8 else -it / 8
+                                },
                             sizeTransform = SizeTransform(clip = false),
                         )
                     },
