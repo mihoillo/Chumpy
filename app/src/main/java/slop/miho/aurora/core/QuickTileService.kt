@@ -3,11 +3,7 @@ package slop.miho.aurora.core
 import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffColorFilter
 import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
@@ -98,8 +94,8 @@ class QuickTileService : TileService() {
         val hasConfig = CoreConfigFile.has(this)
         val up = XrayCore.currentStatus().state == TunnelState.UP
         tile.label = getString(R.string.app_name)
-        // Distinct resource names per state also defeat SystemUI's per-resId tile icon
-        // caching; while down the wordmark stays hollow in the familiar dim gray.
+        // Distinct resources per state also defeat SystemUI's per-resId tile icon caching;
+        // while down the shield's glyph stays crossed out in the familiar dim gray.
         tile.icon = when {
             !up -> Icon.createWithResource(this, R.drawable.ic_tile_off)
             else -> variantIcon(SettingsStore.settings(this).value.iconVariant)
@@ -124,12 +120,15 @@ class QuickTileService : TileService() {
     /** The white tile glyph tinted [color]; cached, since the tile re-renders often. */
     private fun themedIcon(color: Int): Icon {
         cache?.let { (cachedColor, icon) -> if (cachedColor == color) return icon }
-        val mask = BitmapFactory.decodeResource(resources, R.drawable.ic_tile_inverted)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
-        }
-        val bitmap = Bitmap.createBitmap(mask.width, mask.height, Bitmap.Config.ARGB_8888)
-        Canvas(bitmap).drawBitmap(mask, 0f, 0f, paint)
+        // The glyph is the connected-state vector in white: tinting it with the accent
+        // recolors the whole drawing while the art's own alphas stay.
+        val drawable = getDrawable(R.drawable.ic_tile_inverted)!!.mutate()
+        drawable.setTint(color)
+        val size = 512
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(canvas)
         return Icon.createWithBitmap(bitmap).also { cache = color to it }
     }
 

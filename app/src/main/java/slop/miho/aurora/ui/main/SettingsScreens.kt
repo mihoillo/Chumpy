@@ -1110,9 +1110,17 @@ private fun IconPreviewButton(
         contentAlignment = Alignment.Center,
     ) {
         Image(
-            painter = painterResource(R.drawable.ic_launcher_monochrome_art),
+            painter = painterResource(
+                when (variant) {
+                    IconVariant.AURORA -> R.drawable.ic_launcher_foreground
+                    // White art: shown as-is for Inverted, tinted with the live primary
+                    // for Themed — the vector is the real launcher art, not a stand-in.
+                    IconVariant.INVERTED -> R.drawable.ic_launcher_fg_inverted
+                    IconVariant.THEMED -> R.drawable.ic_launcher_fg_inverted
+                },
+            ),
             contentDescription = null,
-            colorFilter = ColorFilter.tint(art),
+            colorFilter = if (variant == IconVariant.THEMED) ColorFilter.tint(art) else null,
             contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize(),
         )
