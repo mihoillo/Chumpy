@@ -28,16 +28,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -55,7 +51,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -67,7 +62,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -91,7 +85,6 @@ import slop.miho.aurora.ui.components.splitLeadingPrideFlag
 import slop.miho.aurora.ui.components.rememberHapticDeniedKicks
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.components.WavyPullToRefreshBox
-import slop.miho.aurora.ui.components.pressBounce
 import slop.miho.aurora.ui.components.pullShiftedPadding
 import slop.miho.aurora.ui.wallpapers.LocalSurfaceOpacity
 import slop.miho.aurora.ui.wallpapers.ReportBarCoverage
@@ -268,12 +261,11 @@ private fun ServersHeader(state: ServersUiState) {
 
 /**
  * The subscription card, the devices screen's row language grown up: the database tile
- * on the same circle backdrop the server rows sit their icons on — no cookie here, the
- * pick's mark lives in the list, not on the card — with the reload button tucked under
- * it, the subscription's name over what the panel reports. The card's own tap unfolds
- * the subscription list — the info flies out from under the name as it does, and the
- * title flips to the chooser's call to action — while the button's tap is a different
- * ask: pulling new servers in.
+ * on its square backing — the list's rows wear the round one; the card keeps the square,
+ * like it always did — with the reload button tucked under it, the subscription's name
+ * over what the panel reports. The card's own tap unfolds the subscription list — the
+ * info flies out from under the name as it does, and the title flips to the chooser's
+ * call to action — while the button's tap is a different ask: pulling new servers in.
  */
 @Composable
 private fun SubscriptionCard(
@@ -318,27 +310,26 @@ private fun SubscriptionCard(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // The leading column: the database tile on its circle backing, the reload
-            // button under it — the subscription's face, and its refresh, stacked.
+            // The leading column: the database tile on its square backing — the list's
+            // rows wear the round one, the card keeps the square — the reload button
+            // under it: the subscription's face, and its refresh, stacked.
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Box(
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = colors.secondaryContainer,
+                    contentColor = colors.onSecondaryContainer,
                     modifier = Modifier.size(48.dp),
-                    contentAlignment = Alignment.Center,
                 ) {
-                    CookieBackdrop(
-                        selected = false,
-                        color = colors.secondaryContainer,
-                        animated = false,
-                    )
-                    Icon(
-                        painter = painterResource(R.drawable.ic_database),
-                        contentDescription = null,
-                        tint = colors.onSecondaryContainer,
-                        modifier = Modifier.size(24.dp),
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_database),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                 }
                 UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
             }
@@ -460,9 +451,10 @@ private fun UpdateButton(isUpdating: Boolean, onClick: () -> Unit) {
 
 /**
  * The unfolded subscription list: one row per subscription — the servers' own segmented
- * container, cookie-marked pick and all — and the "add subscription" button at the end:
- * the font picker's stadium import button turned on its side. A long press on a row asks
- * the heavier question: deleting that subscription and everything it brought in.
+ * container, Surface подложки, cookie-marked pick and all — with the "add subscription"
+ * row closing the list off, one of the rows itself, its icon on the square backing the
+ * card's tile wears. A long press on a row asks the heavier question: deleting that
+ * subscription and everything it brought in.
  */
 @Composable
 private fun SubscriptionDropdown(
@@ -473,70 +465,78 @@ private fun SubscriptionDropdown(
     onDeleteRequest: (SubscriptionEntity) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val motion = MaterialTheme.motionScheme
-    val poke = rememberHapticPoke()
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.extraSmall
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(outer),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            subscriptions.forEachIndexed { index, subscription ->
-                val first = index == 0
-                val last = index == subscriptions.lastIndex
-                SubscriptionRow(
-                    subscription = subscription,
-                    selected = subscription.id == selectedId,
-                    onClick = { onSelect(subscription.id) },
-                    onLongClick = { onDeleteRequest(subscription) },
-                    shape = RoundedCornerShape(
-                        topStart = if (first) outer.topStart else inner.topStart,
-                        topEnd = if (first) outer.topEnd else inner.topEnd,
-                        bottomStart = if (last) outer.bottomStart else inner.bottomStart,
-                        bottomEnd = if (last) outer.bottomEnd else inner.bottomEnd,
-                    ),
-                )
-            }
+    // The add row closes the list off, so it counts when the corner shapes are handed out.
+    val rowCount = subscriptions.size + 1
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(outer),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        subscriptions.forEachIndexed { index, subscription ->
+            val first = index == 0
+            val last = index == rowCount - 1
+            SubscriptionRow(
+                subscription = subscription,
+                selected = subscription.id == selectedId,
+                onClick = { onSelect(subscription.id) },
+                onLongClick = { onDeleteRequest(subscription) },
+                shape = RoundedCornerShape(
+                    topStart = if (first) outer.topStart else inner.topStart,
+                    topEnd = if (first) outer.topEnd else inner.topEnd,
+                    bottomStart = if (last) outer.bottomStart else inner.bottomStart,
+                    bottomEnd = if (last) outer.bottomEnd else inner.bottomEnd,
+                ),
+            )
         }
-        // The add button: the font picker's import button turned on its side — the same
-        // stadium, laid out horizontally, pressed with the same bounce — with the add
-        // glyph on a square backdrop instead of the round one, the list's standing
-        // invitation.
-        val interactionSource = remember { MutableInteractionSource() }
-        val pressed by interactionSource.collectIsPressedAsState()
-        var taps by remember { mutableIntStateOf(0) }
-        val resting = colors.secondaryContainer.copy(alpha = LocalSurfaceOpacity.current)
-        val addContainer by animateColorAsState(
-            targetValue = if (pressed) lerp(resting, colors.onSurface, 0.1f) else resting,
-            animationSpec = motion.defaultEffectsSpec(),
-            label = "add subscription container",
+        AddSubscriptionRow(
+            onClick = onAdd,
+            shape = RoundedCornerShape(
+                topStart = if (subscriptions.isEmpty()) outer.topStart else inner.topStart,
+                topEnd = if (subscriptions.isEmpty()) outer.topEnd else inner.topEnd,
+                bottomStart = outer.bottomStart,
+                bottomEnd = outer.bottomEnd,
+            ),
+            color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
         )
-        Surface(
-            onClick = {
-                poke()
-                taps++
-                onAdd()
+    }
+}
+
+/**
+ * The add row, the list's standing invitation: a row like the rest of them — same
+ * Surface подложка, same segmented shape, same 40dp tile — except its glyph sits on the
+ * square backing the card's tile wears, the round one's straight-laced cousin.
+ */
+@Composable
+private fun AddSubscriptionRow(
+    onClick: () -> Unit,
+    shape: Shape,
+    color: Color,
+) {
+    val colors = MaterialTheme.colorScheme
+    val poke = rememberHapticPoke()
+    Surface(
+        onClick = {
+            poke()
+            onClick()
+        },
+        shape = shape,
+        color = color,
+        contentColor = colors.onSurface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        ListItem(
+            modifier = Modifier.fillMaxWidth(),
+            headlineContent = {
+                Text(text = stringResource(R.string.subscription_add), maxLines = 1)
             },
-            interactionSource = interactionSource,
-            shape = CircleShape,
-            color = addContainer,
-            contentColor = colors.onSecondaryContainer,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp)
-                .pressBounce(pressed, taps),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            leadingContent = {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = colors.onSecondaryContainer.copy(alpha = 0.12f),
+                    color = colors.secondaryContainer,
+                    contentColor = colors.onSecondaryContainer,
                     modifier = Modifier.size(40.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -547,21 +547,17 @@ private fun SubscriptionDropdown(
                         )
                     }
                 }
-                Text(
-                    text = stringResource(R.string.subscription_add),
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+            },
+        )
     }
 }
 
 /**
- * One subscription in the unfolded list, the server rows' own language: the database tile
- * on the circle backdrop, the pick's cookie taking the checkmark's place, the name over
- * what the panel reports. A long press is the delete question.
+ * One subscription in the unfolded list: the server row's own anatomy, copied — the
+ * [Surface] подложка with the segmented shape, the [ListItem] inside it, the 40dp
+ * leading tile whose round backdrop morphs into the pick's cookie, the name and the
+ * update stamp in the headline, what the panel reports in the supporting slot. A long
+ * press is the delete question.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -597,67 +593,79 @@ private fun SubscriptionRow(
         animationSpec = motion.defaultEffectsSpec(),
         label = "subscription row icon container",
     )
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .combinedClickable(
-                role = Role.Button,
-                onClick = {
-                    poke()
-                    onClick()
-                },
-                onLongClick = {
-                    kicks()
-                    onLongClick()
-                },
-            )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val iconColor by animateColorAsState(
+        targetValue = if (selected) colors.onPrimary else colors.onSecondaryContainer,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "subscription row icon",
+    )
+    Surface(
+        shape = shape,
+        color = containerColor,
+        contentColor = contentColor,
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Box(
-            modifier = Modifier.size(40.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            CookieBackdrop(
-                selected = selected,
-                color = iconContainerColor,
-                animated = true,
-            )
-            Icon(
-                painter = painterResource(R.drawable.ic_database),
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = if (selected) colors.onPrimary else colors.onSecondaryContainer,
-            )
-        }
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = subscription.name.takeIf { it.isNotBlank() }
-                        ?: stringResource(R.string.subscription_none),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = contentColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                updatedText(subscription)?.let { stamp ->
+        ListItem(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = {
+                        poke()
+                        onClick()
+                    },
+                    onLongClick = {
+                        kicks()
+                        onLongClick()
+                    },
+                ),
+            headlineContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = stamp,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = supportingColor,
+                        text = subscription.name.takeIf { it.isNotBlank() }
+                            ?: stringResource(R.string.subscription_none),
                         maxLines = 1,
-                        modifier = Modifier.padding(start = 8.dp),
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    updatedText(subscription)?.let { stamp ->
+                        Text(
+                            text = stamp,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = supportingColor,
+                            maxLines = 1,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+            },
+            supportingContent = {
+                SubscriptionInfo(
+                    subscription = subscription,
+                    supportingColor = supportingColor,
+                )
+            },
+            leadingContent = {
+                // MD3 list leading icon: 24dp icon on a 40dp tonal container. Selection
+                // morphs the circle into the slowly spinning MD3 cookie — the pick's mark.
+                Box(
+                    modifier = Modifier.size(40.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CookieBackdrop(
+                        selected = selected,
+                        color = iconContainerColor,
+                        animated = true,
+                    )
+                    Icon(
+                        painter = painterResource(R.drawable.ic_database),
+                        contentDescription = null,
+                        tint = iconColor,
+                        modifier = Modifier.size(24.dp),
                     )
                 }
-            }
-            SubscriptionInfo(
-                subscription = subscription,
-                supportingColor = supportingColor,
-            )
-        }
+            },
+        )
     }
 }
 
