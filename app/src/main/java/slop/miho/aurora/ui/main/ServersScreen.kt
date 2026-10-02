@@ -34,6 +34,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -51,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -62,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -85,6 +90,7 @@ import slop.miho.aurora.ui.components.splitLeadingPrideFlag
 import slop.miho.aurora.ui.components.rememberHapticDeniedKicks
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.components.WavyPullToRefreshBox
+import slop.miho.aurora.ui.components.pressBounce
 import slop.miho.aurora.ui.components.pullShiftedPadding
 import slop.miho.aurora.ui.wallpapers.LocalSurfaceOpacity
 import slop.miho.aurora.ui.wallpapers.ReportBarCoverage
@@ -398,12 +404,14 @@ private fun SubscriptionCard(
                     }
                 }
             }
-            // The chevron points the card's own tap at the list it unfolds, flipping as it does.
+            // The chevron points the card's own tap at the list it unfolds, flipping as it
+            // does — anchored at the card's foot, under the info it folds away.
             Icon(
                 painter = painterResource(R.drawable.ic_chevron_right),
                 contentDescription = stringResource(R.string.subscription_expand),
                 tint = supportingColor,
                 modifier = Modifier
+                    .align(Alignment.Bottom)
                     .size(24.dp)
                     .graphicsLayer { rotationZ = if (expanded) 270f else 90f },
             )
@@ -411,11 +419,25 @@ private fun SubscriptionCard(
     }
 }
 
-/** The update button: the round-trip arrows, spinning slowly while the fetch runs. */
+/**
+ * The update button: the font picker's import button turned on its side — the same
+ * stadium, the same press bounce, as wide as the tile above it but shorter — the
+ * round-trip arrows spinning slowly while the fetch runs.
+ */
 @Composable
 private fun UpdateButton(isUpdating: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    var taps by remember { mutableIntStateOf(0) }
+    val resting = colors.secondaryContainer
+    val container by animateColorAsState(
+        targetValue = if (pressed) lerp(resting, colors.onSurface, 0.1f) else resting,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "subscription update container",
+    )
     val spin = if (isUpdating) {
         rememberInfiniteTransition(label = "subscription update spin")
             .animateFloat(
@@ -430,19 +452,23 @@ private fun UpdateButton(isUpdating: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = {
             poke()
+            taps++
             onClick()
         },
-        shape = RoundedCornerShape(12.dp),
-        color = colors.surfaceContainerHigh.copy(alpha = LocalSurfaceOpacity.current),
-        contentColor = colors.onSurfaceVariant,
-        modifier = Modifier.size(40.dp),
+        interactionSource = interactionSource,
+        shape = CircleShape,
+        color = container,
+        contentColor = colors.onSecondaryContainer,
+        modifier = Modifier
+            .size(width = 48.dp, height = 36.dp)
+            .pressBounce(pressed, taps),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 painter = painterResource(R.drawable.ic_renew),
                 contentDescription = stringResource(R.string.subscription_update),
                 modifier = Modifier
-                    .size(24.dp)
+                    .size(20.dp)
                     .graphicsLayer { rotationZ = spin?.value ?: 0f },
             )
         }
@@ -506,8 +532,9 @@ private fun SubscriptionDropdown(
 
 /**
  * The add row, the list's standing invitation: a row like the rest of them — same
- * Surface подложка, same segmented shape, same 40dp tile — except its glyph sits on the
- * square backing the card's tile wears, the round one's straight-laced cousin.
+ * Surface подложка, same segmented shape, same 40dp square tile — with the label sized
+ * with the other rows' names and anchored at the top, the way the two-line rows sit
+ * their headlines, so the eye reads one list, not two layouts.
  */
 @Composable
 private fun AddSubscriptionRow(
@@ -527,35 +554,33 @@ private fun AddSubscriptionRow(
         contentColor = colors.onSurface,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        ListItem(
-            modifier = Modifier.fillMaxWidth(),
-            headlineContent = {
-                Text(text = stringResource(R.string.subscription_add), maxLines = 1)
-            },
-            leadingContent = {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = colors.secondaryContainer,
-                    contentColor = colors.onSecondaryContainer,
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_add),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = colors.secondaryContainer,
+                contentColor = colors.onSecondaryContainer,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_add),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
-            },
-            colors = ListItemDefaults.colors(
-                // The row's Surface paints the container; doing it here too would stack
-                // the translucent color twice.
-                containerColor = Color.Transparent,
-                headlineColor = colors.onSurface,
-            ),
-            tonalElevation = 0.dp,
-        )
+            }
+            Text(
+                text = stringResource(R.string.subscription_add),
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
