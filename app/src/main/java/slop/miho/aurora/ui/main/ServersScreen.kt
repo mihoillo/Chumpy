@@ -548,6 +548,13 @@ private fun AddSubscriptionRow(
                     }
                 }
             },
+            colors = ListItemDefaults.colors(
+                // The row's Surface paints the container; doing it here too would stack
+                // the translucent color twice.
+                containerColor = Color.Transparent,
+                headlineColor = colors.onSurface,
+            ),
+            tonalElevation = 0.dp,
         )
     }
 }
@@ -665,6 +672,17 @@ private fun SubscriptionRow(
                     )
                 }
             },
+            colors = ListItemDefaults.colors(
+                // The row's Surface already paints the container; painting it here again
+                // stacked the translucent color twice, leaving these rows denser than the
+                // rest of the app's.
+                containerColor = Color.Transparent,
+                headlineColor = contentColor,
+                supportingColor = supportingColor,
+                leadingIconColor = contentColor,
+                trailingIconColor = supportingColor,
+            ),
+            tonalElevation = 0.dp,
         )
     }
 }
