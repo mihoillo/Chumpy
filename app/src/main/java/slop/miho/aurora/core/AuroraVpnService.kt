@@ -227,7 +227,10 @@ class AuroraVpnService : VpnService() {
                     CHANNEL_ID,
                     getString(R.string.notif_channel_vpn),
                     NotificationManager.IMPORTANCE_LOW,
-                ).apply { setShowBadge(false) },
+                ).apply {
+                    setShowBadge(false)
+                    description = getString(R.string.notif_channel_vpn_desc)
+                },
             )
         }
         startForeground(NOTIFICATION_ID, buildNotification())
