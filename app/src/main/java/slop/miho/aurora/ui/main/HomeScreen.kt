@@ -7,7 +7,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -42,7 +41,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -84,9 +82,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import slop.miho.aurora.R
 import slop.miho.aurora.core.TunnelState
 import slop.miho.aurora.core.TunnelStatus
-import slop.miho.aurora.data.FlagStyle
 import slop.miho.aurora.ui.HomeUiState
-import slop.miho.aurora.ui.components.CountryFlag
 import slop.miho.aurora.ui.components.ErrorCard
 import slop.miho.aurora.ui.components.InfoChip
 import slop.miho.aurora.ui.components.rememberHapticDeniedKicks
@@ -109,29 +105,17 @@ import kotlin.math.sin
 
 @Composable
 fun HomeScreen(
-    name: String?,
     status: TunnelStatus,
     home: HomeUiState,
-    exitIp: String?,
     /** Whether the page is the one on screen; coming into view re-measures the ping. */
     visible: Boolean = true,
     /** Re-measures the ping now; `true` blanks the old value while the new one is on its way. */
     onRefreshPing: (showPending: Boolean) -> Unit = {},
-    /** Whether the exit IP chip reads "Hidden"; a tap on the chip calls [onToggleIp]. */
-    ipHidden: Boolean = false,
-    onToggleIp: () -> Unit = {},
-    /** The country of the exit the traffic actually leaves through, for the region card's flag. */
-    exitCountry: String? = null,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onOpenServers: () -> Unit,
     /** Opens the stats screen; a tap on the loss warning chip goes there. */
     onOpenStats: () -> Unit = {},
-    // Bumped once per "this device → go connect" request from the devices screen: the page
-    // opens and the connect button blinks, so the ask has a destination rather than a hope.
-    // Cleared through [onAttentionHandled] once taken, so it plays exactly once.
-    attentionTick: Int = 0,
-    onAttentionHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val up = status.state == TunnelState.UP
@@ -221,7 +205,7 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = greetingText(name),
+                    text = greetingText(),
                     style = MaterialTheme.typography.displayMedium,
                     color = greetingColor,
                 )
@@ -230,15 +214,12 @@ fun HomeScreen(
                 InfoChips(
                     status = status,
                     home = home,
-                    exitIp = exitIp,
-                    ipHidden = ipHidden,
-                    onToggleIp = onToggleIp,
                     onRefreshPing = { onRefreshPing(true) },
                     onOpenStats = onOpenStats,
                 )
 
                 Spacer(Modifier.height(12.dp))
-                // A failed connect takes over the region card's slot, with the same appear
+                // A failed connect takes over the server card's slot, with the same appear
                 // motion; it leaves again as soon as the next attempt clears the error.
                 TunnelAppear(visible = status.error != null) {
                     ErrorCard(
@@ -246,13 +227,12 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                home.exitLabel?.let { label ->
-                    // The region card still slides in when the tunnel comes up.
+                home.profileLabel?.let { label ->
+                    // The server card slides in when the tunnel comes up: the picked
+                    // server's name, a tap away from the list that changes it.
                     TunnelAppear(visible = up) {
                         ServerCard(
                             label = label,
-                            country = exitCountry,
-                            flagStyle = LocalUiSettings.current.flagStyle,
                             onClick = onOpenServers,
                         )
                     }
@@ -267,8 +247,6 @@ fun HomeScreen(
             state = status.state,
             onConnect = onConnect,
             onDisconnect = onDisconnect,
-            attentionTick = attentionTick,
-            onAttentionHandled = onAttentionHandled,
             modifier = Modifier
                 .navigationBarsPadding()
                 .padding(bottom = FloatingBottomBarReservedHeight + 8.dp),
@@ -277,7 +255,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun greetingText(name: String?): String {
+private fun greetingText(): String {
     val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
     val greeting = when (hour) {
         in 5..11 -> R.string.greeting_morning
@@ -285,7 +263,7 @@ private fun greetingText(name: String?): String {
         in 17..22 -> R.string.greeting_evening
         else -> R.string.greeting_night
     }
-    return stringResource(greeting) + (name?.let { ", $it" } ?: "")
+    return stringResource(greeting)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -293,9 +271,6 @@ private fun greetingText(name: String?): String {
 private fun InfoChips(
     status: TunnelStatus,
     home: HomeUiState,
-    exitIp: String?,
-    ipHidden: Boolean,
-    onToggleIp: () -> Unit,
     onRefreshPing: () -> Unit,
     onOpenStats: () -> Unit,
 ) {
@@ -314,18 +289,16 @@ private fun InfoChips(
                 .withSurfaceOpacity(),
             content = if (up) colors.onSecondaryContainer else colors.onSurfaceVariant,
         )
-        InfoChip(
-            home.deviceName ?: stringResource(R.string.home_value_unknown),
-            R.drawable.ic_device,
-        )
-        InfoChip(
-            home.localIp ?: stringResource(R.string.home_value_unknown),
-            R.drawable.ic_ethernet,
-        )
+        home.subscriptionName?.let { name ->
+            InfoChip(
+                value = name,
+                icon = R.drawable.ic_servers,
+            )
+        }
         if (up) {
             InfoChip(uptimeText(home.uptimeStartMillis), R.drawable.ic_clock)
             val poke = rememberHapticPoke()
-            // 200 ms is where the panel starts feeling far away: the chip goes red from
+            // 200 ms is where the server starts feeling far away: the chip goes red from
             // there, matching the loss warning's tone.
             val pingSlow = (home.pingMillis ?: 0L) >= 200L
             InfoChip(
@@ -361,28 +334,12 @@ private fun InfoChips(
                     },
                 )
             }
-            // The panel sometimes answers this endpoint with a localized error page
-            // instead of an address — show the shrug instead of that noise.
-            // A tap hides the address behind "Hidden" (and the next one brings it back), so
-            // it can stay off screen while sharing or recording it; the choice is remembered.
-            InfoChip(
-                value = when {
-                    ipHidden -> stringResource(R.string.home_value_hidden)
-                    else -> exitIp ?: stringResource(R.string.home_value_shrug)
-                },
-                icon = if (ipHidden) R.drawable.ic_public_off else R.drawable.ic_public,
-                animateValue = true,
-                onClick = {
-                    poke()
-                    onToggleIp()
-                },
-            )
         }
     }
 }
 
-/** The region card fades and slides in with the MD3 motion scheme when the tunnel
- * comes up, and shrinks away when it goes down. */
+/** The server card fades and slides in with the MD3 motion scheme when the tunnel
+ *  comes up, and shrinks away when it goes down. */
 @Composable
 private fun TunnelAppear(visible: Boolean, content: @Composable () -> Unit) {
     val motion = MaterialTheme.motionScheme
@@ -439,8 +396,6 @@ private fun formatUptime(millis: Long): String {
 @Composable
 private fun ServerCard(
     label: String,
-    country: String?,
-    flagStyle: FlagStyle,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -466,26 +421,14 @@ private fun ServerCard(
                     .background(colors.secondaryContainer),
                 contentAlignment = Alignment.Center,
             ) {
-                // The same flag the server list shows for this exit, crossfading as the region
-                // changes; the globe stands in without a country or when the user prefers it.
-                Crossfade(
-                    targetState = country?.takeIf { flagStyle != FlagStyle.GLOBE },
-                    animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
-                    label = "server flag",
-                ) { code ->
-                    if (code != null) {
-                        CountryFlag(code = code, twemoji = flagStyle == FlagStyle.TWEMOJI)
-                    } else {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_public),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = colors.onSecondaryContainer,
-                        )
-                    }
-                }
+                Icon(
+                    painter = painterResource(R.drawable.ic_public),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = colors.onSecondaryContainer,
+                )
             }
-            // Switching the exit region swaps the label with a gentle fade/slide.
+            // Switching the server swaps the label with a gentle fade/slide.
             val motion = MaterialTheme.motionScheme
             AnimatedContent(
                 targetState = label,
@@ -501,6 +444,7 @@ private fun ServerCard(
                     text = l,
                     style = MaterialTheme.typography.titleMedium,
                     color = colors.onSurface,
+                    maxLines = 1,
                 )
             }
             // A bare chevron (no stem) pointing at where the tap leads.
@@ -519,8 +463,6 @@ private fun ConnectButton(
     state: TunnelState,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
-    attentionTick: Int = 0,
-    onAttentionHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -537,28 +479,6 @@ private fun ConnectButton(
         animationSpec = motion.defaultEffectsSpec(),
         label = "button content",
     )
-    // The "go connect" blink — "hey, I'm here": the button softly brightens toward the
-    // primary fill and back a few times, staying put. 0 is the no-request state.
-    val pulse = remember { Animatable(0f) }
-    val blinkScope = rememberCoroutineScope()
-    LaunchedEffect(attentionTick) {
-        if (attentionTick == 0) return@LaunchedEffect
-        // The request is spent the moment it's taken: the shell clears it, so coming back
-        // Home any other way later doesn't replay the blink. The blink itself runs in the
-        // button's own scope, outliving this effect's restart on the cleared tick.
-        onAttentionHandled()
-        blinkScope.launch {
-            // Let the page switch settle first, so the blink plays once Home is on screen.
-            delay(350)
-            repeat(ATTENTION_PULSES) {
-                pulse.animateTo(1f, tween(durationMillis = 280, easing = FastOutSlowInEasing))
-                pulse.animateTo(0f, tween(durationMillis = 420, easing = FastOutSlowInEasing))
-            }
-        }
-    }
-    // The flash rides the pulse value directly: the spring-colored container lerps toward
-    // the primary while the value is high.
-    val flashed = lerp(container, colors.primary, pulse.value)
     val busy = state == TunnelState.CONNECTING || state == TunnelState.DISCONNECTING
     // The tap itself pokes like every other button; the result (up or failed) answers later.
     val poke = rememberHapticPoke()
@@ -569,11 +489,11 @@ private fun ConnectButton(
         },
         enabled = !busy,
         colors = ButtonDefaults.buttonColors(
-            containerColor = flashed,
+            containerColor = container,
             contentColor = content,
             // Keep the same colors while disabled (connecting), otherwise the button
             // greys out and the bar becomes invisible.
-            disabledContainerColor = flashed,
+            disabledContainerColor = container,
             disabledContentColor = content,
         ),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
@@ -703,29 +623,21 @@ private val TunnelState.label: Int
         TunnelState.DISCONNECTING -> R.string.home_state_disconnecting
     }
 
-@Composable
-private fun stateLabel(state: TunnelState): Int = state.label
-
 @Preview(showBackground = true)
 @Composable
 private fun HomeScreenPreview() {
     AuroraTheme(settings = UiSettings(accent = Accent.VIOLET)) {
         HomeScreen(
-            name = "miho",
             status = TunnelStatus(TunnelState.UP),
             home = HomeUiState(
-                deviceName = "nothing",
-                localIp = "10.0.0.3",
-                exitLabel = "Finland",
+                subscriptionName = "miho.net",
+                profileLabel = "Helsinki · vmess",
                 pingMillis = 25,
                 uptimeStartMillis = System.currentTimeMillis() - 3_600_000,
             ),
-            exitIp = "1.2.3.10",
             onConnect = {},
             onDisconnect = {},
             onOpenServers = {},
         )
     }
 }
-
-private const val ATTENTION_PULSES = 3

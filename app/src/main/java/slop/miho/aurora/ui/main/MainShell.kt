@@ -28,7 +28,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -53,7 +52,6 @@ import slop.miho.aurora.core.TunnelState
 import slop.miho.aurora.core.TunnelStatus
 import slop.miho.aurora.ui.MainViewModel
 import slop.miho.aurora.ui.HomeUiState
-import slop.miho.aurora.ui.DevicesUiState
 import slop.miho.aurora.ui.ServersUiState
 import slop.miho.aurora.ui.StatsUiState
 import slop.miho.aurora.data.UiSettings
@@ -77,19 +75,16 @@ import slop.miho.aurora.ui.wallpapers.wallpaperZoomTarget
 @Composable
 fun MainShell(viewModel: MainViewModel) {
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
-    // Bumped once per "this device → go connect" request from the devices screen; Home reads
-    // it and pulses the connect button.
-    var connectAttention by remember { mutableIntStateOf(0) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.INTERFACE) }
 
     BackHandler(enabled = settingsOpen) { settingsOpen = false }
     BackHandler(enabled = !settingsOpen && selectedTab != MainTab.HOME) { selectedTab = MainTab.HOME }
 
-    val profile by viewModel.profile.collectAsStateWithLifecycle()
     val tunnelStatus by viewModel.tunnelStatus.collectAsStateWithLifecycle()
+    val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
+    val selectedSubscription by viewModel.selectedSubscription.collectAsStateWithLifecycle()
     val servers by viewModel.servers.collectAsStateWithLifecycle()
-    val devices by viewModel.devices.collectAsStateWithLifecycle()
     val home by viewModel.home.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
 
@@ -218,16 +213,19 @@ fun MainShell(viewModel: MainViewModel) {
             selectedTab = selectedTab,
             selectedCategory = selectedCategory,
             settingsOpen = settingsOpen,
-            profileName = profile?.name,
+            subscriptions = subscriptions,
+            selectedSubscription = selectedSubscription,
             tunnelStatus = tunnelStatus,
             servers = servers,
-            devices = devices,
             home = home,
             // The flow itself, not its value: it ticks once a second, and the STATS page
             // collects it in its own branch rather than recomposing the whole shell.
             statsFlow = viewModel.stats,
             uiSettings = settings,
+            connection = viewModel.connection.collectAsStateWithLifecycle().value,
+            coreVersion = viewModel.coreVersion.collectAsStateWithLifecycle().value,
             onUiSettingsChange = viewModel::updateSettings,
+            onChangeConnection = viewModel::updateConnection,
             onOpenServers = {
                 selectedTab = MainTab.SERVERS
                 settingsOpen = false
@@ -238,25 +236,13 @@ fun MainShell(viewModel: MainViewModel) {
                 settingsOpen = false
             },
             onRefreshPing = viewModel::refreshPing,
-            onRefresh = viewModel::refreshServers,
-            // Background refreshes keep the servers page fresh without the pull indicator.
-            onAutoRefresh = { viewModel.refreshServers(silent = true) },
-            onRefreshDevices = viewModel::refreshDevices,
-            onAutoRefreshDevices = { viewModel.refreshDevices(silent = true) },
-            onCreateDevice = viewModel::createDevice,
-            onRenameDevice = viewModel::renameDevice,
-            onToggleDevice = viewModel::toggleDevice,
-            onDeleteDevice = viewModel::deleteDevice,
-            onDeviceConfig = viewModel::deviceConfig,
-            connectAttention = connectAttention,
-            // Taken once by Home's connect button; cleared so a later return doesn't replay it.
-            onConnectAttentionHandled = { connectAttention = 0 },
-            onOpenHome = {
-                selectedTab = MainTab.HOME
-                settingsOpen = false
-                connectAttention++
-            },
-            onSelect = viewModel::selectServer,
+            onPingServers = viewModel::pingServers,
+            onUpdateSubscription = viewModel::updateSelectedSubscription,
+            onSelectSubscription = viewModel::selectSubscription,
+            onAddSubscription = viewModel::addSubscription,
+            onDeleteSubscription = viewModel::deleteSubscription,
+            onToggleAutoUpdate = viewModel::setSubscriptionAutoUpdate,
+            onSelect = viewModel::selectProfile,
             onConnect = {
                 val consent = VpnService.prepare(context)
                 if (consent != null) vpnPermission.launch(consent) else viewModel.connect()
@@ -354,29 +340,26 @@ private fun MainPagerStrip(
     selectedTab: MainTab,
     selectedCategory: SettingsCategory,
     settingsOpen: Boolean,
-    profileName: String?,
+    subscriptions: List<slop.miho.aurora.db.SubscriptionEntity>,
+    selectedSubscription: slop.miho.aurora.db.SubscriptionEntity?,
     tunnelStatus: TunnelStatus,
     servers: ServersUiState,
-    devices: DevicesUiState,
     home: HomeUiState,
     statsFlow: StateFlow<StatsUiState>,
     uiSettings: UiSettings,
+    connection: slop.miho.aurora.data.ConnectionSettings,
+    coreVersion: String?,
     onUiSettingsChange: ((UiSettings) -> UiSettings) -> Unit,
+    onChangeConnection: ((slop.miho.aurora.data.ConnectionSettings) -> slop.miho.aurora.data.ConnectionSettings) -> Unit,
     onOpenServers: () -> Unit,
     onOpenStats: () -> Unit,
     onRefreshPing: (showPending: Boolean) -> Unit,
-    onRefresh: () -> Unit,
-    onAutoRefresh: () -> Unit,
-    onRefreshDevices: () -> Unit,
-    onAutoRefreshDevices: () -> Unit,
-    onCreateDevice: (String) -> Unit,
-    onRenameDevice: (Int, String) -> Unit,
-    onToggleDevice: (Int) -> Unit,
-    onDeleteDevice: (Int) -> Unit,
-    onDeviceConfig: suspend (Int) -> String?,
-    connectAttention: Int,
-    onConnectAttentionHandled: () -> Unit,
-    onOpenHome: () -> Unit,
+    onPingServers: () -> Unit,
+    onUpdateSubscription: () -> Unit,
+    onSelectSubscription: (String) -> Unit,
+    onAddSubscription: (url: String, name: String?, onDone: (String?) -> Unit) -> Unit,
+    onDeleteSubscription: (String) -> Unit,
+    onToggleAutoUpdate: (String, Boolean) -> Unit,
     onSelect: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -394,53 +377,32 @@ private fun MainPagerStrip(
         val interfaceScroll = rememberScrollState()
         val motion = MaterialTheme.motionScheme
 
-        // The screen at a strip position: main tabs at 0..3, settings categories after them.
+        // The screen at a strip position: main tabs at 0..2, settings categories after them.
         @Composable
         fun destinationPage(position: Int) {
             if (position < settingsOffset) {
                 when (val tab = MainTab.entries[position]) {
                     MainTab.HOME -> HomeScreen(
-                        name = profileName,
                         status = tunnelStatus,
                         home = home,
-                        exitIp = servers.exitIp,
                         visible = selectedTab == MainTab.HOME && !settingsOpen,
                         onRefreshPing = onRefreshPing,
-                        ipHidden = uiSettings.hideIp,
-                        onToggleIp = { onUiSettingsChange { it.copy(hideIp = !it.hideIp) } },
-                        // Auto flies the flag of the exit it resolved to: that's where the
-                        // traffic actually leaves.
-                        exitCountry = servers.exits.firstOrNull {
-                            it.id == (servers.actualExitId ?: servers.currentExitId)
-                        }?.country,
                         onConnect = onConnect,
                         onDisconnect = onDisconnect,
                         onOpenServers = onOpenServers,
                         onOpenStats = onOpenStats,
-                        attentionTick = connectAttention,
-                        onAttentionHandled = onConnectAttentionHandled,
                     )
                     MainTab.SERVERS -> ServersScreen(
+                        subscriptions = subscriptions,
+                        selectedSubscription = selectedSubscription,
                         state = servers,
-                        tunnelUp = tunnelStatus.state == TunnelState.UP,
-                        visible = selectedTab == MainTab.SERVERS && !settingsOpen,
                         flagStyle = uiSettings.flagStyle,
-                        onRefresh = onRefresh,
-                        onAutoRefresh = onAutoRefresh,
+                        onUpdate = onUpdateSubscription,
+                        onPing = onPingServers,
+                        onSelectSubscription = onSelectSubscription,
+                        onAddSubscription = onAddSubscription,
+                        onDeleteSubscription = onDeleteSubscription,
                         onSelect = onSelect,
-                    )
-                    MainTab.DEVICES -> DevicesScreen(
-                        state = devices,
-                        tunnelUp = tunnelStatus.state == TunnelState.UP,
-                        visible = selectedTab == MainTab.DEVICES && !settingsOpen,
-                        onRefresh = onRefreshDevices,
-                        onAutoRefresh = onAutoRefreshDevices,
-                        onCreateDevice = onCreateDevice,
-                        onRename = onRenameDevice,
-                        onToggleDevice = onToggleDevice,
-                        onDeleteDevice = onDeleteDevice,
-                        loadDeviceConfig = onDeviceConfig,
-                        onOpenHome = onOpenHome,
                     )
                     MainTab.STATS -> {
                         // Collected in the branch, not the shell's top: the flow ticks once
@@ -459,10 +421,13 @@ private fun MainPagerStrip(
                         onChange = onUiSettingsChange,
                         scrollState = interfaceScroll,
                     )
-                    else -> PlaceholderScreen(
-                        title = stringResource(category.label),
-                        icon = category.icon,
+                    SettingsCategory.CONNECTION -> ConnectionScreen(
+                        connection = connection,
+                        subscriptions = subscriptions,
+                        onChangeConnection = onChangeConnection,
+                        onToggleAutoUpdate = onToggleAutoUpdate,
                     )
+                    SettingsCategory.ABOUT -> AboutScreen(coreVersion = coreVersion)
                 }
             }
         }

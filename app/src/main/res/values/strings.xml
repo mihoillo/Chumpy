@@ -8,8 +8,6 @@
     <string name="greeting_night">Good night</string>
 
     <!-- Home -->
-    <string name="home_connect">Connect</string>
-    <string name="home_disconnect">Disconnect</string>
     <string name="home_state_up">Connected</string>
     <string name="home_state_down">Not connected</string>
     <string name="home_state_connecting">Connecting…</string>
@@ -17,64 +15,53 @@
     <string name="home_ping_ms">%1$d ms</string>
     <string name="home_value_unknown">Unknown</string>
     <string name="home_value_pending">…</string>
-    <string name="home_value_shrug">¯\\_(ツ)_/¯</string>
-    <string name="home_value_hidden">Hidden</string>
 
     <!-- Navigation -->
     <string name="nav_home">Home</string>
     <string name="nav_servers">Servers</string>
-    <string name="nav_devices">Devices</string>
     <string name="nav_stats">Stats</string>
     <string name="nav_settings">Settings</string>
     <string name="nav_back">Back</string>
 
     <!-- Servers -->
-    <string name="servers_title">Servers</string>
-    <string name="servers_loading">Loading servers…</string>
-    <string name="servers_offline">Offline</string>
     <string name="servers_selected">Selected</string>
-    <string name="servers_selecting">Updating…</string>
-    <string name="servers_auto">Auto</string>
-    <string name="servers_auto_via">via %1$s</string>
-    <string name="servers_xray">Xray</string>
-    <string name="servers_total">Total: %1$d</string>
-    <string name="servers_available">Online: %1$d</string>
+    <string name="servers_total">Servers: %1$d</string>
+    <string name="servers_online">Reachable: %1$d</string>
     <string name="servers_ping_ms">%1$d ms</string>
-    <string name="servers_refresh_failed">Couldn\'t refresh servers: %1$s</string>
-    <string name="servers_connect_network">Connect to Aurora network</string>
+    <string name="servers_offline">unreachable</string>
+    <string name="servers_empty_title">No servers</string>
+    <string name="servers_empty_hint">Pull down to measure them, or update the subscription.</string>
+    <string name="servers_pinging">Measuring…</string>
 
-    <!-- Devices -->
-    <string name="devices_action_new">New device</string>
-    <string name="devices_action_connect">Connect</string>
-    <string name="devices_action_rename">Rename</string>
-    <string name="devices_action_config">Config</string>
-    <string name="devices_action_enable">Enable</string>
-    <string name="devices_action_disable">Disable</string>
-    <string name="devices_online">Online: %1$d</string>
-    <string name="devices_total">Total: %1$d</string>
-    <string name="devices_traffic">↓ %1$s · ↑ %2$s</string>
-    <string name="devices_cancel">Cancel</string>
-    <string name="devices_delete_title">Delete this device?</string>
-    <string name="devices_delete_text">\"%1$s\" will lose access to the network.</string>
-    <string name="devices_delete_confirm">Delete</string>
-    <string name="devices_rename_title">Rename device</string>
-    <string name="devices_rename_field">Name</string>
-    <string name="devices_rename_confirm">Rename</string>
-    <string name="devices_new_confirm">Add</string>
-    <string name="devices_config_title">Config</string>
-    <string name="devices_config_load_failed">Couldn\'t load the config. Check the connection.</string>
-    <string name="devices_config_load_retry">Retry</string>
-    <string name="devices_config_done">Done</string>
-    <string name="devices_config_copy">Copy</string>
-    <string name="devices_config_download">Download</string>
-    <string name="devices_refresh_failed">Couldn\'t refresh devices: %1$s</string>
+    <!-- Subscriptions -->
+    <string name="subscription_update_failed">Couldn\'t update the subscription: %1$s</string>
+    <string name="subscription_update">Update subscription</string>
+    <string name="subscription_expand">Switch subscription</string>
+    <string name="subscription_add">Add subscription</string>
+    <string name="subscription_add_confirm">Add</string>
+    <string name="subscription_cancel">Cancel</string>
+    <string name="subscription_url_field">Subscription URL</string>
+    <string name="subscription_name_field">Name (optional)</string>
+    <string name="subscription_none">No subscription</string>
+    <string name="subscription_traffic">↓ %1$s · ↑ %2$s</string>
+    <string name="subscription_of_total">%1$s of %2$s</string>
+    <string name="subscription_expires">expires %1$s</string>
+    <string name="subscription_updated">updated %1$s</string>
+    <string name="subscription_delete_title">Delete this subscription?</string>
+    <string name="subscription_delete_text">\"%1$s\" and all of its servers will be removed from Aurora.</string>
+    <string name="subscription_delete_confirm">Delete</string>
 
     <!-- Welcome (first run) -->
     <string name="welcome_title">Welcome to Aurora</string>
-    <string name="welcome_subtitle">Import your WireGuard config to get started.</string>
-    <string name="welcome_import">Import config</string>
-    <string name="welcome_import_failed">Couldn\'t import config: %1$s</string>
-    <string name="welcome_invalid_config">this doesn\'t look like a WireGuard config</string>
+    <string name="welcome_subtitle">Add a subscription to get started.</string>
+    <string name="welcome_add">Add subscription</string>
+    <string name="welcome_add_failed">Couldn\'t add the subscription: %1$s</string>
+    <string name="welcome_import_link">Paste a link instead</string>
+    <string name="import_link_title">Import a server</string>
+    <string name="import_paste_field">Server link or WireGuard config</string>
+    <string name="import_confirm">Import</string>
+    <string name="import_failed">Couldn\'t import: %1$s</string>
+    <string name="import_nothing_new">Nothing new to import</string>
 
     <!-- Settings -->
     <string name="settings_interface">Interface</string>
@@ -118,6 +105,20 @@
     <string name="settings_classic_navbar_hint">A full-width bar along the bottom instead of floating pills</string>
     <string name="settings_small_screen_forced_on">Small screen layout forced on. Long-tap to switch</string>
     <string name="settings_small_screen_forced_off">Small screen layout forced off. Long-tap to switch</string>
+
+    <!-- Connection settings -->
+    <string name="settings_routing">Routing</string>
+    <string name="settings_routing_global">Global</string>
+    <string name="settings_routing_global_hint">Everything but the local network goes through the tunnel</string>
+    <string name="settings_routing_ru">Bypass RU</string>
+    <string name="settings_routing_ru_hint">Russian sites and addresses go direct, the rest through the tunnel</string>
+    <string name="settings_test_url">Delay test URL</string>
+    <string name="settings_test_url_hint">Fetched through every server to measure the real ping</string>
+    <string name="settings_subscriptions">Subscriptions</string>
+    <string name="settings_auto_update_hint">Refreshes in the background on the panel\'s own schedule</string>
+    <string name="settings_about_core">Xray core</string>
+    <string name="settings_about_core_unknown">not running yet</string>
+    <string name="settings_about_hint">Aurora — a client for Xray-based subscriptions</string>
 
     <!-- Fonts -->
     <string name="fonts_system">System</string>
@@ -167,19 +168,22 @@
     <string name="stats_peak">Peak %1$s</string>
     <string name="stats_loss_percent">%1$d%%</string>
     <string name="stats_loss_warning">Packet loss too high: %1$d%%</string>
-    <string name="stats_probes_caption">A probe every 5 s, averaged per 15 s</string>
+    <string name="stats_probes_caption">A probe every 15 s, averaged per 15 s</string>
     <string name="stats_waiting">Waiting for data…</string>
     <string name="stats_no_data">No data</string>
     <string name="stats_frozen_from">Stats from %1$s</string>
     <string name="stats_week">This week</string>
     <string name="stats_week_total">Total %1$s</string>
 
-    <!-- Tunnel errors (shown by the :tunnel process) -->
-    <string name="error_no_config">No config imported</string>
+    <!-- Notifications + tunnel errors (shown by the :core process) -->
+    <string name="notif_channel_vpn">VPN connection</string>
+    <string name="notif_channel_vpn_desc">The ongoing connection status</string>
+    <string name="notif_connected">Connected · %1$s</string>
+    <string name="notif_connecting">Connecting…</string>
+    <string name="notif_disconnected">Disconnected</string>
+    <string name="notif_profile_unknown">unknown server</string>
+    <string name="error_no_config">No server selected</string>
     <string name="error_vpn_not_authorized">VPN permission was not granted</string>
-    <string name="error_dns_resolution">Couldn\'t resolve server %1$s</string>
-    <string name="error_unable_to_start_vpn">Couldn\'t start the VPN service</string>
     <string name="error_tun_creation">Couldn\'t create the VPN interface. Is another VPN set to always-on?</string>
-    <string name="error_backend">Tunnel error: %1$s</string>
     <string name="error_unknown">Something went wrong</string>
 </resources>

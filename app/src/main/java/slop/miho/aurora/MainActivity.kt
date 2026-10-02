@@ -30,25 +30,30 @@ class MainActivity : ComponentActivity() {
             val viewModel: MainViewModel = viewModel()
             val settings by viewModel.settings.collectAsStateWithLifecycle()
             AuroraTheme(settings = settings) {
-                val profile by viewModel.profile.collectAsStateWithLifecycle()
 
                 Surface(color = MaterialTheme.colorScheme.surface) {
                     val motion = MaterialTheme.motionScheme
+                    // setupDone stays null while the database answers for the first time:
+                    // the app holds on the theme until it knows which screen to show.
+                    val setupDone by viewModel.setupDone.collectAsStateWithLifecycle()
                     AnimatedContent(
-                        targetState = profile != null,
+                        targetState = setupDone,
                         transitionSpec = {
                             (fadeIn(motion.slowEffectsSpec()) + scaleIn(motion.slowSpatialSpec(), initialScale = 0.92f))
                                 .togetherWith(fadeOut(motion.fastEffectsSpec()))
                         },
                         label = "onboarding",
                     ) { onboarded ->
-                        if (onboarded) {
+                        if (onboarded == true) {
                             MainShell(viewModel)
-                        } else {
+                        } else if (onboarded == false) {
                             // No wallpaper here — the bars answer to the theme alone. The
                             // main shell takes over the window the moment it composes.
                             SystemBarsIconsDark(dark = LocalDarkTheme.current)
-                            WelcomeScreen(onImport = viewModel::importConfig)
+                            WelcomeScreen(
+                                onAddSubscription = viewModel::addSubscription,
+                                onImport = viewModel::addManualProfiles,
+                            )
                         }
                     }
                 }

@@ -13,7 +13,6 @@ interface PillDestination {
 enum class MainTab(override val icon: Int, override val label: Int) : PillDestination {
     HOME(R.drawable.ic_home, R.string.nav_home),
     SERVERS(R.drawable.ic_servers, R.string.nav_servers),
-    DEVICES(R.drawable.ic_devices, R.string.nav_devices),
     STATS(R.drawable.ic_stats, R.string.nav_stats),
 }
 

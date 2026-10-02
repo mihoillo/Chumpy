@@ -26,10 +26,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -787,4 +789,201 @@ private fun TriangleTile(pressed: Boolean) {
         color = container,
         modifier = Modifier.size(48.dp),
     ) {}
+}
+
+/**
+ * The "Connection" settings page. One screen, three sections: how traffic is routed
+ * (everything through the tunnel, or the Russian sites and addresses spared), the URL the
+ * real ping measurements fetch through every server, and per-subscription background
+ * refresh. Same grouped-list language as the interface page.
+ */
+@Composable
+fun ConnectionScreen(
+    connection: slop.miho.aurora.data.ConnectionSettings,
+    subscriptions: List<slop.miho.aurora.db.SubscriptionEntity>,
+    onChangeConnection: ((slop.miho.aurora.data.ConnectionSettings) -> slop.miho.aurora.data.ConnectionSettings) -> Unit,
+    onToggleAutoUpdate: (String, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scrollState = rememberScrollState()
+    val contentUnderBar by remember(scrollState) {
+        derivedStateOf { scrollState.canScrollForward || scrollState.canScrollBackward }
+    }
+    val contentReachesBar by rememberContentUnderBar(scrollState)
+    ReportBarCoverage(contentUnderBar, underlaid = contentReachesBar)
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .screenPadding()
+            .verticalScroll(scrollState)
+            .padding(
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp,
+                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                    FloatingBottomBarReservedHeight,
+            ),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        SettingsGroup(
+            {
+                IconChoiceRow(
+                    title = stringResource(R.string.settings_routing),
+                    options = listOf(
+                        IconChoice(
+                            R.drawable.ic_public,
+                            R.string.settings_routing_global,
+                            slop.miho.aurora.xray.RoutingMode.GLOBAL,
+                        ),
+                        IconChoice(
+                            R.drawable.ic_public_off,
+                            R.string.settings_routing_ru,
+                            slop.miho.aurora.xray.RoutingMode.RU_BYPASS,
+                        ),
+                    ),
+                    selected = connection.routingMode,
+                    onSelect = { mode ->
+                        onChangeConnection { it.copy(routingMode = mode) }
+                    },
+                )
+            },
+        )
+        SettingsGroup(
+            {
+                // The supporting line under the choice retells the selected mode's story.
+                val hint = when (connection.routingMode) {
+                    slop.miho.aurora.xray.RoutingMode.GLOBAL -> stringResource(R.string.settings_routing_global_hint)
+                    slop.miho.aurora.xray.RoutingMode.RU_BYPASS -> stringResource(R.string.settings_routing_ru_hint)
+                }
+                PlainRow(
+                    title = stringResource(R.string.settings_routing),
+                    supporting = hint,
+                )
+            },
+        )
+        SettingsGroup(
+            {
+                TestUrlRow(
+                    value = connection.delayTestUrl,
+                    onChange = { url -> onChangeConnection { it.copy(delayTestUrl = url) } },
+                )
+            },
+        )
+        if (subscriptions.isNotEmpty()) {
+            SettingsGroup(
+                *subscriptions.map { subscription ->
+                    @Composable {
+                        ToggleRow(
+                            title = subscription.name.ifEmpty { subscription.url },
+                            supporting = stringResource(R.string.settings_auto_update_hint),
+                            icon = R.drawable.ic_clock,
+                            checked = subscription.autoUpdate,
+                            onChange = { enabled ->
+                                onToggleAutoUpdate(subscription.id, enabled)
+                            },
+                        )
+                    }
+                }.toTypedArray(),
+            )
+        }
+    }
+}
+
+/** The row that edits the delay test URL; committed on every keystroke, trimmed at the end. */
+@Composable
+private fun TestUrlRow(
+    value: String,
+    onChange: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.settings_test_url),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_test_url_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = value,
+            onValueChange = { onChange(it) },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+        )
+    }
+}
+
+/** A plain text row: a title with a supporting line, no icon, no interaction. */
+@Composable
+private fun PlainRow(
+    title: String,
+    supporting: String?,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        if (supporting != null) {
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * The "About" page: what Aurora is, and which Xray core build sits under it. The version
+ * only exists once the core has booted in its own process; before that, the row says so.
+ */
+@Composable
+fun AboutScreen(
+    coreVersion: String?,
+    modifier: Modifier = Modifier,
+) {
+    val scrollState = rememberScrollState()
+    val contentUnderBar by remember(scrollState) {
+        derivedStateOf { scrollState.canScrollForward || scrollState.canScrollBackward }
+    }
+    val contentReachesBar by rememberContentUnderBar(scrollState)
+    ReportBarCoverage(contentUnderBar, underlaid = contentReachesBar)
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .screenPadding()
+            .verticalScroll(scrollState)
+            .padding(
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp,
+                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                    FloatingBottomBarReservedHeight,
+            ),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        SettingsGroup(
+            {
+                PlainRow(
+                    title = stringResource(R.string.app_name),
+                    supporting = stringResource(R.string.settings_about_hint),
+                )
+            },
+            {
+                PlainRow(
+                    title = stringResource(R.string.settings_about_core),
+                    supporting = coreVersion
+                        ?: stringResource(R.string.settings_about_core_unknown),
+                )
+            },
+        )
+    }
 }
