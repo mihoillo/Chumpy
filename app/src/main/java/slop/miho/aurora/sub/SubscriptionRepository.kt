@@ -6,7 +6,9 @@ import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequest
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkRequest
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +48,9 @@ class SubscriptionRepository(
     private val profiles = db.profileDao()
 
     fun subscriptions(): Flow<List<SubscriptionEntity>> = subscriptions.all()
+
+    /** The manual (subscription-less) profile count, as a flow — the setup gate watches it. */
+    val manualProfileCount: Flow<Int> = profiles.manualCount()
 
     fun profilesOf(subscriptionId: String?): Flow<List<ProfileEntity>> =
         profiles.bySubscription(subscriptionId)
@@ -219,7 +224,7 @@ class SubscriptionRepository(
         val request = PeriodicWorkRequestBuilder<SubscriptionUpdateWorker>(hours, TimeUnit.HOURS)
             .setInputData(workDataOf(SubscriptionUpdateWorker.KEY_SUBSCRIPTION_ID to subscription.id))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-            .setBackoffCriteria(BackoffPolicy.LINEAR, PeriodicWorkRequestBuilder.MIN_BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
+            .setBackoffCriteria(BackoffPolicy.LINEAR, WorkRequest.MIN_BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
             .build()
         WorkManager.getInstance(context)
             .enqueueUniquePeriodicWork(WORK_PREFIX + subscription.id, ExistingPeriodicWorkPolicy.UPDATE, request)

@@ -77,6 +77,9 @@ class AuroraVpnService : VpnService() {
         override fun measureDelay(configJson: String?, testUrl: String?): Long =
             XrayCore.measureOutboundDelay(configJson.orEmpty(), testUrl.orEmpty())
 
+        override fun measureLiveDelay(testUrl: String?): Long =
+            XrayCore.measureLiveDelay(testUrl.orEmpty())
+
         override fun coreVersion(): String = XrayCore.coreVersion()
 
         override fun registerCallback(callback: ITunnelCallback?) {

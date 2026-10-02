@@ -37,7 +37,9 @@ class SubscriptionUpdateWorker(
         val subscription = repository.subscriptionById(id)
             ?: return Result.success() // deleted since the job was scheduled
         if (!subscription.autoUpdate) return Result.success()
-        if (isStopped) return Result.stop()
+        // Stopped (e.g. constraints dropped): success rather than retry — the periodic
+        // schedule brings the next refresh on its own.
+        if (isStopped) return Result.success()
 
         return repository.updateSubscription(id).fold(
             onSuccess = { Result.success() },

@@ -1,85 +1,72 @@
 package slop.miho.aurora.ui
 
 import android.app.Application
-import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.wireguard.config.BadConfigException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import slop.miho.aurora.AuroraApp
+import slop.miho.aurora.Graph
 import slop.miho.aurora.R
+import slop.miho.aurora.core.CoreConfigFile
 import slop.miho.aurora.core.TunnelClient
 import slop.miho.aurora.core.TunnelState
 import slop.miho.aurora.core.TunnelStatus
-import slop.miho.aurora.data.BackendApi
-import slop.miho.aurora.data.BackendAutoExit
-import slop.miho.aurora.data.BackendDevice
-import slop.miho.aurora.data.BackendExit
-import slop.miho.aurora.data.BackendCache
-import slop.miho.aurora.data.BackendSession
-import slop.miho.aurora.data.BackendSnapshot
+import slop.miho.aurora.data.ConnectionSettings
+import slop.miho.aurora.data.ConnectionStore
 import slop.miho.aurora.data.DailyTraffic
 import slop.miho.aurora.data.DailyTrafficStore
-import slop.miho.aurora.data.DevicesCache
-import slop.miho.aurora.data.ProfileStore
-import slop.miho.aurora.data.ServersCache
 import slop.miho.aurora.data.SettingsStore
 import slop.miho.aurora.data.UiSettings
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
-
-data class Profile(val name: String?)
+import slop.miho.aurora.db.ProfileEntity
+import slop.miho.aurora.db.SubscriptionEntity
+import slop.miho.aurora.sub.SubscriptionRepository
+import slop.miho.aurora.xray.RoutingMode
+import slop.miho.aurora.xray.XrayConfigBuilder
 
 /** Home screen extras: everything besides the tunnel status itself. */
 data class HomeUiState(
-    val deviceName: String? = null,
-    val localIp: String? = null,
-    val exitLabel: String? = null,
-    /** Round-trip to the panel, refreshed every 15 s while connected. */
+    /** The active subscription's name — the "device" chip's replacement. */
+    val subscriptionName: String? = null,
+    /** The selected profile's remark — the exit chip's replacement. */
+    val profileLabel: String? = null,
+    /** Round-trip through the running tunnel, refreshed every 15 s while connected. */
     val pingMillis: Long? = null,
     /** Wall-clock millis of the last transition to UP; null while down. */
     val uptimeStartMillis: Long? = null,
-    /** The recent loss, but only once it crosses the warning threshold — null means the
-     *  tunnel is healthy (or nothing has been measured yet), and the chip stays hidden. */
+    /** The recent failed probes, but only once they cross the warning threshold — null
+     *  means the tunnel is healthy (or nothing has been measured yet), and the chip stays
+     *  hidden. */
     val recentLossPercent: Float? = null,
 )
 
+/** The servers screen's list: the selected subscription's profiles, plus the transient bits. */
 data class ServersUiState(
-    val exits: List<BackendExit> = emptyList(),
-    val auto: BackendAutoExit? = null,
-    val currentExitId: String? = null,
-    val actualExitId: String? = null,
-    val exitIp: String? = null,
-    val isLoading: Boolean = false,
-    val isRefreshing: Boolean = false,
-    val isSelecting: Boolean = false,
+    val profiles: List<ProfileEntity> = emptyList(),
+    val selectedProfileId: String? = null,
+    /** Whether a real-ping sweep over the list is running (the pull-to-refresh action). */
+    val isPinging: Boolean = false,
+    /** Whether the subscription is being fetched right now (the update button). */
+    val isUpdating: Boolean = false,
     val error: String? = null,
 )
 
-data class DevicesUiState(
-    val devices: List<BackendDevice> = emptyList(),
-    val meId: Int? = null,
-    val subnetName: String? = null,
-    val subnetCidr: String? = null,
-    /** Whether the panel lets this account create devices — live fetches only, never cached. */
-    val trusted: Boolean = false,
-    val isLoading: Boolean = false,
-    val isRefreshing: Boolean = false,
-    val error: String? = null,
-)
-
-/** One point of the traffic graph: a 15-second bucket's average rates, with the WireGuard
+/** One point of the traffic graph: a 15-second bucket's average rates, with the core's
  *  counters as of its end. The averages keep the points rare while the sampling underneath
  *  stays once a second — the last bucket keeps updating live until it settles. */
 data class TrafficSample(
@@ -90,62 +77,112 @@ data class TrafficSample(
     val upBps: Long,
 )
 
-/** One 15-second window of loss probes: how many were sent, how many never completed. */
+/** One 15-second window of connectivity probes: how many were sent, how many never completed. */
 data class LossBucket(val atMillis: Long, val sent: Int, val lost: Int)
 
 /** The stats screen's live history, kept in memory only: the counters are sampled once a
- *  second and folded into 15-second buckets, the probes run every five and land in the same
- *  buckets, and both trim to the graph window. Disconnecting freezes the history in place
- *  instead of clearing — the graphs stay on screen, and [frozenAtMillis] records when the
- *  data stopped moving. */
+ *  second and folded into 15-second buckets, the probes run every fifteen and land in the
+ *  same buckets, and both trim to the graph window. Disconnecting freezes the history in
+ *  place instead of clearing — the graphs stay on screen, and [frozenAtMillis] records
+ *  when the data stopped moving. */
 data class StatsUiState(
     val samples: List<TrafficSample> = emptyList(),
     val buckets: List<LossBucket> = emptyList(),
-    /** The latest WireGuard counters — the frozen connection's total transfer. */
+    /** The latest core counters — the frozen connection's total transfer. */
     val rxTotal: Long = 0,
     val txTotal: Long = 0,
     /** When the graphs froze — the moment the tunnel went down; null while connected. */
     val frozenAtMillis: Long? = null,
     /** How long the frozen connection lasted; null until a connection ends. */
     val connectedMillis: Long? = null,
-    /** The recent loss, but only once it crosses the warning threshold — the red chip's
-     *  trigger on both this screen and home. Null means no warning. */
+    /** The recent failed probes, but only once they cross the warning threshold — the red
+     *  chip's trigger on both this screen and home. Null means no warning. */
     val recentLossPercent: Float? = null,
     /** The week's daily totals for the seven-bar chart, oldest first, persisted between runs. */
     val week: List<DailyTraffic> = emptyList(),
 )
 
+/**
+ * The one view model behind the main screen: subscriptions and their profiles (Room,
+ * observed live), the selected server and routing mode, the tunnel connection itself, and
+ * the measurement loops (real pings, traffic counters, loss probes) that feed Home and
+ * Stats.
+ */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<Application>()
-    // The app process owns the one tunnel link and binds it for its whole lifetime; the view
-    // model only drives it.
     private val tunnelClient = AuroraApp.tunnelClient
-    private val backendApi = BackendApi()
-    private val refreshMutex = Mutex()
-    // Separate lock so a slow devices fetch never holds the servers refresh (and vice versa).
-    private val devicesMutex = Mutex()
+    private val repository: SubscriptionRepository = Graph.subscriptions
 
-    private val _profile = MutableStateFlow(
-        if (ProfileStore.hasProfile(application)) Profile(null) else null,
-    )
-    val profile: StateFlow<Profile?> = _profile.asStateFlow()
+    /** UI preferences; every change is persisted immediately. */
+    val settings: StateFlow<UiSettings> = SettingsStore.settings(app)
 
-    private val _servers = MutableStateFlow(
-        BackendCache.readServers(application)?.let(::serversUiState) ?: ServersUiState(),
-    )
+    fun updateSettings(transform: (UiSettings) -> UiSettings) {
+        SettingsStore.update(app, transform)
+    }
+
+    /** Connection preferences: selection, routing mode, test URL. */
+    val connection: StateFlow<ConnectionSettings> = ConnectionStore.settings(app)
+
+    fun updateConnection(transform: (ConnectionSettings) -> ConnectionSettings) {
+        val before = connection.value
+        ConnectionStore.update(app, transform)
+        val after = connection.value
+        // A routing change rewrites the running config; the tunnel reloads in place.
+        if (before.routingMode != after.routingMode && tunnelStatus.value.state == TunnelState.UP) {
+            applyConfigAndConnect()
+        }
+    }
+
+    val tunnelStatus: StateFlow<TunnelStatus> = tunnelClient.status
+
+    /** The Xray core version string, for the about screen. */
+    private val _coreVersion = MutableStateFlow<String?>(null)
+    val coreVersion: StateFlow<String?> = _coreVersion.asStateFlow()
+
+    // ------------------------------------------------------------ subscriptions
+
+    /** Every subscription, oldest first; the servers screen's dropdown list. */
+    val subscriptions: StateFlow<List<SubscriptionEntity>> =
+        repository.subscriptions()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** The subscription whose profiles the servers screen shows. */
+    val selectedSubscriptionId: StateFlow<String?> =
+        combine(subscriptions, connection) { subs, conn ->
+            // Deleted while selected: fall back to the first, or to nothing at all.
+            conn.selectedSubscriptionId?.takeIf { id -> subs.any { it.id == id } }
+                ?: subs.firstOrNull()?.id
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val _updatingSubscriptionId = MutableStateFlow<String?>(null)
+
+    /** The selected subscription's own row, for the card. */
+    val selectedSubscription: StateFlow<SubscriptionEntity?> =
+        combine(subscriptions, selectedSubscriptionId) { subs, id -> subs.firstOrNull { it.id == id } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val _servers = MutableStateFlow(ServersUiState())
     val servers: StateFlow<ServersUiState> = _servers.asStateFlow()
 
-    private val _home = MutableStateFlow(
-        BackendCache.read(application)?.let(::homeUiState) ?: HomeUiState(),
-    )
-    val home: StateFlow<HomeUiState> = _home.asStateFlow()
+    /** The profile a connect uses, resolved against the current list. */
+    val selectedProfile: StateFlow<ProfileEntity?> =
+        combine(_servers, connection) { servers, conn ->
+            servers.profiles.firstOrNull { it.id == conn.selectedProfileId }
+                ?: servers.profiles.firstOrNull()
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** The subnet's peers, seeded from the cache (online status never survives a disk round
-     *  trip — read back, every device starts offline) and refreshed live while connected. */
-    private val _devices = MutableStateFlow(
-        BackendCache.readDevices(application)?.let(::devicesUiState) ?: DevicesUiState(),
-    )
-    val devices: StateFlow<DevicesUiState> = _devices.asStateFlow()
+    /**
+     * The setup gate: true once anything connectable exists — a subscription with servers
+     * or a manually imported profile. Null while the first read is still in flight.
+     */
+    val setupDone: StateFlow<Boolean?> =
+        combine(subscriptions, repository.manualProfileCount) { subs, manual ->
+            subs.isNotEmpty() || manual > 0
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Home screen extras: identity chips, ping, uptime, loss. */
+    private val _home = MutableStateFlow(HomeUiState())
+    val home: StateFlow<HomeUiState> = _home.asStateFlow()
 
     /**
      * The stats screen's live history, kept in memory only. Declared before the init block:
@@ -156,8 +193,290 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _stats = MutableStateFlow(StatsUiState(week = DailyTrafficStore.readWeek(app)))
     val stats: StateFlow<StatsUiState> = _stats.asStateFlow()
 
-    private var trafficJob: kotlinx.coroutines.Job? = null
-    private var probeJob: kotlinx.coroutines.Job? = null
+    /**
+     * Nothing has a profile until something is imported; the welcome screen watches this
+     * gate and the main shell never renders before it opens.
+     */
+    private fun observeProfiles() {
+        viewModelScope.launch {
+            selectedSubscriptionId
+                .flatMapLatest { id -> repository.profilesOf(id) }
+                .combine(connection) { profiles, conn ->
+                    val selected = profiles.firstOrNull { it.id == conn.selectedProfileId }
+                    // A selection that no longer exists falls back to the list's head —
+                    // persisted the moment it is made, so it survives restarts.
+                    if (selected == null && profiles.isNotEmpty()) {
+                        ConnectionStore.update(app) { it.copy(selectedProfileId = profiles.first().id) }
+                    }
+                    profiles
+                }
+                .collect { profiles ->
+                    _servers.update { state ->
+                        state.copy(
+                            profiles = profiles,
+                            selectedProfileId = profiles.firstOrNull { it.id == connection.value.selectedProfileId }?.id
+                                ?: profiles.firstOrNull()?.id,
+                        )
+                    }
+                    // A brand-new list with nothing pinged yet gets one silent sweep, so
+                    // the screen opens with answers instead of question marks.
+                    if (profiles.isNotEmpty() && profiles.all { it.testDelayMillis == null }) {
+                        pingServers()
+                    }
+                }
+        }
+    }
+
+    init {
+        observeProfiles()
+        observeTunnelForHome()
+        observeTunnelForStats()
+        observeIdentityChips()
+        viewModelScope.launch { _coreVersion.value = tunnelClient.coreVersion() }
+    }
+
+    /** Home's identity chips follow the selection and the selected subscription. */
+    private fun observeIdentityChips() {
+        viewModelScope.launch {
+            combine(selectedSubscription, selectedProfile) { subscription, profile ->
+                _home.update {
+                    it.copy(
+                        subscriptionName = subscription?.name,
+                        profileLabel = profile?.let { p -> p.remarks.ifEmpty { p.server } },
+                    )
+                }
+            }.collect { }
+        }
+    }
+
+    // ------------------------------------------------------------ tunnel control
+
+    /**
+     * Connects (or reloads, if already up) with the selected profile and the selected
+     * routing mode. The caller is responsible for the VPN consent; the service expects it.
+     */
+    fun connect() {
+        if (selectedProfile.value == null) return
+        applyConfigAndConnect()
+    }
+
+    fun disconnect() = tunnelClient.disconnect()
+
+    private fun applyConfigAndConnect() {
+        val profile = selectedProfile.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val config = XrayConfigBuilder.buildFull(profile, connection.value.routingMode)
+            CoreConfigFile.write(app, config, profile.remarks.ifEmpty { profile.server })
+            tunnelClient.connect()
+        }
+    }
+
+    /**
+     * Selects a server: persists the choice and, if the tunnel is up, reloads the running
+     * core with the new profile in place — the interface stays, the session does not drop.
+     */
+    fun selectProfile(id: String) {
+        if (_servers.value.selectedProfileId == id) return
+        ConnectionStore.update(app) { it.copy(selectedProfileId = id) }
+        if (tunnelStatus.value.state == TunnelState.UP) {
+            applyConfigAndConnect()
+        }
+    }
+
+    // ------------------------------------------------------------ subscriptions actions
+
+    /** Adds a subscription (the welcome screen and the dropdown's last row). */
+    fun addSubscription(url: String, name: String? = null, onDone: (String?) -> Unit = {}) {
+        viewModelScope.launch {
+            repository.addSubscription(url, name)
+                .onSuccess { sub ->
+                    ConnectionStore.update(app) { it.copy(selectedSubscriptionId = sub.id) }
+                    _servers.update { it.copy(error = null) }
+                    onDone(null)
+                }
+                .onFailure { error -> onDone(error.message ?: app.getString(R.string.error_unknown)) }
+        }
+    }
+
+    /** Refreshes the selected subscription (the card's update button). */
+    fun updateSelectedSubscription() {
+        val id = selectedSubscriptionId.value ?: return
+        updateSubscription(id)
+    }
+
+    fun updateSubscription(id: String) {
+        if (_updatingSubscriptionId.value != null) return
+        _updatingSubscriptionId.value = id
+        _servers.update { it.copy(isUpdating = true, error = null) }
+        viewModelScope.launch {
+            repository.updateSubscription(id)
+                .onSuccess { _servers.update { it.copy(isUpdating = false, error = null) } }
+                .onFailure { error ->
+                    _servers.update {
+                        it.copy(isUpdating = false, error = error.message ?: app.getString(R.string.error_unknown))
+                    }
+                }
+            _updatingSubscriptionId.value = null
+        }
+    }
+
+    /** Deletes a subscription and everything it brought in. */
+    fun deleteSubscription(id: String) {
+        viewModelScope.launch {
+            repository.deleteSubscription(id)
+            if (connection.value.selectedSubscriptionId == id) {
+                ConnectionStore.update(app) { it.copy(selectedSubscriptionId = null, selectedProfileId = null) }
+            }
+        }
+    }
+
+    /** Switches the servers screen to another subscription. */
+    fun selectSubscription(id: String) {
+        if (selectedSubscriptionId.value == id) return
+        ConnectionStore.update(app) { it.copy(selectedSubscriptionId = id, selectedProfileId = null) }
+        _servers.update { ServersUiState() }
+    }
+
+    /** The per-subscription auto-update toggle. */
+    fun setSubscriptionAutoUpdate(id: String, enabled: Boolean) {
+        viewModelScope.launch { repository.setSubscriptionAutoUpdate(id, enabled) }
+    }
+
+    /** Manual import: a link, a WireGuard .conf body, or a list of links. */
+    fun addManualProfiles(text: String, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            repository.addManualProfiles(text)
+                .onSuccess { count ->
+                    onDone(if (count == 0) app.getString(R.string.import_nothing_new) else null)
+                }
+                .onFailure { error -> onDone(error.message ?: app.getString(R.string.error_unknown)) }
+        }
+    }
+
+    // ------------------------------------------------------------ real pings
+
+    /**
+     * A real-ping sweep over the current list, one measurement core per profile in the
+     * ":core" process, a handful at a time. Pull-to-refresh on the servers screen is this;
+     * every profile's chip answers with its own number — or a dash, when the server is
+     * unreachable.
+     */
+    fun pingServers() {
+        val profiles = _servers.value.profiles
+        if (profiles.isEmpty() || _servers.value.isPinging) return
+        _servers.update { it.copy(isPinging = true) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val testUrl = connection.value.delayTestUrl
+            val semaphore = Semaphore(PING_CONCURRENCY)
+            val now = System.currentTimeMillis()
+            val jobs = profiles.map { profile ->
+                launch {
+                    semaphore.withPermit {
+                        val config = XrayConfigBuilder.buildTest(profile)
+                        val delay = tunnelClient.measureDelay(config, testUrl)
+                        if (currentCoroutineContext().isActive) {
+                            repository.setProfileDelay(profile.id, delay, now)
+                        }
+                    }
+                }
+            }
+            jobs.joinAllSafe()
+            _servers.update { it.copy(isPinging = false) }
+        }
+    }
+
+    private suspend fun List<Job>.joinAllSafe() {
+        forEach { runCatching { it.join() } }
+    }
+
+    /**
+     * Measures the selected server's delay right now — the servers screen's selected row
+     * and Home's chip share the result. Returns null when there is nothing to measure.
+     */
+    fun pingSelected() {
+        val profile = selectedProfile.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val delay = tunnelClient.measureDelay(
+                XrayConfigBuilder.buildTest(profile),
+                connection.value.delayTestUrl,
+            )
+            repository.setProfileDelay(profile.id, delay, System.currentTimeMillis())
+        }
+    }
+
+    // ------------------------------------------------------------ home + stats loops
+
+    /**
+     * Uptime and the 15-second live-delay loop live here. The same probe feeds the loss
+     * buckets: a probe that fails to fetch through the tunnel is a lost sample, the way
+     * the panel's TCP handshake used to be.
+     */
+    private fun observeTunnelForHome() {
+        viewModelScope.launch {
+            tunnelStatus
+                .distinctUntilChanged { old, new -> old.state == new.state }
+                .collect { status ->
+                    when (status.state) {
+                        TunnelState.UP -> {
+                            _home.update {
+                                it.copy(uptimeStartMillis = tunnelClient.connectedAtMillis() ?: System.currentTimeMillis())
+                            }
+                            startPingLoop()
+                        }
+
+                        else -> {
+                            pingJob?.cancel()
+                            _home.update {
+                                it.copy(pingMillis = null, uptimeStartMillis = null, recentLossPercent = null)
+                            }
+                        }
+                    }
+                }
+        }
+    }
+
+    private var pingJob: Job? = null
+
+    /**
+     * Runs the live probe every 15 s while the tunnel is up: each round refreshes Home's
+     * ping chip and lands in the stats screen's loss buckets. Coming into view restarts
+     * the loop from this moment, so the chip answers immediately.
+     */
+    fun refreshPing(showPending: Boolean = false) {
+        if (tunnelStatus.value.state != TunnelState.UP) return
+        if (showPending) _home.update { it.copy(pingMillis = null) }
+        startPingLoop()
+    }
+
+    private fun startPingLoop() {
+        pingJob?.cancel()
+        pingJob = viewModelScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(STATS_START_DELAY_MILLIS)
+            while (isActive && tunnelStatus.value.state == TunnelState.UP) {
+                val now = System.currentTimeMillis()
+                val delay = tunnelClient.measureLiveDelay(connection.value.delayTestUrl)
+                if (tunnelStatus.value.state == TunnelState.UP && delay != null) {
+                    if (delay >= 0) {
+                        _home.update { it.copy(pingMillis = delay) }
+                    } else {
+                        _home.update { it.copy(pingMillis = null) }
+                    }
+                    recordProbe(now, lost = delay < 0)
+                }
+                pacedDelay(
+                    if (appInForeground) PING_INTERVAL_MILLIS else BACKGROUND_PROBE_MILLIS,
+                )
+            }
+        }
+    }
+
+    // The stats session's bookkeeping.
+    private var sessionStartMillis = 0L
+
+    /** The day-bucket baselines: what has already been flushed out of the live counters. */
+    private var lastFlushedRx = 0L
+    private var lastFlushedTx = 0L
+    private var lastFlushAtMillis = 0L
 
     /**
      * Whether the app's UI is on screen, told by the activity's start/stop. The stats loops
@@ -173,153 +492,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * The stats session's bookkeeping, same initialization-order rule as the flows above:
-     * the collector writes [sessionStartMillis] synchronously from the constructor, so the
-     * field must exist before the init block runs.
-     */
-    private var sessionStartMillis = 0L
-
-    /** The day-bucket baselines: what has already been flushed out of the live counters. */
-    private var lastFlushedRx = 0L
-    private var lastFlushedTx = 0L
-    private var lastFlushAtMillis = 0L
-
-    /** UI preferences; every change is persisted immediately. Shared with the fonts screen's
-     *  activity, so its picks reach this flow too. */
-    val settings: StateFlow<UiSettings> = SettingsStore.settings(application)
-
-    fun updateSettings(transform: (UiSettings) -> UiSettings) {
-        SettingsStore.update(app, transform)
-    }
-
-    val tunnelStatus: StateFlow<TunnelStatus> = tunnelClient.status
-
-    init {
-        _profile.value = BackendCache.read(app)?.let { cached -> Profile(cached.profileName) } ?: _profile.value
-        observeTunnelForProfile()
-        observeTunnelForHome()
-        observeTunnelForDevices()
-        observeTunnelForStats()
-    }
-
-    /** Returns null on success, or a user-facing error message. */
-    suspend fun importConfig(uri: Uri): String? = withContext(Dispatchers.IO) {
-        try {
-            val resolver = app.contentResolver
-            val text = resolver.openInputStream(uri)?.use(::readLimited)?.decodeToString()
-                ?: return@withContext app.getString(R.string.welcome_invalid_config)
-            ProfileStore.save(app, text)
-            // A different peer may answer after the next connection, so drop the old identity.
-            BackendCache.clear(app)
-            _profile.value = Profile(null)
-            null
-        } catch (_: BadConfigException) {
-            app.getString(R.string.welcome_invalid_config)
-        } catch (e: Exception) {
-            e.message ?: app.getString(R.string.error_unknown)
-        }
-    }
-
-    fun connect() = tunnelClient.connect()
-
-    fun disconnect() = tunnelClient.disconnect()
-
-    /** Refresh only after the isolated tunnel is up, since the API lives on 10.0.0.0/16. */
-    private fun observeTunnelForProfile() {
-        viewModelScope.launch {
-            tunnelStatus
-                .distinctUntilChanged { old, new -> old.state == new.state }
-                .collect { status ->
-                    if (status.state == TunnelState.UP && _profile.value != null) {
-                        refreshServers()
-                    }
-                }
-        }
-    }
-
-    /** Uptime and the 15-second ping loop live here; the identity fields come from the cache. */
-    private fun observeTunnelForHome() {
-        viewModelScope.launch {
-            tunnelStatus
-                .distinctUntilChanged { old, new -> old.state == new.state }
-                .collect { status ->
-                    when (status.state) {
-                        TunnelState.UP -> {
-                            _home.update {
-                                it.copy(uptimeStartMillis = tunnelClient.connectedAtMillis() ?: System.currentTimeMillis())
-                            }
-                            startPingLoop()
-                        }
-                        else -> {
-                            pingJob?.cancel()
-                            _home.update {
-                                it.copy(pingMillis = null, uptimeStartMillis = null, recentLossPercent = null)
-                            }
-                        }
-                    }
-                }
-        }
-    }
-
-    private var pingJob: kotlinx.coroutines.Job? = null
-
-    /**
-     * Measures the ping right now and restarts the 15-second loop from this moment: Home
-     * asks for it on coming into view, and on a tap of the ping chip. [showPending] blanks
-     * the old value first, so a tap visibly answers with "…" until the new one lands.
-     */
-    fun refreshPing(showPending: Boolean = false) {
-        if (tunnelStatus.value.state != TunnelState.UP) return
-        if (showPending) _home.update { it.copy(pingMillis = null) }
-        startPingLoop()
-    }
-
-    private fun startPingLoop() {
-        pingJob?.cancel()
-        pingJob = viewModelScope.launch(Dispatchers.IO) {
-            while (isActive && tunnelStatus.value.state == TunnelState.UP) {
-                val ping = runCatching { backendApi.measurePingMillis() }.getOrNull()
-                if (tunnelStatus.value.state == TunnelState.UP) {
-                    _home.update { it.copy(pingMillis = ping) }
-                }
-                kotlinx.coroutines.delay(15_000)
-            }
-        }
-    }
-
-    private fun homeUiState(snapshot: BackendSnapshot) = HomeUiState(
-        deviceName = snapshot.deviceName,
-        localIp = snapshot.localIp,
-        exitLabel = snapshot.currentExitLabel,
-    )
-
-    /**
-     * Online is a moment's truth, and the only way to know it is through the tunnel: the
-     * moment the tunnel drops, every device falls offline in the UI — the last live fetch's
-     * flags would be stale fiction, presented as current.
-     */
-    private fun observeTunnelForDevices() {
-        viewModelScope.launch {
-            tunnelStatus
-                .distinctUntilChanged { old, new -> old.state == new.state }
-                .collect { status ->
-                    if (status.state != TunnelState.UP && _devices.value.devices.any { it.online }) {
-                        _devices.update { state ->
-                            state.copy(devices = state.devices.map { it.copy(online = false) })
-                        }
-                    }
-                }
-        }
-    }
-
-    /**
-     * The stats graphs' two feeds run only while the tunnel is up: the traffic counters are
-     * sampled every second (a local binder call, no network) and the panel is probed every
-     * five (a bare TCP handshake — WireGuard exposes no loss counter of its own). Both start
-     * with the tunnel, so the history has already filled by the time the screen is opened.
-     * Coming down does not clear anything: the graphs freeze where they stand, the freeze's
-     * timestamp and the connection's length are recorded for the screen's chips, and a new
-     * connection simply keeps appending — the trimming window sorts the old session out.
+     * The stats graphs' feeds run only while the tunnel is up: the traffic counters are
+     * sampled every second (a local binder call, no network) and the tunnel is probed
+     * every fifteen (the same live-delay measurement Home's chip uses). Both start with
+     * the tunnel, so the history has already filled by the time the screen is opened.
+     * Coming down does not clear anything: the graphs freeze where they stand, the
+     * freeze's timestamp and the connection's length are recorded for the screen's chips,
+     * and a new connection simply keeps appending — the trimming window sorts the old
+     * session out.
      */
     private fun observeTunnelForStats() {
         viewModelScope.launch {
@@ -332,11 +512,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 ?: System.currentTimeMillis()
                             _stats.update { it.copy(frozenAtMillis = null, connectedMillis = null) }
                             startTrafficLoop()
-                            startProbeLoop()
                         }
+
                         else -> {
                             trafficJob?.cancel()
-                            probeJob?.cancel()
                             // Only the first non-UP moment after a connection freezes the
                             // graphs; the states that follow (CONNECTING after a failure and
                             // such) must not restamp them.
@@ -356,28 +535,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * The traffic feed: samples WireGuard's counters once a second and folds the rates into
+     * The traffic feed: samples the core's counters once a second and folds the rates into
      * 15-second buckets — the graph's points are the averages, so they stay rare while the
-     * sampling underneath keeps its cadence, and the in-progress bucket keeps updating live
-     * until it settles. The day's bucket flushes at most once a minute; the exit flush in the
-     * finally block catches the session's tail — cancellation runs it too.
+     * sampling underneath keeps its cadence, and the in-progress bucket keeps updating
+     * live until it settles. The day's bucket flushes at most once a minute; the exit
+     * flush in the finally block catches the session's tail — cancellation runs it too.
      */
     private fun startTrafficLoop() {
         trafficJob?.cancel()
         trafficJob = viewModelScope.launch(Dispatchers.IO) {
-            // The previous sample the rates are differenced against; 0 until the first read.
             var lastAtMillis = 0L
             var lastRx = 0L
             var lastTx = 0L
-            // The bucket being averaged into: its start wall-clock, its sample count and the
-            // rate sums over it. At most one live point per bucket exists in the state.
             var bucketStart = 0L
             var bucketCount = 0
             var bucketDownSum = 0L
             var bucketUpSum = 0L
             try {
-                // The tunnel's first seconds are a handshake storm; let it settle before the
-                // stats begin, or the graphs open on a lie.
                 kotlinx.coroutines.delay(STATS_START_DELAY_MILLIS)
                 while (isActive && tunnelStatus.value.state == TunnelState.UP) {
                     val traffic = tunnelClient.trafficBytes()
@@ -418,15 +592,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 )
                             }
                         } else if (rx < lastRx || tx < lastTx) {
-                            // The counters went backwards: the tunnel reconnected under us and
+                            // The counters went backwards: the core reconnected under us and
                             // the counters restarted. Re-baseline without a point — the gap
                             // would otherwise read as a giant spike or a negative rate.
                         }
                         lastAtMillis = now
                         lastRx = rx
                         lastTx = tx
-                        // The day's bucket flushes at most once a minute; the finally block
-                        // below catches whatever the session moved after the last one.
                         if (now - lastFlushAtMillis >= DAILY_FLUSH_MILLIS) {
                             flushDailyTraffic(rx - lastFlushedRx, tx - lastFlushedTx)
                             lastFlushedRx = rx
@@ -439,9 +611,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             } finally {
-                // Cancellation runs this too: the loop's own thread, no races with the
-                // collector. The counters may already read as zeros by now, so the flush
-                // works off the last values the loop saw — never a fresh read.
                 if (lastAtMillis != 0L) {
                     flushDailyTraffic(lastRx - lastFlushedRx, lastTx - lastFlushedTx)
                 }
@@ -455,48 +624,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _stats.update { it.copy(week = week) }
     }
 
-    private fun startProbeLoop() {
-        probeJob?.cancel()
-        probeJob = viewModelScope.launch(Dispatchers.IO) {
-            // The same settling delay: the first seconds' losses are the handshake's, not
-            // the network's.
-            kotlinx.coroutines.delay(STATS_START_DELAY_MILLIS)
-            while (isActive && tunnelStatus.value.state == TunnelState.UP) {
-                val now = System.currentTimeMillis()
-                val lost = !backendApi.probeConnectivity()
-                if (tunnelStatus.value.state == TunnelState.UP) {
-                    val bucketStart = (now / PROBE_BUCKET_MILLIS) * PROBE_BUCKET_MILLIS
-                    _stats.update { state ->
-                        val buckets = state.buckets.toMutableList()
-                        val index = buckets.indexOfLast { it.atMillis == bucketStart }
-                        if (index >= 0) {
-                            val bucket = buckets[index]
-                            buckets[index] = bucket.copy(
-                                sent = bucket.sent + 1,
-                                lost = bucket.lost + if (lost) 1 else 0,
-                            )
-                        } else {
-                            buckets.add(LossBucket(bucketStart, 1, if (lost) 1 else 0))
-                        }
-                        // Every probe re-weighs the last two minutes: the warning chips on
-                        // the stats screen and home answer to this, not to the whole window.
-                        val warning = recentLoss(buckets)
-                        _home.update { it.copy(recentLossPercent = warning) }
-                        state.copy(
-                            buckets = trimLossBuckets(buckets),
-                            recentLossPercent = warning,
-                        )
-                    }
-                }
-                pacedDelay(
-                    if (appInForeground) PROBE_INTERVAL_MILLIS else BACKGROUND_PROBE_MILLIS,
-                )
+    /** One probe outcome lands in its 15-second bucket and re-weighs the warning window. */
+    private fun recordProbe(atMillis: Long, lost: Boolean) {
+        val bucketStart = (atMillis / PROBE_BUCKET_MILLIS) * PROBE_BUCKET_MILLIS
+        _stats.update { state ->
+            val buckets = state.buckets.toMutableList()
+            val index = buckets.indexOfLast { it.atMillis == bucketStart }
+            if (index >= 0) {
+                val bucket = buckets[index]
+                buckets[index] = bucket.copy(sent = bucket.sent + 1, lost = bucket.lost + if (lost) 1 else 0)
+            } else {
+                buckets.add(LossBucket(bucketStart, 1, if (lost) 1 else 0))
             }
+            val warning = recentLoss(buckets)
+            _home.update { it.copy(recentLossPercent = warning) }
+            state.copy(buckets = trimLossBuckets(buckets), recentLossPercent = warning)
         }
     }
 
-    /** The loss over the last [RECENT_LOSS_WINDOW_MILLIS] — null while nothing was probed,
-     *  and only set on the states once it crosses the warning threshold. */
+    /** The failed-probe share over the last [RECENT_LOSS_WINDOW_MILLIS] — null while
+     *  nothing was probed, and only set on the states once it crosses the threshold. */
     private fun recentLoss(buckets: List<LossBucket>): Float? {
         val cutoff = System.currentTimeMillis() - RECENT_LOSS_WINDOW_MILLIS
         val recent = buckets.filter { it.atMillis >= cutoff }
@@ -522,244 +669,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun devicesUiState(cache: DevicesCache) = DevicesUiState(
-        devices = cache.devices,
-        meId = cache.meId,
-        subnetName = cache.subnetName,
-        subnetCidr = cache.subnetCidr,
-    )
-
-    /** @param silent background refresh: no loading/refreshing state, the data just updates. */
-    fun refreshServers(silent: Boolean = false) {
-        viewModelScope.launch(Dispatchers.IO) {
-            refreshServersLocked(silent)
-        }
-    }
-
-    private suspend fun refreshServersLocked(silent: Boolean = false) = refreshMutex.withLock {
-        val hadData = _servers.value.exits.isNotEmpty() || _servers.value.auto != null
-        if (!silent) {
-            _servers.update { it.copy(isLoading = !hadData && it.error == null, isRefreshing = true, error = null) }
-        }
-        runCatching {
-            val session = backendApi.fetchSession()
-            val snapshot = backendApi.fetchHomeSnapshot()
-            val cache = buildCache(session, snapshot)
-
-            BackendCache.write(app, snapshot)
-            BackendCache.writeServers(app, cache)
-            _profile.value = Profile(snapshot.profileName)
-            _home.update { state ->
-                state.copy(
-                    deviceName = snapshot.deviceName ?: state.deviceName,
-                    localIp = snapshot.localIp ?: state.localIp,
-                    exitLabel = snapshot.currentExitLabel ?: state.exitLabel,
-                )
-            }
-            _servers.value = serversUiState(cache)
-        }.onSuccess {
-            _servers.update { it.copy(isLoading = false, isRefreshing = false, error = null) }
-            val cache = BackendCache.readServers(app)
-            refreshExitIpAsync(
-                expectedCurrentExitId = cache?.currentExitId,
-                expectedActualExitId = cache?.actualExitId,
-            )
-        }.onFailure { error ->
-            _servers.update {
-                it.copy(
-                    isLoading = false,
-                    isRefreshing = false,
-                    error = error.message ?: app.getString(R.string.error_unknown),
-                )
-            }
-        }
-    }
-
-    /** @param silent background refresh: no loading/refreshing state, the data just updates. */
-    fun refreshDevices(silent: Boolean = false) {
-        viewModelScope.launch(Dispatchers.IO) {
-            refreshDevicesLocked(silent)
-        }
-    }
-
-    private suspend fun refreshDevicesLocked(silent: Boolean = false) = devicesMutex.withLock {
-        val hadData = _devices.value.devices.isNotEmpty()
-        if (!silent) {
-            _devices.update { it.copy(isLoading = !hadData && it.error == null, isRefreshing = true, error = null) }
-        }
-        runCatching {
-            backendApi.fetchDevices()
-        }.onSuccess { fetched ->
-            // Everything but the online status outlives the run; the online flags stay in
-            // the in-memory state only.
-            BackendCache.writeDevices(
-                app,
-                DevicesCache(
-                    devices = fetched.devices,
-                    meId = fetched.meId,
-                    subnetName = fetched.subnetName,
-                    subnetCidr = fetched.subnetCidr,
-                    fetchedAtMillis = System.currentTimeMillis(),
-                ),
-            )
-            _devices.value = DevicesUiState(
-                devices = fetched.devices,
-                meId = fetched.meId,
-                subnetName = fetched.subnetName,
-                subnetCidr = fetched.subnetCidr,
-                trusted = fetched.trusted,
-            )
-        }.onFailure { error ->
-            _devices.update {
-                it.copy(
-                    isLoading = false,
-                    isRefreshing = false,
-                    error = error.message ?: app.getString(R.string.error_unknown),
-                )
-            }
-        }
-    }
-
     /**
-     * The peer's full config, fetched on demand for the config dialog — through the tunnel,
-     * in memory only. Returns null on failure; the config itself never logs or caches.
+     * The stats screen's live history, kept in memory only. The week is seeded from disk;
+     * the graphs themselves start empty.
      */
-    suspend fun deviceConfig(deviceId: Int): String? = withContext(Dispatchers.IO) {
-        runCatching { backendApi.fetchDeviceConfig(deviceId) }.getOrNull()
-    }
-
-    /**
-     * Device actions — rename, toggle, delete. Each performs the panel call and then a silent
-     * refresh so the list reflects the panel's truth rather than a local guess. A failure
-     * surfaces on the devices screen's error slot, the same one a failed refresh uses.
-     */
-    /** Creates a new peer; the panel itself decides whether this account may. */
-    fun createDevice(name: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            runDeviceAction { backendApi.createDevice(name) }
-        }
-    }
-
-    fun renameDevice(deviceId: Int, name: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            runDeviceAction { backendApi.renameDevice(deviceId, name) }
-        }
-    }
-
-    fun toggleDevice(deviceId: Int) {
-        viewModelScope.launch(Dispatchers.IO) {
-            runDeviceAction { backendApi.toggleDevice(deviceId) }
-        }
-    }
-
-    fun deleteDevice(deviceId: Int) {
-        viewModelScope.launch(Dispatchers.IO) {
-            runDeviceAction { backendApi.deleteDevice(deviceId) }
-        }
-    }
-
-    private suspend fun runDeviceAction(action: suspend () -> Unit) {
-        runCatching { action() }
-            .onFailure { error ->
-                _devices.update {
-                    it.copy(error = error.message ?: app.getString(R.string.error_unknown))
-                }
-            }
-            .onSuccess {
-                refreshDevicesLocked(silent = true)
-            }
-    }
-
-    fun selectServer(exitId: String) {
-        if (_servers.value.isSelecting) return
-        viewModelScope.launch(Dispatchers.IO) {
-            _servers.update { it.copy(isSelecting = true, error = null) }
-            runCatching {
-                backendApi.selectExit(exitId)
-                val session = backendApi.fetchSession()
-                val snapshot = backendApi.fetchHomeSnapshot()
-                val cache = buildCache(session, snapshot)
-                BackendCache.write(app, snapshot)
-                BackendCache.writeServers(app, cache)
-                _profile.value = Profile(snapshot.profileName)
-                _home.update { state ->
-                    state.copy(
-                        deviceName = snapshot.deviceName ?: state.deviceName,
-                        localIp = snapshot.localIp ?: state.localIp,
-                        exitLabel = snapshot.currentExitLabel ?: state.exitLabel,
-                    )
-                }
-                _servers.value = serversUiState(cache)
-            }.onFailure { error ->
-                _servers.update {
-                    it.copy(
-                        isSelecting = false,
-                        error = error.message ?: app.getString(R.string.error_unknown),
-                    )
-                }
-                return@launch
-            }
-            _servers.update { it.copy(isSelecting = false) }
-            val cache = BackendCache.readServers(app)
-            refreshExitIpAsync(
-                expectedCurrentExitId = cache?.currentExitId,
-                expectedActualExitId = cache?.actualExitId,
-            )
-        }
-    }
-
-    private fun buildCache(
-        session: BackendSession,
-        snapshot: BackendSnapshot,
-    ): ServersCache = ServersCache(
-        exits = session.exits,
-        auto = session.autoExit,
-        currentExitId = snapshot.currentExitId,
-        actualExitId = snapshot.actualExitId,
-        exitIp = null,
-        fetchedAtMillis = snapshot.fetchedAtMillis,
-    )
-
-    private fun serversUiState(cache: ServersCache) = ServersUiState(
-        exits = cache.exits,
-        auto = cache.auto,
-        currentExitId = cache.currentExitId,
-        actualExitId = cache.actualExitId,
-        exitIp = cache.exitIp,
-    )
-
-    /**
-     * Exit IP is slow, so fetch it after the fast list is already on screen. Drop stale results
-     * if another exit was selected while the request was in flight.
-     */
-    private fun refreshExitIpAsync(expectedCurrentExitId: String?, expectedActualExitId: String?) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val exitIp = runCatching { backendApi.fetchExitIp() }.getOrNull() ?: return@launch
-            val current = _servers.value
-            if (current.currentExitId != expectedCurrentExitId ||
-                current.actualExitId != expectedActualExitId
-            ) {
-                return@launch
-            }
-
-            _servers.update { it.copy(exitIp = exitIp) }
-            BackendCache.readServers(app)
-                ?.takeIf { cache ->
-                    cache.currentExitId == expectedCurrentExitId &&
-                        cache.actualExitId == expectedActualExitId
-                }
-                ?.let { cache -> BackendCache.writeServers(app, cache.copy(exitIp = exitIp)) }
-        }
-    }
+    private var trafficJob: Job? = null
 
     private companion object {
-        const val MAX_CONFIG_BYTES = 64 * 1024
+        /** How many one-off measurement cores may run at once in ":core". */
+        const val PING_CONCURRENCY = 3
 
         /** The graph window: history older than this falls off the left edge. */
         const val STATS_WINDOW_MILLIS = 15 * 60_000L
 
         const val TRAFFIC_SAMPLE_MILLIS = 1_000L
-        const val PROBE_INTERVAL_MILLIS = 5_000L
+
+        /** Home's ping / the loss probe cadence — one loop serves both. */
+        const val PING_INTERVAL_MILLIS = 15_000L
 
         /** The graphs' point granularity: rates and probes fold into 15-second buckets. */
         const val TRAFFIC_BUCKET_MILLIS = 15_000L
@@ -773,10 +699,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val BACKGROUND_SAMPLE_MILLIS = 30_000L
         const val BACKGROUND_PROBE_MILLIS = 30_000L
 
-        /** The warning window and threshold: loss over the last two minutes above 5% trips
-         *  the red chips on the stats screen and home. */
+        /** The warning window and threshold: failed probes over the last two minutes above
+         *  10% trip the red chips on the stats screen and home. */
         const val RECENT_LOSS_WINDOW_MILLIS = 2 * 60_000L
-        const val LOSS_WARNING_THRESHOLD = 5f
+        const val LOSS_WARNING_THRESHOLD = 10f
 
         /** The day bucket's flush cadence; the loop's exit flushes the tail. */
         const val DAILY_FLUSH_MILLIS = 60_000L
@@ -789,18 +715,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         fun trimLossBuckets(buckets: List<LossBucket>): List<LossBucket> {
             val cutoff = System.currentTimeMillis() - STATS_WINDOW_MILLIS
             return buckets.dropWhile { it.atMillis < cutoff }
-        }
-
-        /** A WireGuard config is a few hundred bytes; don't slurp arbitrary files. */
-        fun readLimited(stream: InputStream): ByteArray? {
-            val out = ByteArrayOutputStream()
-            val buffer = ByteArray(8192)
-            while (true) {
-                val read = stream.read(buffer)
-                if (read < 0) return out.toByteArray()
-                if (out.size() + read > MAX_CONFIG_BYTES) return null
-                out.write(buffer, 0, read)
-            }
         }
     }
 }

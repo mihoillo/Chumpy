@@ -31,6 +31,7 @@ kotlinx-coroutines-android = "org.jetbrains.kotlinx:kotlinx-coroutines-android:1
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 zxing-core = { module = "com.google.zxing:core", version = "3.5.3" }
 jsr305 = "com.google.code.findbugs:jsr305:3.0.2"

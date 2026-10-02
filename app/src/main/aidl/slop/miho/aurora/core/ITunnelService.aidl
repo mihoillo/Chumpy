@@ -23,6 +23,12 @@ interface ITunnelService {
      */
     long measureDelay(String configJson, String testUrl);
 
+    /**
+     * Measures the delay through the *running* core's tunnel, fetching [testUrl] through
+     * the live proxy outbound. Returns millis, or -1 when the core is not running.
+     */
+    long measureLiveDelay(String testUrl);
+
     /** The Xray core version string, for the about screen. */
     String coreVersion();
 

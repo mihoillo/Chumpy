@@ -103,7 +103,10 @@ object OutboundBuilder {
         put("secretKey", profile.wgSecretKey)
         put(
             "address",
-            profile.wgLocalAddress.split(',').map { it.trim() }.filter { it.isNotEmpty() }.let(::JsonArray),
+            JsonArray(
+                profile.wgLocalAddress.split(',').map { it.trim() }
+                    .filter { it.isNotEmpty() }.map(::JsonPrimitive),
+            ),
         )
         put(
             "peers",
@@ -139,18 +142,20 @@ object OutboundBuilder {
         var json = buildJsonObject { put("network", profile.network) }
 
         when (profile.security) {
-            TLS -> json += "tlsSettings" to tlsSettings(profile)
-            REALITY -> json += "realitySettings" to realitySettings(profile)
+            TLS -> json = json.with("tlsSettings" to tlsSettings(profile))
+            REALITY -> json = json.with("realitySettings" to realitySettings(profile))
         }
 
-        transportSettings(profile)?.let { (name, settings) -> json += name to settings }
+        transportSettings(profile)?.let { (name, settings) -> json = json.with(name to settings) }
 
         if (profile.network == "hysteria") {
-            json += "hysteriaSettings" to buildJsonObject {
-                put("version", 2)
-                put("auth", profile.password)
-            }
-            finalMask(profile)?.let { json += "finalmask" to it }
+            json = json.with(
+                "hysteriaSettings" to buildJsonObject {
+                    put("version", 2)
+                    put("auth", profile.password)
+                },
+            )
+            finalMask(profile)?.let { json = json.with("finalmask" to it) }
         }
 
         return if (json.size > 1) json else null
@@ -277,6 +282,7 @@ object OutboundBuilder {
         }
     }
 
-    private operator fun JsonObject.plus(key: String, value: JsonElement): JsonObject =
-        JsonObject(toMap() + (key to value))
+    /** A copy of the object with extra keys: JsonObject is immutable, so additions rebuild it. */
+    private fun JsonObject.with(vararg pairs: Pair<String, JsonElement>): JsonObject =
+        JsonObject(toMap() + pairs)
 }

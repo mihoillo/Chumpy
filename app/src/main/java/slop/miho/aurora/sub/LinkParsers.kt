@@ -1,6 +1,8 @@
 package slop.miho.aurora.sub
 
-import org.json.JSONObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import slop.miho.aurora.db.ProfileEntity
 import slop.miho.aurora.db.ProfileType
 import slop.miho.aurora.sub.LinkUtils.decodeURIComponent
@@ -24,6 +26,9 @@ object LinkParsers {
     private const val DEFAULT_VMESS_SECURITY = "auto"
     private const val DEFAULT_WG_ADDRESS = "172.16.0.2/32"
     private const val DEFAULT_WG_MTU = 1420
+
+    /** Panels' JSON is not always quoted by the book; this one forgives. */
+    private val lenientJson = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /** Dispatches on the scheme; accepts trimmed lines with surrounding junk spaces. */
     fun parse(link: String): ProfileEntity? {
@@ -95,40 +100,42 @@ object LinkParsers {
 
     private fun parseVmess(str: String): ProfileEntity? {
         // The modern "standard" vmess URI carries a query string; the classic QR-code form
-        // is base64 of a JSON blob.
+        // is base64 of a JSON blob. kotlinx.serialization (not org.json) keeps this
+        // JVM-testable; lenient because panels' JSON is not always quoted by the book.
         if (str.indexOf('?') > 0 && str.indexOf('&') > 0) return parseVmessUri(str)
 
         val json = LinkUtils.decode(str.removePrefix("vmess://"))
         if (json.isEmpty()) return null
         val qr = try {
-            JSONObject(json)
+            lenientJson.parseToJsonElement(json).jsonObject
         } catch (_: Exception) {
             return null
         }
-        val add = qr.optString("add")
-        val id = qr.optString("id")
-        val net = qr.optString("net")
+        fun field(name: String): String = (qr[name] as? JsonPrimitive)?.content ?: ""
+        val add = field("add")
+        val id = field("id")
+        val net = field("net")
         if (add.isEmpty() || id.isEmpty()) return null
 
         val profile = draft(ProfileType.VMESS).copy(
-            remarks = qr.optString("ps"),
+            remarks = field("ps"),
             server = add,
-            serverPort = parsePort(qr.optString("port")),
+            serverPort = parsePort(field("port")),
             password = id,
-            method = qr.optString("scy").ifEmpty { DEFAULT_VMESS_SECURITY },
+            method = field("scy").ifEmpty { DEFAULT_VMESS_SECURITY },
             network = net.ifEmpty { "tcp" },
-            headerType = qr.optString("type"),
-            host = qr.optString("host"),
-            path = qr.optString("path"),
-            security = qr.optString("tls").let { if (it == TLS) it else "" },
-            sni = qr.optString("sni"),
-            alpn = qr.optString("alpn"),
-            fingerprint = qr.optString("fp"),
-            allowInsecure = qr.optString("insecure") == "1",
+            headerType = field("type"),
+            host = field("host"),
+            path = field("path"),
+            security = field("tls").let { if (it == TLS) it else "" },
+            sni = field("sni"),
+            alpn = field("alpn"),
+            fingerprint = field("fp"),
+            allowInsecure = field("insecure") == "1",
         )
         val withTransport = when (profile.network) {
-            "kcp", "mkcp" -> profile.copy(seed = qr.optString("path"))
-            "grpc" -> profile.copy(mode = qr.optString("type"), serviceName = qr.optString("path"), authority = qr.optString("host"))
+            "kcp", "mkcp" -> profile.copy(seed = field("path"))
+            "grpc" -> profile.copy(mode = field("type"), serviceName = field("path"), authority = field("host"))
             else -> profile
         }
         return withTransport
@@ -276,6 +283,7 @@ object LinkParsers {
             security = query["security"] ?: TLS,
             obfsPassword = query["obfs-password"].orEmpty(),
             portHopping = query["mport"].orEmpty(),
+            portHoppingInterval = query["mportinterval"].orEmpty(),
         )
     }
 

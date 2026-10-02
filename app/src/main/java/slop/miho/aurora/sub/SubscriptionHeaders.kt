@@ -23,7 +23,15 @@ object SubscriptionHeaders {
             ?.value?.firstOrNull()?.takeIf { it.isNotBlank() }
 
         var meta = SubscriptionMetadata()
-        first("subscription-userinfo")?.let { meta = meta.copyUserInfo(parseUserinfo(it)) }
+        first("subscription-userinfo")?.let {
+            val counters = parseUserinfo(it)
+            meta = meta.copy(
+                uploadBytes = counters.uploadBytes,
+                downloadBytes = counters.downloadBytes,
+                totalBytes = counters.totalBytes,
+                expireEpochSeconds = counters.expireEpochSeconds,
+            )
+        }
         first("profile-title")?.let { parseTitle(it)?.let { title -> meta = meta.copy(title = title) } }
         first("content-disposition")?.let { meta = meta.copy(title = meta.title ?: parseFilename(it)) }
         first("profile-update-interval")?.let { parseUpdateInterval(it)?.let { h -> meta = meta.copy(updateIntervalHours = h) } }

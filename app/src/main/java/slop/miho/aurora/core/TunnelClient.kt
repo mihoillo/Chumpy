@@ -100,6 +100,19 @@ class TunnelClient(private val context: Context) {
         }
     }
 
+    /**
+     * Delay through the *running* tunnel (the probe path for Home's ping chip and the
+     * stats screen's loss buckets). Null while not bound or the core is down.
+     */
+    fun measureLiveDelay(testUrl: String): Long? {
+        val remote = service ?: return null
+        return try {
+            remote.measureLiveDelay(testUrl)
+        } catch (_: RemoteException) {
+            null
+        }
+    }
+
     /** The Xray core version, or null while the core process is unreachable. */
     fun coreVersion(): String? {
         val remote = service ?: return null

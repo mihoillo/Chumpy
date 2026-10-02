@@ -206,6 +206,22 @@ object XrayCore {
     }
 
     /**
+     * Delay through the *running* tunnel: the controller fetches the URL through the live
+     * proxy outbound. -1 when the core is down or the fetch fails — the probe loops treat
+     * that as a lost sample.
+     */
+    fun measureLiveDelay(testUrl: String): Long {
+        val core = controller
+        if (!isRunning || core == null) return -1L
+        return try {
+            core.measureDelay(testUrl)
+        } catch (e: Exception) {
+            Log.w(TAG, "measureLiveDelay failed: ${e.message}")
+            -1L
+        }
+    }
+
+    /**
      * The proxy outbound's {rx, tx} bytes since the core came up, from the core's own
      * stats counters ("tag,direction,value;" rows). Zeros while down.
      */

@@ -29,10 +29,12 @@ interface SubscriptionDao {
 
 @Dao
 abstract class ProfileDao {
-    @Query("SELECT * FROM profiles WHERE subscriptionId = :subscriptionId ORDER BY `order`, remarks")
+    // `IS :subscriptionId` rather than `=`: manual profiles live in the NULL bucket, and
+    // SQL's `= NULL` matches nothing — `IS NULL` is the comparison that covers both.
+    @Query("SELECT * FROM profiles WHERE subscriptionId IS :subscriptionId ORDER BY `order`, remarks")
     abstract fun bySubscription(subscriptionId: String?): Flow<List<ProfileEntity>>
 
-    @Query("SELECT * FROM profiles WHERE subscriptionId = :subscriptionId ORDER BY `order`, remarks")
+    @Query("SELECT * FROM profiles WHERE subscriptionId IS :subscriptionId ORDER BY `order`, remarks")
     abstract suspend fun bySubscriptionOnce(subscriptionId: String?): List<ProfileEntity>
 
     @Query("SELECT * FROM profiles WHERE id = :id")
@@ -41,8 +43,8 @@ abstract class ProfileDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     protected abstract suspend fun insertProfiles(profiles: List<ProfileEntity>)
 
-    @Query("DELETE FROM profiles WHERE subscriptionId = :subscriptionId")
-    protected abstract suspend fun deleteProfilesFor(subscriptionId: String)
+    @Query("DELETE FROM profiles WHERE subscriptionId IS :subscriptionId")
+    protected abstract suspend fun deleteProfilesFor(subscriptionId: String?)
 
     /**
      * One subscription refresh, committed as a unit: the parsed profiles replace the old
@@ -50,7 +52,7 @@ abstract class ProfileDao {
      * ping and selection state over to the new row.
      */
     @Transaction
-    open suspend fun replaceProfiles(subscriptionId: String, profiles: List<ProfileEntity>) {
+    open suspend fun replaceProfiles(subscriptionId: String?, profiles: List<ProfileEntity>) {
         deleteProfilesFor(subscriptionId)
         insertProfiles(profiles)
     }
@@ -60,6 +62,10 @@ abstract class ProfileDao {
 
     @Query("SELECT COUNT(*) FROM profiles")
     abstract suspend fun count(): Int
+
+    /** The manual (subscription-less) profile count, as a flow — the setup gate watches it. */
+    @Query("SELECT COUNT(*) FROM profiles WHERE subscriptionId IS NULL")
+    abstract fun manualCount(): Flow<Int>
 }
 
 /**

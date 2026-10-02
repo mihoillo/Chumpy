@@ -28,7 +28,12 @@ object Graph {
         subscriptions = SubscriptionRepository(
             context = context.applicationContext,
             db = database,
-            tunnelUp = { tunnelClient.status.value.state == TunnelState.UP },
+            // Read lazily, at fetch time: by then the app object has long since bound the
+            // shared tunnel link. Fetches route through the loopback socks inbound whenever
+            // the tunnel is up, so a panel behind a block answers anyway.
+            tunnelUp = {
+                AuroraApp.tunnelClient.status.value.state == TunnelState.UP
+            },
         )
     }
 }

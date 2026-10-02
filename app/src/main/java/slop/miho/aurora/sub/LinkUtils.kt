@@ -1,6 +1,5 @@
 package slop.miho.aurora.sub
 
-import android.util.Base64
 import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -8,34 +7,24 @@ import java.net.URLEncoder
 /**
  * The string plumbing every link parser needs: base64 in both alphabets (subscriptions and
  * VMess links use either), strict RFC 3986 component de/encoding, and IPv6 brackets.
- * Ported from v2rayNG's Utils/extension helpers.
+ * Ported from v2rayNG's Utils/extension helpers; java.util.Base64 (not the Android one)
+ * keeps the whole object JVM-testable.
  */
 object LinkUtils {
     /** Base64 in the standard and the URL-safe alphabet, without line wraps. */
     fun decodeBase64(text: String): String? {
         if (text.isEmpty()) return null
-        return try {
-            Base64.decode(text, Base64.NO_WRAP).toString(Charsets.UTF_8)
-        } catch (_: Exception) {
-            try {
-                Base64.decode(text, Base64.NO_WRAP or Base64.URL_SAFE).toString(Charsets.UTF_8)
-            } catch (_: Exception) {
-                null
-            }
-        }
+        return decodeBase64Bytes(text)?.toString(Charsets.UTF_8)
     }
 
-    /** Decode, tolerating missing padding — as subscription bodies often are. */
-    fun decode(text: String): String =
-        decodeBase64(text) ?: text.trimEnd('=').let { decodeBase64(it) } ?: ""
+    /** Decode, tolerating missing padding and stray whitespace — as bodies often are. */
+    fun decode(text: String): String = decodeBase64(text) ?: ""
 
-    fun encodeBase64(text: String, removePadding: Boolean = false): String =
-        try {
-            val encoded = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-            if (removePadding) encoded.trimEnd('=') else encoded
-        } catch (_: Exception) {
-            ""
-        }
+    fun encodeBase64(text: String, removePadding: Boolean = false): String {
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        val encoded = java.util.Base64.getEncoder().encodeToString(bytes)
+        return if (removePadding) encoded.trimEnd('=') else encoded
+    }
 
     /** Decode an encodeURIComponent part; '+' stays a literal plus, unlike form decoding. */
     fun decodeURIComponent(url: String): String =
@@ -89,5 +78,21 @@ object LinkUtils {
         cleaned.toIntOrNull()?.let { return it }
         cleaned.toDoubleOrNull()?.let { return it.toInt() }
         return 0
+    }
+
+    /** Both alphabets, both padded and stripped: re-pad, try standard, then URL-safe. */
+    private fun decodeBase64Bytes(text: String): ByteArray? {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return null
+        val padded = trimmed + "=".repeat((4 - trimmed.length % 4) % 4)
+        return try {
+            java.util.Base64.getDecoder().decode(padded)
+        } catch (_: IllegalArgumentException) {
+            try {
+                java.util.Base64.getUrlDecoder().decode(padded)
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        }
     }
 }
