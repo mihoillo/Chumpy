@@ -189,7 +189,7 @@ object XrayConfigBuilder {
                 // Sniffed BitTorrent goes direct in bypass mode, as in v2rayNG's preset.
                 if (mode == RoutingMode.RU_BYPASS) {
                     rule {
-                        put("protocol", buildJsonArray { JsonPrimitive("bittorrent") })
+                        put("protocol", buildJsonArray { add(JsonPrimitive("bittorrent")) })
                         put("outboundTag", DIRECT_TAG)
                     }
                 }
@@ -200,20 +200,20 @@ object XrayConfigBuilder {
                     put("outboundTag", BLOCK_TAG)
                 }
                 rule {
-                    put("ip", buildJsonArray { JsonPrimitive("geoip:private") })
+                    put("ip", buildJsonArray { add(JsonPrimitive("geoip:private")) })
                     put("outboundTag", DIRECT_TAG)
                 }
                 rule {
-                    put("domain", buildJsonArray { JsonPrimitive("geosite:private") })
+                    put("domain", buildJsonArray { add(JsonPrimitive("geosite:private")) })
                     put("outboundTag", DIRECT_TAG)
                 }
                 if (mode == RoutingMode.RU_BYPASS) {
                     rule {
-                        put("domain", buildJsonArray { JsonPrimitive("geosite:category-ru") })
+                        put("domain", buildJsonArray { add(JsonPrimitive("geosite:category-ru")) })
                         put("outboundTag", DIRECT_TAG)
                     }
                     rule {
-                        put("ip", buildJsonArray { JsonPrimitive("geoip:ru") })
+                        put("ip", buildJsonArray { add(JsonPrimitive("geoip:ru")) })
                         put("outboundTag", DIRECT_TAG)
                     }
                 }
