@@ -268,12 +268,12 @@ private fun ServersHeader(state: ServersUiState) {
 
 /**
  * The subscription card, the devices screen's row language grown up: the database tile
- * on the cookie backdrop (the cookie standing for the current pick while the chooser is
- * shut, relaxing back into a circle once it opens and the pick moves into the list) with
- * the reload button tucked under it, the subscription's name over what the panel reports.
- * The card's own tap unfolds the subscription list — the info flies out from under the
- * name as it does, and the title flips to the chooser's call to action — while the
- * button's tap is a different ask: pulling new servers in.
+ * on the same circle backdrop the server rows sit their icons on — no cookie here, the
+ * pick's mark lives in the list, not on the card — with the reload button tucked under
+ * it, the subscription's name over what the panel reports. The card's own tap unfolds
+ * the subscription list — the info flies out from under the name as it does, and the
+ * title flips to the chooser's call to action — while the button's tap is a different
+ * ask: pulling new servers in.
  */
 @Composable
 private fun SubscriptionCard(
@@ -318,8 +318,8 @@ private fun SubscriptionCard(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // The leading column: the database tile on its backdrop, the reload button
-            // under it — the subscription's face, and its refresh, stacked.
+            // The leading column: the database tile on its circle backing, the reload
+            // button under it — the subscription's face, and its refresh, stacked.
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -329,9 +329,9 @@ private fun SubscriptionCard(
                     contentAlignment = Alignment.Center,
                 ) {
                     CookieBackdrop(
-                        selected = !expanded,
+                        selected = false,
                         color = colors.secondaryContainer,
-                        animated = true,
+                        animated = false,
                     )
                     Icon(
                         painter = painterResource(R.drawable.ic_database),
@@ -560,8 +560,8 @@ private fun SubscriptionDropdown(
 
 /**
  * One subscription in the unfolded list, the server rows' own language: the database tile
- * with the cookie marking the pick, the name over what the panel reports, the check at
- * the end. A long press is the delete question.
+ * on the circle backdrop, the pick's cookie taking the checkmark's place, the name over
+ * what the panel reports. A long press is the delete question.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -656,14 +656,6 @@ private fun SubscriptionRow(
             SubscriptionInfo(
                 subscription = subscription,
                 supportingColor = supportingColor,
-            )
-        }
-        if (selected) {
-            Icon(
-                painter = painterResource(R.drawable.ic_check),
-                contentDescription = stringResource(R.string.servers_selected),
-                tint = supportingColor,
-                modifier = Modifier.size(24.dp),
             )
         }
     }
