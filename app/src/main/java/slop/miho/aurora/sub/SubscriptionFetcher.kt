@@ -7,12 +7,13 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.zip.GZIPInputStream
 
+import slop.miho.aurora.xray.XrayConfigBuilder.LOCAL_SOCKS_PORT
+
 /**
  * Fetches a subscription body over plain HttpURLConnection. When the tunnel is up the
  * request goes through the running core's loopback SOCKS inbound — the app package is
  * excluded from the VPN routes, so this is the only way a blocked panel stays reachable
- * (the arrangement Hiddify uses, and the reason the config always listens on
- * [slop.miho.aurora.xray.XrayConfigBuilder.LOCAL_SOCKS_PORT]).
+ * (the arrangement Hiddify uses, and the reason the config always listens on it).
  */
 class SubscriptionFetcher(private val tunnelUp: () -> Boolean) {
     private companion object {
@@ -39,7 +40,9 @@ class SubscriptionFetcher(private val tunnelUp: () -> Boolean) {
     /** Throws [IOException] with a readable message on failure. */
     fun fetch(rawUrl: String): FetchResult {
         val url = normalizeUrl(rawUrl)
-        val connection = (java.net.URL(url).openConnection(proxyOrNull()) as java.net.HttpURLConnection).apply {
+        // openConnection(Proxy) throws IllegalArgumentException on a null proxy, so the
+        // no-tunnel path takes the plain overload instead of passing null in.
+        val connection = (open(url) as java.net.HttpURLConnection).apply {
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
@@ -82,11 +85,16 @@ class SubscriptionFetcher(private val tunnelUp: () -> Boolean) {
         }
     }
 
-    private fun proxyOrNull(): Proxy? {
-        if (!tunnelUp()) return null
-        return Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808)).also {
-            Log.d(TAG, "Fetching through the running tunnel")
-        }
+    /**
+     * The loopback SOCKS inbound of the running core while the tunnel is up; the plain
+     * connection otherwise.
+     */
+    private fun open(url: String): java.net.URLConnection {
+        if (!tunnelUp()) return java.net.URL(url).openConnection()
+        Log.d(TAG, "Fetching through the running tunnel")
+        return java.net.URL(url).openConnection(
+            Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", LOCAL_SOCKS_PORT)),
+        )
     }
 
     private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {
