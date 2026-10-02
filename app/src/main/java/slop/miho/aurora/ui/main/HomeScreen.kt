@@ -84,12 +84,14 @@ import slop.miho.aurora.core.TunnelState
 import slop.miho.aurora.core.TunnelStatus
 import slop.miho.aurora.ui.HomeUiState
 import slop.miho.aurora.ui.components.ErrorCard
+import slop.miho.aurora.ui.components.EmojiFlag
 import slop.miho.aurora.ui.components.InfoChip
 import slop.miho.aurora.ui.components.rememberHapticDeniedKicks
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.components.rememberHapticPokes
 import slop.miho.aurora.data.UiSettings
 import slop.miho.aurora.data.Accent
+import slop.miho.aurora.data.FlagStyle
 import slop.miho.aurora.ui.theme.AuroraTheme
 import slop.miho.aurora.ui.theme.LocalDarkTheme
 import slop.miho.aurora.ui.theme.LocalUiSettings
@@ -227,15 +229,17 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                home.profileLabel?.let { label ->
-                    // The server card slides in when the tunnel comes up: the picked
-                    // server's name, a tap away from the list that changes it.
-                    TunnelAppear(visible = up) {
-                        ServerCard(
-                            label = label,
-                            onClick = onOpenServers,
-                        )
-                    }
+                home.profileLabel?.let { title ->
+                    // The server card is always there, connected or not: the picked
+                    // server's identity is home's, not the tunnel's. The header names the
+                    // subscription first (the arrow marks the hop to the region below),
+                    // the region second — a tap away from the list that changes it.
+                    ServerCard(
+                        subscription = home.subscriptionName,
+                        title = title,
+                        flag = home.profileFlag,
+                        onClick = onOpenServers,
+                    )
                 }
                 // Keeps the bottom-anchored content clear of the connect button.
                 Spacer(Modifier.height(16.dp))
@@ -289,12 +293,6 @@ private fun InfoChips(
                 .withSurfaceOpacity(),
             content = if (up) colors.onSecondaryContainer else colors.onSurfaceVariant,
         )
-        home.subscriptionName?.let { name ->
-            InfoChip(
-                value = name,
-                icon = R.drawable.ic_servers,
-            )
-        }
         if (up) {
             InfoChip(uptimeText(home.uptimeStartMillis), R.drawable.ic_clock)
             val poke = rememberHapticPoke()
@@ -395,10 +393,14 @@ private fun formatUptime(millis: Long): String {
 
 @Composable
 private fun ServerCard(
-    label: String,
+    subscription: String?,
+    title: String,
+    flag: String?,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    // The flag follows the picked flag style: Twemoji, the system emoji, or the globe.
+    val flagStyle = LocalUiSettings.current.flagStyle
     Surface(
         // Rounder than the rows it mirrors: a lone full-width card can afford the soft
         // extra-large corners, while its icon tile stays squarer (the servers' 12dp).
@@ -421,31 +423,50 @@ private fun ServerCard(
                     .background(colors.secondaryContainer),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_public),
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = colors.onSecondaryContainer,
-                )
+                if (flag != null && flagStyle != FlagStyle.GLOBE) {
+                    EmojiFlag(
+                        emoji = flag,
+                        twemoji = flagStyle == FlagStyle.TWEMOJI,
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_public),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = colors.onSecondaryContainer,
+                    )
+                }
             }
-            // Switching the server swaps the label with a gentle fade/slide.
+            // Switching the server swaps the header with a gentle fade/slide.
             val motion = MaterialTheme.motionScheme
             AnimatedContent(
-                targetState = label,
+                targetState = Triple(subscription, title, flag),
                 transitionSpec = {
                     (fadeIn(motion.defaultEffectsSpec()) +
                         slideInVertically(motion.defaultSpatialSpec()) { it / 2 }) togetherWith
                         fadeOut(motion.defaultEffectsSpec())
                 },
-                label = "server label",
+                label = "server header",
                 modifier = Modifier.weight(1f),
-            ) { l ->
-                Text(
-                    text = l,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = colors.onSurface,
-                    maxLines = 1,
-                )
+            ) { (sub, region, _) ->
+                Column {
+                    // First line: the subscription, the arrow marking the hop to the
+                    // region under it; manual profiles have no subscription to name.
+                    if (sub != null) {
+                        Text(
+                            text = "$sub →",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                    Text(
+                        text = region,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.onSurface,
+                        maxLines = 1,
+                    )
+                }
             }
             // A bare chevron (no stem) pointing at where the tap leads.
             Icon(
@@ -631,6 +652,7 @@ private fun HomeScreenPreview() {
             status = TunnelStatus(TunnelState.UP),
             home = HomeUiState(
                 subscriptionName = "miho.net",
+                profileFlag = "🇫🇮",
                 profileLabel = "Helsinki · vmess",
                 pingMillis = 25,
                 uptimeStartMillis = System.currentTimeMillis() - 3_600_000,

@@ -44,6 +44,20 @@ fun CountryFlag(
     FlagEmoji(countryFlagEmoji(code), twemoji, modifier, size)
 }
 
+/**
+ * Any flag emoji string — the leading flag parsed off a profile's name — drawn like
+ * [CountryFlag] draws a code's flag: centered in a [size] box, Twemoji or the system's.
+ */
+@Composable
+fun EmojiFlag(
+    emoji: String,
+    twemoji: Boolean,
+    modifier: Modifier = Modifier,
+    size: Dp = 24.dp,
+) {
+    FlagEmoji(emoji, twemoji, modifier, size)
+}
+
 /** The rainbow flag (🏳️‍🌈): the white flag, VS16 and a rainbow joined by a ZWJ. */
 private const val RAINBOW_FLAG_EMOJI = "🏳️‍🌈"
 
@@ -75,6 +89,30 @@ fun RainbowFlag(
 
 /** The Twemoji flag glyph's height over its width, in font units. */
 private const val RAINBOW_FLAG_ASPECT = 370f / 512f
+
+/**
+ * Splits the flag emoji a panel put at the front of a profile's name off the name itself:
+ * clients lift it into the icon slot and show the name without it. Returns the flag (all
+ * leading ones — a run of regional-indicator pairs) and the rest of the name, trimmed; a
+ * name without a leading flag comes back whole with a null flag.
+ */
+fun splitLeadingFlag(name: String): Pair<String?, String> {
+    var end = 0
+    val trimmed = name.trimStart()
+    while (end + 1 < trimmed.length &&
+        trimmed[end] == FLAG_HIGH_SURROGATE &&
+        trimmed[end + 1] in FLAG_LOW_SURROGATE_START..FLAG_LOW_SURROGATE_END
+    ) {
+        end += 2
+    }
+    if (end == 0) return null to name
+    return trimmed.take(end) to trimmed.substring(end).trimStart()
+}
+
+/** The regional indicators (U+1F1E6..U+1F1FF) as a UTF-16 surrogate pair. */
+private const val FLAG_HIGH_SURROGATE = '\uD83C'
+private const val FLAG_LOW_SURROGATE_START = '\uDDE6'
+private const val FLAG_LOW_SURROGATE_END = '\uDDFF'
 
 /** A flag [emoji] drawn as text, centered in a [size] box. */
 @Composable

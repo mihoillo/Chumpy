@@ -31,6 +31,7 @@ import slop.miho.aurora.data.ConnectionSettings
 import slop.miho.aurora.data.ConnectionStore
 import slop.miho.aurora.data.DailyTraffic
 import slop.miho.aurora.data.DailyTrafficStore
+import slop.miho.aurora.ui.components.splitLeadingFlag
 import slop.miho.aurora.data.SettingsStore
 import slop.miho.aurora.data.UiSettings
 import slop.miho.aurora.db.ProfileEntity
@@ -41,10 +42,12 @@ import slop.miho.aurora.xray.XrayConfigBuilder
 
 /** Home screen extras: everything besides the tunnel status itself. */
 data class HomeUiState(
-    /** The active subscription's name — the "device" chip's replacement. */
+    /** The active subscription's name — the server card's first header line. */
     val subscriptionName: String? = null,
-    /** The selected profile's remark — the exit chip's replacement. */
+    /** The selected profile's name, its leading flag lifted out into [profileFlag]. */
     val profileLabel: String? = null,
+    /** The flag emoji the selected profile's name begins with, if it does. */
+    val profileFlag: String? = null,
     /** Round-trip through the running tunnel, refreshed every 15 s while connected. */
     val pingMillis: Long? = null,
     /** Wall-clock millis of the last transition to UP; null while down. */
@@ -235,14 +238,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { _coreVersion.value = tunnelClient.coreVersion() }
     }
 
-    /** Home's identity chips follow the selection and the selected subscription. */
+    /** Home's server card follows the selection and the selected subscription. */
     private fun observeIdentityChips() {
         viewModelScope.launch {
             combine(selectedSubscription, selectedProfile) { subscription, profile ->
+                // The flag panels put at the front of the name moves into the card's icon
+                // slot; the card's header says subscription first, region second.
+                val split = profile?.let { p -> splitLeadingFlag(p.remarks.ifEmpty { p.server }) }
                 _home.update {
                     it.copy(
                         subscriptionName = subscription?.name,
-                        profileLabel = profile?.let { p -> p.remarks.ifEmpty { p.server } },
+                        profileFlag = split?.first,
+                        profileLabel = split?.second?.ifEmpty { profile?.server },
                     )
                 }
             }.collect { }

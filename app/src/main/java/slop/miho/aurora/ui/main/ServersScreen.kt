@@ -66,8 +66,10 @@ import slop.miho.aurora.db.ProfileEntity
 import slop.miho.aurora.db.SubscriptionEntity
 import slop.miho.aurora.ui.ServersUiState
 import slop.miho.aurora.ui.components.CookieBackdrop
+import slop.miho.aurora.ui.components.EmojiFlag
 import slop.miho.aurora.ui.components.ErrorCard
 import slop.miho.aurora.ui.components.InfoChip
+import slop.miho.aurora.ui.components.splitLeadingFlag
 import slop.miho.aurora.ui.components.rememberHapticDeniedKicks
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.components.WavyPullToRefreshBox
@@ -80,7 +82,8 @@ import slop.miho.aurora.ui.wallpapers.ReportBarCoverage
  * the "add subscription" row at its end; the update button sits apart on the card's right),
  * then that subscription's servers as one segmented list. Pull-to-refresh measures every
  * server through the core — the list is always reachable, tunnel or not, since picking a
- * server never needs one.
+ * server never needs one. The rows draw the flag a name begins with (per [flagStyle]);
+ * the name itself is shown without it.
  */
 @Composable
 fun ServersScreen(
@@ -173,6 +176,7 @@ fun ServersScreen(
                 ServerGroup(
                     profiles = state.profiles,
                     selectedId = state.selectedProfileId,
+                    flagStyle = flagStyle,
                     onSelect = onSelect,
                 )
             }
@@ -557,6 +561,7 @@ private fun subscriptionSummary(subscription: SubscriptionEntity): String? {
 private fun ServerGroup(
     profiles: List<ProfileEntity>,
     selectedId: String?,
+    flagStyle: FlagStyle,
     onSelect: (String) -> Unit,
 ) {
     if (profiles.isEmpty()) {
@@ -569,6 +574,7 @@ private fun ServerGroup(
                 ServerRow(
                     profile = profile,
                     selected = profile.id == selectedId,
+                    flagStyle = flagStyle,
                     onSelect = { onSelect(profile.id) },
                     shape = shape,
                 )
@@ -635,11 +641,15 @@ private fun ServersEmpty() {
 private fun ServerRow(
     profile: ProfileEntity,
     selected: Boolean,
+    flagStyle: FlagStyle,
     onSelect: () -> Unit,
     shape: Shape,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
+    // The flag the panel put at the front of the name moves into the icon slot; the
+    // headline shows the name without it.
+    val (flag, title) = splitLeadingFlag(profile.remarks.ifEmpty { profile.server })
     val containerColor by animateColorAsState(
         targetValue = (if (selected) colors.primaryContainer else colors.surfaceContainer)
             .copy(alpha = LocalSurfaceOpacity.current),
@@ -697,7 +707,7 @@ private fun ServerRow(
             headlineContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = profile.remarks.ifEmpty { profile.server },
+                        text = title,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
@@ -735,6 +745,8 @@ private fun ServerRow(
             leadingContent = {
                 // MD3 list leading icon: 24dp icon on a 40dp tonal container. Selection
                 // morphs the circle into the slowly spinning MD3 cookie — the pick's mark.
+                // A name's leading flag takes the slot (Twemoji or system per the style
+                // setting); names without one keep the globe.
                 Box(
                     modifier = Modifier.size(40.dp),
                     contentAlignment = Alignment.Center,
@@ -744,12 +756,19 @@ private fun ServerRow(
                         color = iconContainerColor,
                         animated = true,
                     )
-                    Icon(
-                        painter = painterResource(R.drawable.ic_public),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = iconColor,
-                    )
+                    if (flag != null && flagStyle != FlagStyle.GLOBE) {
+                        EmojiFlag(
+                            emoji = flag,
+                            twemoji = flagStyle == FlagStyle.TWEMOJI,
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_public),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = iconColor,
+                        )
+                    }
                 }
             },
             trailingContent = if (selected) {
