@@ -768,52 +768,53 @@ private fun SubscriptionInfo(
                 )
             }
         }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Column(
+            verticalArrangement = Arrangement.spacedBy(2.dp),
             modifier = Modifier.padding(end = textInset),
         ) {
-            if (subscription.totalBytes > 0) {
-                val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
-                    subscription.totalBytes).coerceIn(0f, 1f)
-                Text(
-                    text = stringResource(R.string.subscription_bw_remaining, (ratio * 100).toInt()),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = supportingColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (subscription.totalBytes > 0) {
+                    val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
+                        subscription.totalBytes).coerceIn(0f, 1f)
+                    Text(
+                        text = stringResource(R.string.subscription_bw_remaining, (ratio * 100).toInt()),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = supportingColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                days?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = supportingColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
-            days?.let {
+            // The traffic eaten over the limit, tight under the days' number — the line
+            // reads as one report, not two.
+            consumed?.let {
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
                     color = supportingColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
                 )
             }
-        }
-        // The traffic eaten: hiddify's consumption over the quota, the line after the
-        // days — counted out even when the panel keeps the quota to itself.
-        consumed?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.bodyMedium,
-                color = supportingColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(end = textInset),
-            )
         }
     }
 }
 
 /**
- * The subscription rows' own report, compact: the bars up top — the days' on the left,
- * the quota's on the right when the panel reports one — with the days and the traffic
- * eaten on a single line under them: days to the left, traffic to the right.
+ * The subscription rows' own report, compact: the bars up top — the quota's on the
+ * left when the panel reports one, the days' beside it — with the traffic eaten and
+ * the days on a single line under them: traffic to the left, days to the right.
  */
 @Composable
 private fun SubscriptionRowInfo(
@@ -829,15 +830,6 @@ private fun SubscriptionRowInfo(
     if (days == null && consumed == null) return
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (expire > 0) {
-                val dayFraction = (secondsLeft.toFloat() / (86_400f * 30f)).coerceIn(0f, 1f)
-                UsageBar(
-                    progress = if (secondsLeft <= 0) 1f else dayFraction,
-                    color = if (secondsLeft <= 0) colors.error else usageColor(dayFraction, colors),
-                    trackColor = supportingColor,
-                    modifier = Modifier.weight(1f),
-                )
-            }
             if (subscription.totalBytes > 0) {
                 val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
                     subscription.totalBytes).coerceIn(0f, 1f)
@@ -848,13 +840,22 @@ private fun SubscriptionRowInfo(
                     modifier = Modifier.weight(1f),
                 )
             }
+            if (expire > 0) {
+                val dayFraction = (secondsLeft.toFloat() / (86_400f * 30f)).coerceIn(0f, 1f)
+                UsageBar(
+                    progress = if (secondsLeft <= 0) 1f else dayFraction,
+                    color = if (secondsLeft <= 0) colors.error else usageColor(dayFraction, colors),
+                    trackColor = supportingColor,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            days?.let {
+            consumed?.let {
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
@@ -864,7 +865,7 @@ private fun SubscriptionRowInfo(
                     modifier = Modifier.weight(1f),
                 )
             }
-            consumed?.let {
+            days?.let {
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
@@ -907,20 +908,18 @@ private fun daysTitle(expireEpochSeconds: Long): String? {
     }
 }
 
-/** The traffic eaten: "used / total" when the panel reports the quota, the used bytes
- *  alone when it keeps the quota to itself — the common unlimited case (total=0). */
+/** The traffic eaten over the limit: hiddify's "used / total" — and when the panel
+ *  keeps the quota to itself (total=0, the common unlimited case) the limit still
+ *  shows, as hiddify shows it: the infinity sign. */
 @Composable
 private fun consumedText(subscription: SubscriptionEntity): String? {
     val used = subscription.uploadBytes + subscription.downloadBytes
-    return when {
-        subscription.totalBytes > 0 -> stringResource(
-            R.string.subscription_consumed,
-            formatBytes(used),
-            formatBytes(subscription.totalBytes),
-        )
-        used > 0 -> formatBytes(used)
-        else -> null
-    }
+    if (used <= 0 && subscription.totalBytes <= 0) return null
+    return stringResource(
+        R.string.subscription_consumed,
+        formatBytes(used),
+        if (subscription.totalBytes > 0) formatBytes(subscription.totalBytes) else "∞",
+    )
 }
 
 /** The traffic-light tiers hiddify reads off a remaining ratio: red under a quarter,
