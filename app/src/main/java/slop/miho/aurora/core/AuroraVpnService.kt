@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -253,20 +254,37 @@ class AuroraVpnService : VpnService() {
             TunnelState.CONNECTING -> getString(R.string.notif_connecting)
             else -> getString(R.string.notif_disconnected)
         }
+        // The notification's own off switch: the same disconnect path the app and the QS
+        // tile take, without opening anything.
+        val disconnect = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, AuroraVpnService::class.java).setAction(ACTION_DISCONNECT),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this).setPriority(Notification.PRIORITY_LOW)
         }
-        return builder
+        builder
             .setSmallIcon(R.drawable.ic_tile_on)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setContentIntent(intent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .build()
+        if (status.state == TunnelState.UP || status.state == TunnelState.CONNECTING) {
+            builder.addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, R.drawable.ic_power),
+                    getString(R.string.notif_action_disconnect),
+                    disconnect,
+                ).build(),
+            )
+        }
+        return builder.build()
     }
 
     private fun cancelNotification() {

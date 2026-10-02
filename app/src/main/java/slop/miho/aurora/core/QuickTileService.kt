@@ -94,6 +94,16 @@ class QuickTileService : TileService() {
         val hasConfig = CoreConfigFile.has(this)
         val up = XrayCore.currentStatus().state == TunnelState.UP
         tile.label = getString(R.string.app_name)
+        // The server the tile's tap answers with, told under the label wherever the
+        // platform carries a subtitle at all — the picked profile, "unknown server" when
+        // the name went missing, nothing when there is no config to connect.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            tile.subtitle = if (hasConfig) {
+                CoreConfigFile.readProfileName(this) ?: getString(R.string.notif_profile_unknown)
+            } else {
+                null
+            }
+        }
         // Distinct resources per state also defeat SystemUI's per-resId tile icon caching;
         // while down the shield's glyph stays crossed out in the familiar dim gray.
         tile.icon = when {
