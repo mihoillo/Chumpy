@@ -43,9 +43,13 @@
     <string name="subscription_url_field">Subscription URL</string>
     <string name="subscription_name_field">Name (optional)</string>
     <string name="subscription_none">No subscription</string>
+    <string name="subscription_choose">Choose subscription</string>
     <string name="subscription_traffic">↓ %1$s · ↑ %2$s</string>
     <string name="subscription_of_total">%1$s of %2$s</string>
     <string name="subscription_expires">expires %1$s</string>
+    <string name="subscription_days_left">%1$d days left</string>
+    <string name="subscription_hours_left">%1$d h left</string>
+    <string name="subscription_expired">expired</string>
     <string name="subscription_updated">updated %1$s</string>
     <string name="subscription_delete_title">Delete this subscription?</string>
     <string name="subscription_delete_text">\"%1$s\" and all of its servers will be removed from Aurora.</string>

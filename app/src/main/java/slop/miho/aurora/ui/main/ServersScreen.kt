@@ -1,6 +1,7 @@
 package slop.miho.aurora.ui.main
 
 import androidx.core.graphics.ColorUtils
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
@@ -8,8 +9,13 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,21 +23,27 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -82,12 +94,13 @@ import slop.miho.aurora.ui.wallpapers.LocalSurfaceOpacity
 import slop.miho.aurora.ui.wallpapers.ReportBarCoverage
 
 /**
- * The servers screen: one subscription card up top (tap it to unfold the subscription list,
- * the "add subscription" row at its end; the update button sits apart on the card's right),
- * then that subscription's servers as one segmented list. Pull-to-refresh measures every
- * server through the core — the list is always reachable, tunnel or not, since picking a
- * server never needs one. The rows draw the flag a name begins with (per [flagStyle]);
- * the name itself is shown without it.
+ * The servers screen: one subscription card up top (the database tile with the reload
+ * button under it; the card's tap unfolds the subscription list below while the servers
+ * fade away, and the card itself turns into the chooser's call to action), then that
+ * subscription's servers as one segmented list. Pull-to-refresh measures every server
+ * through the core — the list is always reachable, tunnel or not, since picking a server
+ * never needs one. The rows draw the flag a name begins with (per [flagStyle]); the name
+ * itself is shown without it.
  */
 @Composable
 fun ServersScreen(
@@ -159,8 +172,10 @@ fun ServersScreen(
                 )
             }
 
-            if (dropdownOpen) {
-                item {
+            // The chooser unfolds: the subscription list rides out from under the card
+            // while the servers step aside with a fade — one ask at a time.
+            item {
+                SubscriptionAppear(visible = dropdownOpen) {
                     SubscriptionDropdown(
                         subscriptions = subscriptions,
                         selectedId = selectedSubscription?.id,
@@ -174,15 +189,24 @@ fun ServersScreen(
                 }
             }
 
-            item { ServersHeader(state = state) }
-
             item {
-                ServerGroup(
-                    profiles = state.profiles,
-                    selectedId = state.selectedProfileId,
-                    flagStyle = flagStyle,
-                    onSelect = onSelect,
-                )
+                // The servers fade back in once the chooser folds away.
+                val motion = MaterialTheme.motionScheme
+                AnimatedVisibility(
+                    visible = !dropdownOpen,
+                    enter = fadeIn(motion.defaultEffectsSpec()),
+                    exit = fadeOut(motion.defaultEffectsSpec()),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ServersHeader(state = state)
+                        ServerGroup(
+                            profiles = state.profiles,
+                            selectedId = state.selectedProfileId,
+                            flagStyle = flagStyle,
+                            onSelect = onSelect,
+                        )
+                    }
+                }
             }
         }
     }
@@ -240,10 +264,11 @@ private fun ServersHeader(state: ServersUiState) {
 }
 
 /**
- * The subscription card, the devices screen's row language: a square tile under the icon,
- * the subscription's name as the title, the traffic the panel reports in the supporting
- * line. The update button sits on the card's right, apart from the tap that unfolds the
- * subscription list — pulling new servers and switching between them are different asks.
+ * The subscription card, the devices screen's row language grown up: the database tile
+ * with the reload button tucked under it, the subscription's name (or the chooser's call
+ * to action, once the list is out) over what the panel reports — the quota's fill, the
+ * time left's drain. The card's own tap unfolds the subscription list; the button's is a
+ * different ask — pulling new servers in.
  */
 @Composable
 private fun SubscriptionCard(
@@ -288,42 +313,57 @@ private fun SubscriptionCard(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = colors.secondaryContainer,
-                contentColor = colors.onSecondaryContainer,
-                modifier = Modifier.size(48.dp),
+            // The leading column: the database tile, the reload button under it — the
+            // subscription's face, and its refresh, stacked.
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_servers),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = subscription?.name?.takeIf { it.isNotBlank() }
-                        ?: stringResource(R.string.subscription_none),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = contentColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                subscription?.let { sub ->
-                    subscriptionSummary(sub)?.let { summary ->
-                        Text(
-                            text = summary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = supportingColor,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = colors.secondaryContainer,
+                    contentColor = colors.onSecondaryContainer,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_database),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
                         )
                     }
                 }
+                UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
             }
-            UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
+            Column(Modifier.weight(1f)) {
+                // The title flips between the subscription's name and the chooser's call
+                // to action as the list comes and goes.
+                AnimatedContent(
+                    targetState = expanded to (subscription?.name?.takeIf { it.isNotBlank() }),
+                    transitionSpec = {
+                        (fadeIn(motion.defaultEffectsSpec()) +
+                            slideInVertically(motion.defaultSpatialSpec()) { it / 2 }) togetherWith
+                            fadeOut(motion.defaultEffectsSpec())
+                    },
+                    label = "subscription title",
+                ) { (chooser, name) ->
+                    Text(
+                        text = if (chooser) stringResource(R.string.subscription_choose)
+                        else name ?: stringResource(R.string.subscription_none),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = contentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                subscription?.let { sub ->
+                    SubscriptionInfo(
+                        subscription = sub,
+                        contentColor = contentColor,
+                        supportingColor = supportingColor,
+                    )
+                }
+            }
             // The chevron points the card's own tap at the list it unfolds, flipping as it does.
             Icon(
                 painter = painterResource(R.drawable.ic_chevron_right),
@@ -337,7 +377,7 @@ private fun SubscriptionCard(
     }
 }
 
-/** The update button: the download glyph, spinning slowly while the fetch runs. */
+/** The update button: the round-trip arrows, spinning slowly while the fetch runs. */
 @Composable
 private fun UpdateButton(isUpdating: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
@@ -358,14 +398,14 @@ private fun UpdateButton(isUpdating: Boolean, onClick: () -> Unit) {
             poke()
             onClick()
         },
-        shape = MaterialTheme.shapes.small,
-        color = Color.Transparent,
+        shape = RoundedCornerShape(12.dp),
+        color = colors.surfaceContainerHigh.copy(alpha = LocalSurfaceOpacity.current),
         contentColor = colors.onSurfaceVariant,
         modifier = Modifier.size(40.dp),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                painter = painterResource(R.drawable.ic_download),
+                painter = painterResource(R.drawable.ic_renew),
                 contentDescription = stringResource(R.string.subscription_update),
                 modifier = Modifier
                     .size(24.dp)
@@ -376,10 +416,10 @@ private fun UpdateButton(isUpdating: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * The unfolded subscription list: one row per subscription, the selected one wearing the
- * check, and the "add subscription" row at the very end — an invitation in the primary
- * container, the devices screen's new-device card language. A long press on a row asks the
- * heavier question: deleting that subscription and everything it brought in.
+ * The unfolded subscription list: one row per subscription — the servers' own segmented
+ * container, cookie-marked pick and all — and the "add subscription" button at the end, a
+ * real button now, the list's standing invitation. A long press on a row asks the heavier
+ * question: deleting that subscription and everything it brought in.
  */
 @Composable
 private fun SubscriptionDropdown(
@@ -390,66 +430,68 @@ private fun SubscriptionDropdown(
     onDeleteRequest: (SubscriptionEntity) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
-    val kicks = rememberHapticDeniedKicks()
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.extraLarge),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        subscriptions.forEach { subscription ->
-            SubscriptionRow(
-                subscription = subscription,
-                selected = subscription.id == selectedId,
-                onClick = {
-                    poke()
-                    onSelect(subscription.id)
-                },
-                onLongClick = {
-                    kicks()
-                    onDeleteRequest(subscription)
-                },
-            )
-        }
-        // The add row, the list's one invitation: the primary container's tile.
-        Surface(
-            onClick = onAdd,
-            shape = MaterialTheme.shapes.extraSmall,
-            color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
-            contentColor = colors.onSurface,
-            modifier = Modifier.fillMaxWidth(),
+    val outer = MaterialTheme.shapes.extraLarge
+    val inner = MaterialTheme.shapes.extraSmall
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(outer),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = colors.primaryContainer,
-                    contentColor = colors.onPrimaryContainer,
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_add),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
-                Text(
-                    text = stringResource(R.string.subscription_add),
-                    style = MaterialTheme.typography.bodyLarge,
+            subscriptions.forEachIndexed { index, subscription ->
+                val first = index == 0
+                val last = index == subscriptions.lastIndex
+                SubscriptionRow(
+                    subscription = subscription,
+                    selected = subscription.id == selectedId,
+                    onClick = { onSelect(subscription.id) },
+                    onLongClick = { onDeleteRequest(subscription) },
+                    shape = RoundedCornerShape(
+                        topStart = if (first) outer.topStart else inner.topStart,
+                        topEnd = if (first) outer.topEnd else inner.topEnd,
+                        bottomStart = if (last) outer.bottomStart else inner.bottomStart,
+                        bottomEnd = if (last) outer.bottomEnd else inner.bottomEnd,
+                    ),
                 )
             }
+        }
+        // The add button: a full-width tonal one, big enough to mean it.
+        Button(
+            onClick = {
+                poke()
+                onAdd()
+            },
+            shape = MaterialTheme.shapes.extraLarge,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = colors.secondaryContainer.copy(alpha = LocalSurfaceOpacity.current),
+                contentColor = colors.onSecondaryContainer,
+            ),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_add),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.subscription_add),
+                style = MaterialTheme.typography.titleMedium,
+            )
         }
     }
 }
 
-/** One subscription in the unfolded list; the check marks the one the servers below show. */
+/**
+ * One subscription in the unfolded list, the server rows' own language: the database tile
+ * with the cookie marking the pick, the name over what the panel reports, the check at
+ * the end. A long press is the delete question.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SubscriptionRow(
@@ -457,9 +499,12 @@ private fun SubscriptionRow(
     selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    shape: Shape,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
+    val poke = rememberHapticPoke()
+    val kicks = rememberHapticDeniedKicks()
     val containerColor by animateColorAsState(
         targetValue = (if (selected) colors.primaryContainer else colors.surfaceContainer)
             .copy(alpha = LocalSurfaceOpacity.current),
@@ -476,19 +521,46 @@ private fun SubscriptionRow(
         animationSpec = motion.defaultEffectsSpec(),
         label = "subscription row supporting",
     )
+    val iconContainerColor by animateColorAsState(
+        targetValue = if (selected) colors.primary else colors.secondaryContainer,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "subscription row icon container",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.extraSmall)
+            .clip(shape)
             .combinedClickable(
                 role = Role.Button,
-                onClick = onClick,
-                onLongClick = onLongClick,
+                onClick = {
+                    poke()
+                    onClick()
+                },
+                onLongClick = {
+                    kicks()
+                    onLongClick()
+                },
             )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(
+            modifier = Modifier.size(40.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            CookieBackdrop(
+                selected = selected,
+                color = iconContainerColor,
+                animated = true,
+            )
+            Icon(
+                painter = painterResource(R.drawable.ic_database),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = if (selected) colors.onPrimary else colors.onSecondaryContainer,
+            )
+        }
         Column(Modifier.weight(1f)) {
             Text(
                 text = subscription.name.takeIf { it.isNotBlank() }
@@ -498,21 +570,17 @@ private fun SubscriptionRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            subscriptionSummary(subscription)?.let { summary ->
-                Text(
-                    text = summary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = supportingColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            SubscriptionInfo(
+                subscription = subscription,
+                contentColor = contentColor,
+                supportingColor = supportingColor,
+            )
         }
         if (selected) {
             Icon(
                 painter = painterResource(R.drawable.ic_check),
                 contentDescription = stringResource(R.string.servers_selected),
-                tint = contentColor,
+                tint = supportingColor,
                 modifier = Modifier.size(24.dp),
             )
         }
@@ -521,8 +589,8 @@ private fun SubscriptionRow(
 
 /**
  * What the panel knows about a subscription, in one quiet line: the traffic and its share
- * of the quota with the expiry while the counters are reported, otherwise the last
- * successful update's date.
+ * of the quota with the expiry and the time left while the counters are reported,
+ * otherwise the last successful update's date.
  */
 @Composable
 private fun subscriptionSummary(subscription: SubscriptionEntity): String? {
@@ -545,6 +613,7 @@ private fun subscriptionSummary(subscription: SubscriptionEntity): String? {
                 DateFormat.getDateInstance(DateFormat.MEDIUM)
                     .format(Date(subscription.expireEpochSeconds * 1000L)),
             )
+            timeLeftText(subscription.expireEpochSeconds)?.let { parts += it }
         }
         return parts.joinToString("  ·  ")
     }
@@ -555,6 +624,72 @@ private fun subscriptionSummary(subscription: SubscriptionEntity): String? {
         )
     }
     return null
+}
+
+/**
+ * What the panel reports about a subscription, drawn: the quota's fill under the name —
+ * traffic up, the bar rises — and the time's drain beside it, from the subscription's
+ * first sight (the only start the app has) to the panel's expiry. Both go red past their
+ * marks: the quota at the last five percent, the time once it has run out.
+ */
+@Composable
+private fun SubscriptionInfo(
+    subscription: SubscriptionEntity,
+    contentColor: Color,
+    supportingColor: Color,
+) {
+    val colors = MaterialTheme.colorScheme
+    val used = subscription.uploadBytes + subscription.downloadBytes
+    val quotaFraction =
+        if (subscription.totalBytes > 0) (used.toFloat() / subscription.totalBytes).coerceIn(0f, 1f) else null
+    val expire = subscription.expireEpochSeconds
+    val nowSeconds = remember { System.currentTimeMillis() / 1000 }
+    val startSeconds = subscription.createdAt / 1000
+    val timeFraction = if (expire > 0 && expire > startSeconds) {
+        ((nowSeconds - startSeconds).toFloat() / (expire - startSeconds)).coerceIn(0f, 1f)
+    } else {
+        null
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (quotaFraction != null) {
+            LinearProgressIndicator(
+                progress = { quotaFraction },
+                color = if (quotaFraction >= 0.95f) colors.error else colors.primary,
+                trackColor = supportingColor.copy(alpha = supportingColor.alpha * 0.30f),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (timeFraction != null) {
+            LinearProgressIndicator(
+                progress = { timeFraction },
+                color = if (expire < nowSeconds) colors.error else colors.primary,
+                trackColor = supportingColor.copy(alpha = supportingColor.alpha * 0.30f),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        subscriptionSummary(subscription)?.let { summary ->
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = supportingColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** The time left before the expiry, in days (hours under a day); null forever while the
+ *  panel keeps the expiry to itself. */
+@Composable
+private fun timeLeftText(expireEpochSeconds: Long): String? {
+    val seconds = expireEpochSeconds - System.currentTimeMillis() / 1000
+    return when {
+        seconds <= 0 -> stringResource(R.string.subscription_expired)
+        seconds >= 86_400 -> stringResource(R.string.subscription_days_left, seconds / 86_400)
+        else -> stringResource(R.string.subscription_hours_left, seconds / 3_600)
+    }
 }
 
 /**
@@ -1005,3 +1140,20 @@ private fun hslColor(hue: Float, saturation: Float, lightness: Float): Color =
 
 /** The pride lap: 12 s, the RAINBOW accent's own cycle time. */
 private const val PRIDE_CYCLE_MS = 12_000
+
+/** The subscription list rides out from under the card and folds back under it again. */
+@Composable
+private fun SubscriptionAppear(visible: Boolean, content: @Composable () -> Unit) {
+    val motion = MaterialTheme.motionScheme
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(motion.defaultEffectsSpec()) +
+            expandVertically(motion.defaultSpatialSpec()) +
+            slideInVertically(motion.defaultSpatialSpec()) { it / 4 },
+        exit = fadeOut(motion.defaultEffectsSpec()) +
+            shrinkVertically(motion.defaultSpatialSpec()) +
+            slideOutVertically(motion.defaultSpatialSpec()) { it / 4 },
+    ) {
+        content()
+    }
+}
