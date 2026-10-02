@@ -23,9 +23,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,13 +33,15 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
@@ -55,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -66,6 +67,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -89,6 +91,7 @@ import slop.miho.aurora.ui.components.splitLeadingPrideFlag
 import slop.miho.aurora.ui.components.rememberHapticDeniedKicks
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.components.WavyPullToRefreshBox
+import slop.miho.aurora.ui.components.pressBounce
 import slop.miho.aurora.ui.components.pullShiftedPadding
 import slop.miho.aurora.ui.wallpapers.LocalSurfaceOpacity
 import slop.miho.aurora.ui.wallpapers.ReportBarCoverage
@@ -265,10 +268,12 @@ private fun ServersHeader(state: ServersUiState) {
 
 /**
  * The subscription card, the devices screen's row language grown up: the database tile
- * with the reload button tucked under it, the subscription's name (or the chooser's call
- * to action, once the list is out) over what the panel reports — the quota's fill, the
- * time left's drain. The card's own tap unfolds the subscription list; the button's is a
- * different ask — pulling new servers in.
+ * on the cookie backdrop (the cookie standing for the current pick while the chooser is
+ * shut, relaxing back into a circle once it opens and the pick moves into the list) with
+ * the reload button tucked under it, the subscription's name over what the panel reports.
+ * The card's own tap unfolds the subscription list — the info flies out from under the
+ * name as it does, and the title flips to the chooser's call to action — while the
+ * button's tap is a different ask: pulling new servers in.
  */
 @Composable
 private fun SubscriptionCard(
@@ -313,55 +318,93 @@ private fun SubscriptionCard(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // The leading column: the database tile, the reload button under it — the
-            // subscription's face, and its refresh, stacked.
+            // The leading column: the database tile on its backdrop, the reload button
+            // under it — the subscription's face, and its refresh, stacked.
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = colors.secondaryContainer,
-                    contentColor = colors.onSecondaryContainer,
+                Box(
                     modifier = Modifier.size(48.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_database),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
+                    CookieBackdrop(
+                        selected = !expanded,
+                        color = colors.secondaryContainer,
+                        animated = true,
+                    )
+                    Icon(
+                        painter = painterResource(R.drawable.ic_database),
+                        contentDescription = null,
+                        tint = colors.onSecondaryContainer,
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
                 UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
             }
             Column(Modifier.weight(1f)) {
-                // The title flips between the subscription's name and the chooser's call
-                // to action as the list comes and goes.
+                // The title flips between the subscription's name — the last update's
+                // stamp riding at its level — and the chooser's call to action as the
+                // list comes and goes.
                 AnimatedContent(
-                    targetState = expanded to (subscription?.name?.takeIf { it.isNotBlank() }),
+                    targetState = expanded,
                     transitionSpec = {
                         (fadeIn(motion.defaultEffectsSpec()) +
                             slideInVertically(motion.defaultSpatialSpec()) { it / 2 }) togetherWith
                             fadeOut(motion.defaultEffectsSpec())
                     },
                     label = "subscription title",
-                ) { (chooser, name) ->
-                    Text(
-                        text = if (chooser) stringResource(R.string.subscription_choose)
-                        else name ?: stringResource(R.string.subscription_none),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = contentColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                ) { chooser ->
+                    if (chooser) {
+                        Text(
+                            text = stringResource(R.string.subscription_choose),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = contentColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = subscription?.name?.takeIf { it.isNotBlank() }
+                                    ?: stringResource(R.string.subscription_none),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = contentColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            subscription?.let { sub ->
+                                updatedText(sub)?.let { stamp ->
+                                    Text(
+                                        text = stamp,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = supportingColor,
+                                        maxLines = 1,
+                                        modifier = Modifier.padding(start = 8.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
                 subscription?.let { sub ->
-                    SubscriptionInfo(
-                        subscription = sub,
-                        contentColor = contentColor,
-                        supportingColor = supportingColor,
-                    )
+                    // What the panel reports flies out from under the name as the chooser
+                    // opens, and settles back under it as the chooser folds.
+                    AnimatedVisibility(
+                        visible = !expanded,
+                        enter = fadeIn(motion.defaultEffectsSpec()) +
+                            expandVertically(motion.defaultSpatialSpec()) +
+                            slideInVertically(motion.defaultSpatialSpec()) { it / 2 },
+                        exit = fadeOut(motion.defaultEffectsSpec()) +
+                            shrinkVertically(motion.defaultSpatialSpec()) +
+                            slideOutVertically(motion.defaultSpatialSpec()) { it },
+                    ) {
+                        SubscriptionInfo(
+                            subscription = sub,
+                            supportingColor = supportingColor,
+                        )
+                    }
                 }
             }
             // The chevron points the card's own tap at the list it unfolds, flipping as it does.
@@ -417,9 +460,9 @@ private fun UpdateButton(isUpdating: Boolean, onClick: () -> Unit) {
 
 /**
  * The unfolded subscription list: one row per subscription — the servers' own segmented
- * container, cookie-marked pick and all — and the "add subscription" button at the end, a
- * real button now, the list's standing invitation. A long press on a row asks the heavier
- * question: deleting that subscription and everything it brought in.
+ * container, cookie-marked pick and all — and the "add subscription" button at the end:
+ * the font picker's stadium import button turned on its side. A long press on a row asks
+ * the heavier question: deleting that subscription and everything it brought in.
  */
 @Composable
 private fun SubscriptionDropdown(
@@ -430,6 +473,7 @@ private fun SubscriptionDropdown(
     onDeleteRequest: (SubscriptionEntity) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.extraSmall
@@ -457,32 +501,59 @@ private fun SubscriptionDropdown(
                 )
             }
         }
-        // The add button: a full-width tonal one, big enough to mean it.
-        Button(
+        // The add button: the font picker's import button turned on its side — the same
+        // stadium, laid out horizontally, pressed with the same bounce — with the add
+        // glyph on a square backdrop instead of the round one, the list's standing
+        // invitation.
+        val interactionSource = remember { MutableInteractionSource() }
+        val pressed by interactionSource.collectIsPressedAsState()
+        var taps by remember { mutableIntStateOf(0) }
+        val resting = colors.secondaryContainer.copy(alpha = LocalSurfaceOpacity.current)
+        val addContainer by animateColorAsState(
+            targetValue = if (pressed) lerp(resting, colors.onSurface, 0.1f) else resting,
+            animationSpec = motion.defaultEffectsSpec(),
+            label = "add subscription container",
+        )
+        Surface(
             onClick = {
                 poke()
+                taps++
                 onAdd()
             },
-            shape = MaterialTheme.shapes.extraLarge,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = colors.secondaryContainer.copy(alpha = LocalSurfaceOpacity.current),
-                contentColor = colors.onSecondaryContainer,
-            ),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+            interactionSource = interactionSource,
+            shape = CircleShape,
+            color = addContainer,
+            contentColor = colors.onSecondaryContainer,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
+                .height(56.dp)
+                .pressBounce(pressed, taps),
         ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_add),
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = stringResource(R.string.subscription_add),
-                style = MaterialTheme.typography.titleMedium,
-            )
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = colors.onSecondaryContainer.copy(alpha = 0.12f),
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_add),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.subscription_add),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -562,17 +633,28 @@ private fun SubscriptionRow(
             )
         }
         Column(Modifier.weight(1f)) {
-            Text(
-                text = subscription.name.takeIf { it.isNotBlank() }
-                    ?: stringResource(R.string.subscription_none),
-                style = MaterialTheme.typography.bodyLarge,
-                color = contentColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = subscription.name.takeIf { it.isNotBlank() }
+                        ?: stringResource(R.string.subscription_none),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = contentColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                updatedText(subscription)?.let { stamp ->
+                    Text(
+                        text = stamp,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = supportingColor,
+                        maxLines = 1,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
             SubscriptionInfo(
                 subscription = subscription,
-                contentColor = contentColor,
                 supportingColor = supportingColor,
             )
         }
@@ -588,107 +670,106 @@ private fun SubscriptionRow(
 }
 
 /**
- * What the panel knows about a subscription, in one quiet line: the traffic and its share
- * of the quota with the expiry and the time left while the counters are reported,
- * otherwise the last successful update's date.
- */
-@Composable
-private fun subscriptionSummary(subscription: SubscriptionEntity): String? {
-    if (subscription.totalBytes > 0) {
-        val parts = mutableListOf(
-            stringResource(
-                R.string.subscription_traffic,
-                formatBytes(subscription.downloadBytes),
-                formatBytes(subscription.uploadBytes),
-            ),
-            stringResource(
-                R.string.subscription_of_total,
-                formatBytes(subscription.downloadBytes + subscription.uploadBytes),
-                formatBytes(subscription.totalBytes),
-            ),
-        )
-        if (subscription.expireEpochSeconds > 0) {
-            parts += stringResource(
-                R.string.subscription_expires,
-                DateFormat.getDateInstance(DateFormat.MEDIUM)
-                    .format(Date(subscription.expireEpochSeconds * 1000L)),
-            )
-            timeLeftText(subscription.expireEpochSeconds)?.let { parts += it }
-        }
-        return parts.joinToString("  ·  ")
-    }
-    if (subscription.lastUpdateSuccess > 0) {
-        return stringResource(
-            R.string.subscription_updated,
-            DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(subscription.lastUpdateSuccess)),
-        )
-    }
-    return null
-}
-
-/**
- * What the panel reports about a subscription, drawn: the quota's fill under the name —
- * traffic up, the bar rises — and the time's drain beside it, from the subscription's
- * first sight (the only start the app has) to the panel's expiry. Both go red past their
- * marks: the quota at the last five percent, the time once it has run out.
+ * What the panel reports about a subscription, drawn the way hiddify draws it: the
+ * bandwidth's remaining share — the bar holds what's left, draining as traffic is spent —
+ * and the days remaining beside it, over a 30-day stretch. Both take the traffic-light
+ * tiers: red under a quarter, amber under half, the theme's primary while it's healthy.
  */
 @Composable
 private fun SubscriptionInfo(
     subscription: SubscriptionEntity,
-    contentColor: Color,
     supportingColor: Color,
 ) {
     val colors = MaterialTheme.colorScheme
     val used = subscription.uploadBytes + subscription.downloadBytes
-    val quotaFraction =
-        if (subscription.totalBytes > 0) (used.toFloat() / subscription.totalBytes).coerceIn(0f, 1f) else null
     val expire = subscription.expireEpochSeconds
-    val nowSeconds = remember { System.currentTimeMillis() / 1000 }
-    val startSeconds = subscription.createdAt / 1000
-    val timeFraction = if (expire > 0 && expire > startSeconds) {
-        ((nowSeconds - startSeconds).toFloat() / (expire - startSeconds)).coerceIn(0f, 1f)
-    } else {
-        null
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (quotaFraction != null) {
-            LinearProgressIndicator(
-                progress = { quotaFraction },
-                color = if (quotaFraction >= 0.95f) colors.error else colors.primary,
-                trackColor = supportingColor.copy(alpha = supportingColor.alpha * 0.30f),
-                modifier = Modifier.fillMaxWidth(),
+    if (subscription.totalBytes <= 0 && expire <= 0) return
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (subscription.totalBytes > 0) {
+            val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
+                subscription.totalBytes).coerceIn(0f, 1f)
+            UsageItem(
+                title = stringResource(R.string.subscription_bw_remaining, (ratio * 100).toInt()),
+                progress = ratio,
+                color = usageColor(ratio, colors),
+                trackColor = supportingColor,
+                modifier = Modifier.weight(1f),
             )
         }
-        if (timeFraction != null) {
-            LinearProgressIndicator(
-                progress = { timeFraction },
-                color = if (expire < nowSeconds) colors.error else colors.primary,
-                trackColor = supportingColor.copy(alpha = supportingColor.alpha * 0.30f),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        subscriptionSummary(subscription)?.let { summary ->
-            Text(
-                text = summary,
-                style = MaterialTheme.typography.bodySmall,
-                color = supportingColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+        if (expire > 0) {
+            val secondsLeft = expire - System.currentTimeMillis() / 1000
+            val daysLeft = secondsLeft / 86_400
+            val title = when {
+                daysLeft > 365 -> stringResource(R.string.subscription_days_infinite)
+                daysLeft >= 1 -> stringResource(R.string.subscription_days_remaining, daysLeft)
+                secondsLeft > 0 -> stringResource(R.string.subscription_hours_left, secondsLeft / 3_600)
+                else -> stringResource(R.string.subscription_expired)
+            }
+            val dayFraction = (secondsLeft.toFloat() / (86_400f * 30f)).coerceIn(0f, 1f)
+            val color = if (secondsLeft <= 0) colors.error else usageColor(dayFraction, colors)
+            UsageItem(
+                title = title,
+                progress = if (secondsLeft <= 0) 1f else dayFraction,
+                color = color,
+                trackColor = supportingColor,
+                modifier = Modifier.weight(1f),
             )
         }
     }
 }
 
-/** The time left before the expiry, in days (hours under a day); null forever while the
- *  panel keeps the expiry to itself. */
+/** One reported measure: its number above, its drain below. */
 @Composable
-private fun timeLeftText(expireEpochSeconds: Long): String? {
-    val seconds = expireEpochSeconds - System.currentTimeMillis() / 1000
-    return when {
-        seconds <= 0 -> stringResource(R.string.subscription_expired)
-        seconds >= 86_400 -> stringResource(R.string.subscription_days_left, seconds / 86_400)
-        else -> stringResource(R.string.subscription_hours_left, seconds / 3_600)
+private fun UsageItem(
+    title: String,
+    progress: Float,
+    color: Color,
+    trackColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodySmall,
+            color = trackColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        LinearProgressIndicator(
+            progress = { progress },
+            color = color,
+            trackColor = trackColor.copy(alpha = trackColor.alpha * 0.30f),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** The traffic-light tiers hiddify reads off a remaining ratio: red under a quarter,
+ *  amber under half, the primary otherwise. */
+private fun usageColor(ratio: Float, colors: ColorScheme): Color = when {
+    ratio < 0.25f -> colors.error
+    ratio < 0.45f -> colors.tertiary
+    else -> colors.primary
+}
+
+/**
+ * The last update's stamp for the title line: the time of day if it was within the day,
+ * the day count in hiddify's shorthand ("2d") once it's older.
+ */
+@Composable
+private fun updatedText(subscription: SubscriptionEntity): String? {
+    if (subscription.lastUpdateSuccess <= 0) return null
+    val age = System.currentTimeMillis() - subscription.lastUpdateSuccess
+    return if (age < 86_400_000L) {
+        stringResource(
+            R.string.subscription_updated_at,
+            DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(subscription.lastUpdateSuccess)),
+        )
+    } else {
+        stringResource(R.string.subscription_updated_ago, "${age / 86_400_000L}d")
     }
 }
 
@@ -976,20 +1057,6 @@ private fun protocolLabel(profile: ProfileEntity): String? = when (profile.type)
     slop.miho.aurora.db.ProfileType.SOCKS -> "socks"
     slop.miho.aurora.db.ProfileType.WIREGUARD -> "wireguard"
     slop.miho.aurora.db.ProfileType.HYSTERIA2 -> "hysteria2"
-}
-
-/** Bytes in the panel's own units, down to whole kilobytes. */
-private fun formatBytes(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    if (bytes < 1024) return "$bytes B"
-    val units = listOf("KiB", "MiB", "GiB", "TiB")
-    var value = bytes.toDouble()
-    var unit = -1
-    while (value >= 1024.0 && unit < units.lastIndex) {
-        value /= 1024.0
-        unit++
-    }
-    return String.format(java.util.Locale.US, "%.1f %s", value, units[unit])
 }
 
 /**
