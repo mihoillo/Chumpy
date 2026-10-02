@@ -4,12 +4,12 @@ plugins {
 }
 
 android {
-    namespace = "slop.miho.adhdium"
+    namespace = "slop.miho.aurora"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
         // Must match the id the native tunnel library is built for (see tunnel/build.gradle.kts).
-        applicationId = providers.gradleProperty("adhdiumPackageName").get()
+        applicationId = providers.gradleProperty("auroraPackageName").get()
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1

@@ -16,7 +16,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ADHDium"
+rootProject.name = "Aurora"
 
 include(":app")
 include(":tunnel")

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name" translatable="false">ADHDium</string>
+    <string name="app_name" translatable="false">Aurora</string>
 
     <!-- Greetings -->
     <string name="greeting_morning">Good morning</string>
@@ -41,7 +41,7 @@
     <string name="servers_available">Online: %1$d</string>
     <string name="servers_ping_ms">%1$d ms</string>
     <string name="servers_refresh_failed">Couldn\'t refresh servers: %1$s</string>
-    <string name="servers_connect_network">Connect to ADHDium network</string>
+    <string name="servers_connect_network">Connect to Aurora network</string>
 
     <!-- Devices -->
     <string name="devices_action_new">New device</string>
@@ -70,7 +70,7 @@
     <string name="devices_refresh_failed">Couldn\'t refresh devices: %1$s</string>
 
     <!-- Welcome (first run) -->
-    <string name="welcome_title">Welcome to ADHDium</string>
+    <string name="welcome_title">Welcome to Aurora</string>
     <string name="welcome_subtitle">Import your WireGuard config to get started.</string>
     <string name="welcome_import">Import config</string>
     <string name="welcome_import_failed">Couldn\'t import config: %1$s</string>
