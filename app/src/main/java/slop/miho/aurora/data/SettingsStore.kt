@@ -23,6 +23,14 @@ enum class ThemeMode {
 enum class FlagStyle { TWEMOJI, SYSTEM, GLOBE }
 
 /**
+ * The launcher icon variant. AURORA is the flat sky-colored art on white; INVERTED swaps
+ * the two; THEMED is the neutral art the system's themed icons (Android 13+) dress in the
+ * monet palette — and that the app itself colors from its own accent everywhere it draws
+ * (the QS tile, the picker's preview).
+ */
+enum class IconVariant { AURORA, INVERTED, THEMED }
+
+/**
  * The interface accent. ADAPTIVE follows the wallpaper (Material You, Android 12+); the rest
  * are the seven rainbow hues. [hue] is the HSL hue the color scheme is built from; ADAPTIVE
  * ignores it and is hidden on devices without Material You. The WALLPAPER_* entries are
@@ -88,6 +96,8 @@ data class UiSettings(
     val fontId: String = FontRegistry.INTER_ID,
     /** How the server list draws each exit's country. */
     val flagStyle: FlagStyle = FlagStyle.TWEMOJI,
+    /** The launcher icon variant; see [IconVariant]. */
+    val iconVariant: IconVariant = IconVariant.AURORA,
     /** How strongly the scrim dims the wallpaper on Home, 0 (none) to 1 (fully dark). */
     val wallpaperDim: Float = 0.4f,
     /** The scrim strength on every other screen, 0 (none) to 1 (fully dark). */
@@ -169,9 +179,13 @@ object SettingsStore {
     }
 
     fun update(context: Context, transform: (UiSettings) -> UiSettings) {
-        val updated = transform(settings(context).value)
+        val old = settings(context).value
+        val updated = transform(old)
         write(context, updated)
         settingsState.value = updated
+        // The launcher icon flips the moment the variant is picked — the aliases swap
+        // under the launcher without a reinstall.
+        if (updated.iconVariant != old.iconVariant) LauncherIcon.apply(context, updated.iconVariant)
     }
 
     private var seeded = false
@@ -193,6 +207,7 @@ object SettingsStore {
             hideIp = prefs.getBoolean(KEY_HIDE_IP, false),
             fontId = prefs.getString(KEY_FONT, null) ?: FontRegistry.INTER_ID,
             flagStyle = enumEntry(prefs.getString(KEY_FLAG_STYLE, null), FlagStyle.TWEMOJI),
+            iconVariant = enumEntry(prefs.getString(KEY_ICON_VARIANT, null), IconVariant.AURORA),
             wallpaperDim = prefs.getFloat(KEY_WALLPAPER_DIM, 0.4f),
             wallpaperDimScreens = prefs.getFloat(KEY_WALLPAPER_DIM_SCREENS, 0.5f),
             wallpaperBlur = prefs.getFloat(KEY_WALLPAPER_BLUR, 0.25f),
@@ -234,6 +249,7 @@ object SettingsStore {
             .putBoolean(KEY_HIDE_IP, settings.hideIp)
             .putString(KEY_FONT, settings.fontId)
             .putString(KEY_FLAG_STYLE, settings.flagStyle.name)
+            .putString(KEY_ICON_VARIANT, settings.iconVariant.name)
             .putFloat(KEY_WALLPAPER_DIM, settings.wallpaperDim)
             .putFloat(KEY_WALLPAPER_DIM_SCREENS, settings.wallpaperDimScreens)
             .putFloat(KEY_WALLPAPER_BLUR, settings.wallpaperBlur)
@@ -283,6 +299,7 @@ object SettingsStore {
     private const val KEY_HIDE_IP = "hide_ip"
     private const val KEY_FONT = "font"
     private const val KEY_FLAG_STYLE = "flag_style"
+    private const val KEY_ICON_VARIANT = "icon_variant"
     private const val KEY_WALLPAPER_DIM = "wallpaper_dim"
     private const val KEY_WALLPAPER_DIM_SCREENS = "wallpaper_dim_screens"
     private const val KEY_WALLPAPER_BLUR = "wallpaper_blur"

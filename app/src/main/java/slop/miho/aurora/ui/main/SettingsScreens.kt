@@ -9,6 +9,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
@@ -45,7 +49,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -60,6 +68,7 @@ import kotlin.math.roundToInt
 import slop.miho.aurora.R
 import slop.miho.aurora.data.Accent
 import slop.miho.aurora.data.FlagStyle
+import slop.miho.aurora.data.IconVariant
 import slop.miho.aurora.data.ThemeMode
 import slop.miho.aurora.data.UiSettings
 import slop.miho.aurora.ui.components.AccentRow
@@ -144,8 +153,15 @@ fun InterfaceScreen(
                     )
                 },
             )
-            // The wallpapers live in their own screen, between the colors and the fonts.
+            // The app icon and the wallpaper share this block: both dress the app itself,
+            // the icon its face and the picture its backdrop. The picker sits above.
             SettingsGroup(
+                {
+                    IconVariantRow(
+                        selected = settings.iconVariant,
+                        onSelect = { variant -> onChange { it.copy(iconVariant = variant) } },
+                    )
+                },
                 {
                     ScreenLinkRow(
                         title = stringResource(R.string.settings_wallpapers),
@@ -985,5 +1001,128 @@ fun AboutScreen(
                 )
             },
         )
+    }
+}
+
+/**
+ * The launcher icon picker: the three variants as the icons themselves — round, the way a
+ * launcher draws them, not glyph-in-a-tile like the other pickers. Aurora is the flat sky
+ * art on white, Inverted swaps the two, Themed shows the app's own live scheme (the neutral
+ * art over the surface, in the accent's primary). Picking one swaps the launcher entry on
+ * the spot, through the activity aliases in the manifest.
+ */
+@Composable
+private fun IconVariantRow(
+    selected: IconVariant,
+    onSelect: (IconVariant) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.settings_app_icon),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            // The picked variant's name under the title, like the font and flag rows.
+            Text(
+                text = stringResource(
+                    when (selected) {
+                        IconVariant.AURORA -> R.string.settings_icon_aurora
+                        IconVariant.INVERTED -> R.string.settings_icon_inverted
+                        IconVariant.THEMED -> R.string.settings_icon_themed
+                    },
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(
+            modifier = Modifier.padding(start = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            IconVariant.entries.forEach { variant ->
+                IconPreviewButton(
+                    variant = variant,
+                    selected = variant == selected,
+                    onClick = { onSelect(variant) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One variant's preview: a 48dp circle carrying the real icon — background color, art
+ * color, exactly what the launcher will show. The art is the monochrome mask (an alpha
+ * drawing), tinted per variant; the hairline outline keeps the white-on-white and
+ * surface-on-surface variants from dissolving into the card. The selected preview wears
+ * the check, the swatches' language.
+ */
+@Composable
+private fun IconPreviewButton(
+    variant: IconVariant,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val sky = Color(0xFF6FACED)
+    val (background, art) = when (variant) {
+        IconVariant.AURORA -> Color.White to sky
+        IconVariant.INVERTED -> sky to Color.White
+        // The live scheme, as the QS tile and the app itself draw the themed icon.
+        IconVariant.THEMED -> colors.surface to colors.primary
+    }
+    val label = stringResource(
+        when (variant) {
+            IconVariant.AURORA -> R.string.settings_icon_aurora
+            IconVariant.INVERTED -> R.string.settings_icon_inverted
+            IconVariant.THEMED -> R.string.settings_icon_themed
+        },
+    )
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val poke = rememberHapticPoke()
+    // Bumped in the click handler: the pop keys off it, so it fires on every click.
+    var taps by remember { mutableIntStateOf(0) }
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .pressBounce(pressed, taps)
+            .clip(CircleShape)
+            .background(background)
+            .border(1.dp, colors.outlineVariant, CircleShape)
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                role = Role.Button,
+            ) {
+                poke()
+                taps++
+                onClick()
+            }
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_launcher_monochrome_art),
+            contentDescription = null,
+            colorFilter = ColorFilter.tint(art),
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (selected) {
+            Icon(
+                painter = painterResource(R.drawable.ic_check),
+                contentDescription = null,
+                tint = if (art.luminance() > 0.5f) Color.Black else Color.White,
+                modifier = Modifier.size(24.dp),
+            )
+        }
     }
 }

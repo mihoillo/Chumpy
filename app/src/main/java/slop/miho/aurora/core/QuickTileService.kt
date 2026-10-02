@@ -2,6 +2,12 @@ package slop.miho.aurora.core
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
@@ -9,17 +15,31 @@ import android.os.Handler
 import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import slop.miho.aurora.MainActivity
 import slop.miho.aurora.R
+import slop.miho.aurora.data.IconVariant
+import slop.miho.aurora.data.SettingsStore
+import slop.miho.aurora.ui.theme.themedIconColor
 
 /**
  * Quick Settings toggle, modelled on WireGuard's QuickTileService. It runs inside the ":core"
  * process and talks to [XrayCore] and the VPN service directly, so it keeps working when the
  * UI is long gone.
+ *
+ * The glyph follows the picked launcher icon variant: the sky art, its white inversion, or
+ * the "themed" one — the app's own accent, live, so flipping the accent re-tints the tile
+ * the next time it shows. The settings flow is watched while the tile is on screen, so a
+ * variant picked in the UI lands here without a re-add.
  */
 class QuickTileService : TileService() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     // Binder threads; tile updates must happen on the main thread.
     private val callback = object : ITunnelCallback.Stub() {
@@ -30,11 +50,21 @@ class QuickTileService : TileService() {
 
     override fun onStartListening() {
         XrayCore.register(callback)
+        // The icon variant (and, for the themed one, the accent) can flip in the UI while
+        // the tile sits on screen: follow the settings live.
+        scope.launch {
+            SettingsStore.settings(this@QuickTileService).collect { updateTile() }
+        }
         updateTile()
     }
 
     override fun onStopListening() {
         XrayCore.unregister(callback)
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
     }
 
     override fun onClick() {
@@ -68,12 +98,12 @@ class QuickTileService : TileService() {
         val hasConfig = CoreConfigFile.has(this)
         val up = XrayCore.currentStatus().state == TunnelState.UP
         tile.label = getString(R.string.app_name)
-        // The wordmark lights up when connected and goes hollow when not. Distinct resource
-        // names per state also defeat SystemUI's per-resId tile icon caching.
-        tile.icon = Icon.createWithResource(
-            this,
-            if (up) R.drawable.ic_tile_on else R.drawable.ic_tile_off,
-        )
+        // Distinct resource names per state also defeat SystemUI's per-resId tile icon
+        // caching; while down the wordmark stays hollow in the familiar dim gray.
+        tile.icon = when {
+            !up -> Icon.createWithResource(this, R.drawable.ic_tile_off)
+            else -> variantIcon(SettingsStore.settings(this).value.iconVariant)
+        }
         tile.state = when {
             !hasConfig -> Tile.STATE_UNAVAILABLE
             up -> Tile.STATE_ACTIVE
@@ -81,4 +111,27 @@ class QuickTileService : TileService() {
         }
         tile.updateTile()
     }
+
+    /** The connected glyph in the picked variant's color. */
+    private fun variantIcon(variant: IconVariant): Icon = when (variant) {
+        IconVariant.AURORA -> Icon.createWithResource(this, R.drawable.ic_tile_on)
+        IconVariant.INVERTED -> Icon.createWithResource(this, R.drawable.ic_tile_inverted)
+        // The app's own accent, tinted onto the white glyph at runtime — the live scheme,
+        // not a color baked into a resource.
+        IconVariant.THEMED -> themedIcon(themedIconColor(this, SettingsStore.settings(this).value))
+    }
+
+    /** The white tile glyph tinted [color]; cached, since the tile re-renders often. */
+    private fun themedIcon(color: Int): Icon {
+        cache?.let { (cachedColor, icon) -> if (cachedColor == color) return icon }
+        val mask = BitmapFactory.decodeResource(resources, R.drawable.ic_tile_inverted)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
+        }
+        val bitmap = Bitmap.createBitmap(mask.width, mask.height, Bitmap.Config.ARGB_8888)
+        Canvas(bitmap).drawBitmap(mask, 0f, 0f, paint)
+        return Icon.createWithBitmap(bitmap).also { cache = color to it }
+    }
+
+    private var cache: Pair<Int, Icon>? = null
 }

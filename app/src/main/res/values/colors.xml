@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- The launcher icon art is full-color now, so its tile is plain white everywhere: no
-         accent tinting, on any API level. -->
+    <!-- The classic launcher icon: the flat sky-colored art on plain white. -->
     <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- The inverted variant's whole background: the art's own sky color. -->
+    <color name="ic_launcher_background_sky">#6FACED</color>
     <color name="window_background">#FEF7FF</color>
 </resources>

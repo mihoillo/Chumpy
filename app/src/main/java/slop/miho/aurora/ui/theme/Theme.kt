@@ -147,6 +147,21 @@ private fun themeColorScheme(
 }
 
 /**
+ * The "themed" icon's art color, resolved outside composition — the QS tile lives in the
+ * ":core" process, where there is no UI to theme, and still paints itself with the app's
+ * own accent. Always the dark scheme's primary: the tile sits on the dark shade either way.
+ * Wallpaper-seeded accents fall back to the sky hue — the palette itself is UI machinery.
+ */
+fun themedIconColor(context: Context, settings: UiSettings): Int =
+    themeColorScheme(
+        settings = settings,
+        monetHues = null,
+        rainbowHue = Accent.SKY.hue,
+        darkTheme = true,
+        context = context,
+    ).primary.toArgb()
+
+/**
  * The AMOLED take on a dark scheme: the background and the lowest surfaces go pure black,
  * the containers above them sink halfway there — still tinted by the accent, still stacked
  * in the same order, just deeper.

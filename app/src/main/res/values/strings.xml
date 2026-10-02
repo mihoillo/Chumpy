@@ -96,6 +96,10 @@
     <string name="settings_flag_twemoji">Twemoji</string>
     <string name="settings_flag_system">System emoji</string>
     <string name="settings_flag_globe">Just globe</string>
+    <string name="settings_app_icon">App icon</string>
+    <string name="settings_icon_aurora">Aurora</string>
+    <string name="settings_icon_inverted">Inverted</string>
+    <string name="settings_icon_themed">Themed</string>
     <string name="settings_wallpapers">Wallpapers</string>
     <string name="settings_wallpapers_hint">The backdrop behind the app</string>
     <string name="settings_navbar_blur">Navigation bar blur</string>
