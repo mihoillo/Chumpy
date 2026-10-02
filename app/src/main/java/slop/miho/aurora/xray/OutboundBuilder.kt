@@ -136,14 +136,17 @@ object OutboundBuilder {
 
     /**
      * The streamSettings object: transport + security. Null only when there is nothing to
-     * say (plain TCP without TLS), in which case the whole section is omitted.
+     * say (plain TCP without TLS), in which case the whole section is omitted. The
+     * "security" field itself matters as much as the settings object under it: the core's
+     * loader rejects a vless or trojan outbound whose security type reads empty (plain
+     * text to a public address), no matter what tlsSettings/realitySettings sit next to it.
      */
     private fun streamSettings(profile: ProfileEntity): JsonObject? {
-        var json = buildJsonObject { put("network", profile.network) }
+        var json = buildJsonObject { put("network", profile.network.ifEmpty { "tcp" }) }
 
         when (profile.security) {
-            TLS -> json = json.with("tlsSettings" to tlsSettings(profile))
-            REALITY -> json = json.with("realitySettings" to realitySettings(profile))
+            TLS -> json = json.with("security" to JsonPrimitive(TLS)).with("tlsSettings" to tlsSettings(profile))
+            REALITY -> json = json.with("security" to JsonPrimitive(REALITY)).with("realitySettings" to realitySettings(profile))
         }
 
         transportSettings(profile)?.let { (name, settings) -> json = json.with(name to settings) }
