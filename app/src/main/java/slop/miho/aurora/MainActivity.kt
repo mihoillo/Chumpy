@@ -5,6 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -39,8 +42,23 @@ class MainActivity : ComponentActivity() {
                     AnimatedContent(
                         targetState = setupDone,
                         transitionSpec = {
-                            (fadeIn(motion.slowEffectsSpec()) + scaleIn(motion.slowSpatialSpec(), initialScale = 0.92f))
-                                .togetherWith(fadeOut(motion.fastEffectsSpec()))
+                            if (initialState == null) {
+                                // The app coming open: the hold's empty slot is zero-sized, and
+                                // growing it out with the clip would unfold the window out of
+                                // a corner. The system's own window fade has the launch
+                                // covered — the shell lands whole, at once.
+                                ContentTransform(
+                                    targetContentEnter = fadeIn(snap()),
+                                    initialContentExit = fadeOut(snap()),
+                                    sizeTransform = SizeTransform(sizeAnimationSpec = { _, _ -> snap() }),
+                                )
+                            } else {
+                                // Onboarding answered and the shell takes over: the slow
+                                // fade with the settle-down from a touch shy of full.
+                                (fadeIn(motion.slowEffectsSpec()) +
+                                    scaleIn(motion.slowSpatialSpec(), initialScale = 0.92f))
+                                    .togetherWith(fadeOut(motion.fastEffectsSpec()))
+                            }
                         },
                         label = "onboarding",
                     ) { onboarded ->
