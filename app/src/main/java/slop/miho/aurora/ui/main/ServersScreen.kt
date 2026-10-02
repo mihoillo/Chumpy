@@ -1,5 +1,6 @@
 package slop.miho.aurora.ui.main
 
+import androidx.core.graphics.ColorUtils
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
@@ -51,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
@@ -69,7 +71,9 @@ import slop.miho.aurora.ui.components.CookieBackdrop
 import slop.miho.aurora.ui.components.EmojiFlag
 import slop.miho.aurora.ui.components.ErrorCard
 import slop.miho.aurora.ui.components.InfoChip
+import slop.miho.aurora.ui.components.PrideFlagIcon
 import slop.miho.aurora.ui.components.splitLeadingFlag
+import slop.miho.aurora.ui.components.splitLeadingPrideFlag
 import slop.miho.aurora.ui.components.rememberHapticDeniedKicks
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.components.WavyPullToRefreshBox
@@ -647,10 +651,19 @@ private fun ServerRow(
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
+    // The pride easter egg: a name leading with the rainbow or the trans flag sets the
+    // whole row drifting through the rainbow — the RAINBOW accent's slow cycle, on this
+    // one row instead of the whole scheme. The flag itself rides the icon slot, like the
+    // country flags do, and comes off the name.
+    val (pride, prideStripped) = splitLeadingPrideFlag(profile.remarks.ifEmpty { profile.server })
     // The flag the panel put at the front of the name moves into the icon slot; the
     // headline shows the name without it.
-    val (flag, title) = splitLeadingFlag(profile.remarks.ifEmpty { profile.server })
-    val containerColor by animateColorAsState(
+    val (flag, splitTitle) = splitLeadingFlag(prideStripped)
+    val title = splitTitle.ifEmpty { profile.server }
+    val darkRow = colors.surface.luminance() < 0.5f
+    val cyclingHue = if (pride != null) prideHueCycle() else null
+
+    val containerState = animateColorAsState(
         targetValue = (if (selected) colors.primaryContainer else colors.surfaceContainer)
             .copy(alpha = LocalSurfaceOpacity.current),
         animationSpec = motion.defaultEffectsSpec(),
@@ -679,7 +692,7 @@ private fun ServerRow(
         animationSpec = motion.defaultEffectsSpec(),
         label = "server supporting",
     )
-    val iconContainerColor by animateColorAsState(
+    val iconContainerState = animateColorAsState(
         targetValue = if (selected) colors.primary else colors.secondaryContainer,
         animationSpec = motion.defaultEffectsSpec(),
         label = "server icon container",
@@ -689,6 +702,19 @@ private fun ServerRow(
         animationSpec = motion.defaultEffectsSpec(),
         label = "server icon",
     )
+
+    // A pride row's container and tile are computed straight from the cycling hue — the
+    // hue itself is the animation, so the state animators bow out for those two.
+    val containerColor = if (cyclingHue != null) {
+        prideColor(cyclingHue, selected, darkRow).copy(alpha = LocalSurfaceOpacity.current)
+    } else {
+        containerState.value
+    }
+    val iconContainerColor = if (cyclingHue != null) {
+        prideTileColor(cyclingHue, selected, darkRow)
+    } else {
+        iconContainerState.value
+    }
     val poke = rememberHapticPoke()
 
     Surface(
@@ -756,13 +782,20 @@ private fun ServerRow(
                         color = iconContainerColor,
                         animated = true,
                     )
-                    if (flag != null && flagStyle != FlagStyle.GLOBE) {
-                        EmojiFlag(
+                    when {
+                        // The pride flag always rides the tile — the easter egg ignores
+                        // the plain-globe flag style, only the country flags obey it.
+                        pride != null -> PrideFlagIcon(
+                            pride = pride,
+                            twemoji = flagStyle == FlagStyle.TWEMOJI,
+                        )
+
+                        flag != null && flagStyle != FlagStyle.GLOBE -> EmojiFlag(
                             emoji = flag,
                             twemoji = flagStyle == FlagStyle.TWEMOJI,
                         )
-                    } else {
-                        Icon(
+
+                        else -> Icon(
                             painter = painterResource(R.drawable.ic_public),
                             contentDescription = null,
                             modifier = Modifier.size(24.dp),
@@ -924,3 +957,51 @@ private fun DeleteSubscriptionDialog(
 
 /** From this ping on (ms) a server counts as slow, and its ping is painted in the accent. */
 private const val HIGH_PING_MILLIS = 150
+
+// ---------------------------------------------------------------- pride easter egg
+
+/**
+ * The pride row's hue: one slow lap of the rainbow, the same 12 seconds the RAINBOW
+ * accent takes. Read at every frame, so the row's colors follow the hue around.
+ */
+@Composable
+private fun prideHueCycle(): Float {
+    val hue by rememberInfiniteTransition(label = "pride hue").animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(PRIDE_CYCLE_MS, easing = LinearEasing)),
+        label = "pride hue value",
+    )
+    return hue
+}
+
+/** The pride row's container at a point of the cycle: a soft tint of the hue — deeper
+ *  when picked, on the dark side when the app is. */
+private fun prideColor(hue: Float, selected: Boolean, dark: Boolean): Color = hslColor(
+    hue = hue,
+    saturation = if (selected) 0.55f else 0.38f,
+    lightness = when {
+        dark && selected -> 0.30f
+        dark -> 0.22f
+        selected -> 0.86f
+        else -> 0.93f
+    },
+)
+
+/** The icon tile's take on the hue: stronger, and the cookie's backing when picked. */
+private fun prideTileColor(hue: Float, selected: Boolean, dark: Boolean): Color = hslColor(
+    hue = hue,
+    saturation = if (selected) 0.70f else 0.50f,
+    lightness = when {
+        dark && selected -> 0.45f
+        dark -> 0.30f
+        selected -> 0.58f
+        else -> 0.78f
+    },
+)
+
+private fun hslColor(hue: Float, saturation: Float, lightness: Float): Color =
+    Color(ColorUtils.HSLToColor(floatArrayOf(hue, saturation, lightness)))
+
+/** The pride lap: 12 s, the RAINBOW accent's own cycle time. */
+private const val PRIDE_CYCLE_MS = 12_000

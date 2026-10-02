@@ -61,6 +61,53 @@ fun EmojiFlag(
 /** The rainbow flag (🏳️‍🌈): the white flag, VS16 and a rainbow joined by a ZWJ. */
 private const val RAINBOW_FLAG_EMOJI = "🏳️‍🌈"
 
+/** The trans flag (🏳️‍⚧️): the white flag, VS16 and the trans symbol joined by a ZWJ. */
+private const val TRANS_FLAG_EMOJI = "🏳️‍⚧️"
+
+/**
+ * The pride flags a profile's name can lead with, and the easter egg they trip: the row
+ * drifts through the rainbow, the [PrideFlag.RAINBOW] accent's slow cycle in miniature.
+ */
+enum class PrideFlag {
+    RAINBOW,
+    TRANS,
+}
+
+/**
+ * Splits a leading pride flag off a profile's name, [splitLeadingFlag]'s sibling for the
+ * emoji panels sometimes put there instead of (or before) a country's flag. Returns the
+ * pride flag and the rest of the name, trimmed; a name without one keeps a null flag.
+ */
+fun splitLeadingPrideFlag(name: String): Pair<PrideFlag?, String> {
+    val trimmed = name.trimStart()
+    return when {
+        trimmed.startsWith(RAINBOW_FLAG_EMOJI) ->
+            PrideFlag.RAINBOW to trimmed.substring(RAINBOW_FLAG_EMOJI.length).trimStart()
+
+        trimmed.startsWith(TRANS_FLAG_EMOJI) ->
+            PrideFlag.TRANS to trimmed.substring(TRANS_FLAG_EMOJI.length).trimStart()
+
+        else -> null to name
+    }
+}
+
+/**
+ * The pride flag itself in an icon slot: the rainbow gets Twemoji's own drawable, the
+ * trans one rides the system emoji (the Twemoji font has no layered glyph for it).
+ */
+@Composable
+fun PrideFlagIcon(
+    pride: PrideFlag,
+    twemoji: Boolean,
+    modifier: Modifier = Modifier,
+    size: Dp = 24.dp,
+) {
+    when (pride) {
+        PrideFlag.RAINBOW -> RainbowFlag(twemoji, modifier, size)
+        PrideFlag.TRANS -> FlagEmoji(TRANS_FLAG_EMOJI, twemoji = false, modifier, size)
+    }
+}
+
 /**
  * The rainbow flag, drawn like a [CountryFlag]. The system emoji take the text; Twemoji's
  * comes from a drawable of the font's own layers instead — the font has the glyph, but text

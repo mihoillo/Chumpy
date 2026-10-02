@@ -44,4 +44,33 @@ class SplitLeadingFlagTest {
         assertNull(flag)
         assertEquals("⚡ Fast exit", title)
     }
+
+
+    @Test
+    fun `rainbow flag splits off`() {
+        val (pride, title) = splitLeadingPrideFlag("🏳️‍🌈 Pride node")
+        assertEquals(PrideFlag.RAINBOW, pride)
+        assertEquals("Pride node", title)
+    }
+
+    @Test
+    fun `trans flag splits off`() {
+        val (pride, title) = splitLeadingPrideFlag("🏳️‍⚧️ Trans node")
+        assertEquals(PrideFlag.TRANS, pride)
+        assertEquals("Trans node", title)
+    }
+
+    @Test
+    fun `pride before a country flag leaves the country one behind`() {
+        val (pride, rest) = splitLeadingPrideFlag("🏳️‍🌈🇩🇪 Berlin")
+        assertEquals(PrideFlag.RAINBOW, pride)
+        assertEquals("🇩🇪 Berlin", rest)
+    }
+
+    @Test
+    fun `plain name has no pride flag`() {
+        val (pride, title) = splitLeadingPrideFlag("🇩🇪 Германия")
+        assertNull(pride)
+        assertEquals("🇩🇪 Германия", title)
+    }
 }
