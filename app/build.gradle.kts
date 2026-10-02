@@ -15,9 +15,17 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0.0"
-        // Phones only: the emulator ABIs just double the Xray core library's weight.
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+    }
+
+    // One APK per phone architecture: the Xray core's native library is the app's whole
+    // weight, and carrying both 64- and 32-bit copies doubles it for every device that
+    // installs the wrong one. The builds are sideloaded, so the split is per file.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
         }
     }
 

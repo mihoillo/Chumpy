@@ -109,13 +109,17 @@ object XrayCore {
         }
     }
 
-    /** The geo databases are shipped in the APK; the core wants them as plain files. */
+    /**
+     * The geo databases are shipped in the APK; the core wants them as plain files. The
+     * copy is unconditional: the databases are slim enough now that re-placing them each
+     * start costs less than any version bookkeeping — and a build with changed databases
+     * always wins over whatever an older one had left on the device.
+     */
     private fun copyGeoAssets() {
         val dir = assetsDir()
         dir.mkdirs()
         listOf(GEOIP, GEOSITE).forEach { name ->
             val target = File(dir, name)
-            if (target.exists() && target.length() > 0) return@forEach
             appContext.assets.open(name).use { input ->
                 File(dir, "$name.tmp").let { tmp ->
                     tmp.outputStream().use { output -> input.copyTo(output) }

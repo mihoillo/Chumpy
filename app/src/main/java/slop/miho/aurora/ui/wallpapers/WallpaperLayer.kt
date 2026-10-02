@@ -302,8 +302,30 @@ internal fun scrimColor(tone: DimTone): Color {
     }
 }
 
-/** Decodes the picked image, downscaled so a camera shot doesn't eat memory. */
+/** Decodes the picked image, downscaled so a camera shot doesn't eat memory.
+ *
+ *  The result is kept warm: the decode runs once per picture, and every later ask —
+ *  re-opening the app, the palette's change trigger re-running the state — is a cache
+ *  hit instead of the whole pipeline over again.
+ */
 internal fun decodeWallpaper(file: File): DecodedWallpaper? {
+    val key = Triple(file.absolutePath, file.lastModified(), file.length())
+    synchronized(decodeLock) {
+        val cached = decodeCache
+        if (cached != null && cached.first == key) return cached.second
+    }
+    val decoded = decodeWallpaperUncached(file)
+    synchronized(decodeLock) {
+        decodeCache = key to decoded
+    }
+    return decoded
+}
+
+/** The last picture's key and decode; see [decodeWallpaper]. */
+private var decodeCache: Pair<Triple<String, Long, Long>, DecodedWallpaper?>? = null
+private val decodeLock = Any()
+
+private fun decodeWallpaperUncached(file: File): DecodedWallpaper? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(file.absolutePath, bounds)
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
@@ -369,6 +391,9 @@ internal fun decodeWallpaper(file: File): DecodedWallpaper? {
  * through untouched.
  */
 private fun trimTransparent(bitmap: Bitmap): Bitmap {
+    // Opaque pictures — every plain camera photo — carry no transparency at all: the
+    // scan would only bill the pixels to hand the bitmap back as it came.
+    if (!bitmap.hasAlpha()) return bitmap
     val w = bitmap.width
     val h = bitmap.height
     val pixels = IntArray(w * h)
