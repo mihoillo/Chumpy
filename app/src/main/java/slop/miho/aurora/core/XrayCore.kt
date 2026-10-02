@@ -133,13 +133,15 @@ object XrayCore {
 
     /**
      * A stable per-device id for Xray's XUDP base key, as v2rayNG does — a salted hash of
-     * ANDROID_ID, never the raw identifier.
+     * ANDROID_ID, never the raw identifier. The core decodes this as base64url and demands
+     * exactly 32 bytes out of it (hex strings decode to a multiple of 3 and are rejected),
+     * so the digest itself is what gets encoded, unpadded.
      */
     private fun deviceId(): String {
         val androidId = Settings.Secure.getString(appContext.contentResolver, Settings.Secure.ANDROID_ID)
             ?: "aurora"
         val digest = MessageDigest.getInstance("SHA-256").digest("aurora:$androidId".toByteArray())
-        return digest.joinToString("") { "%02x".format(it) }
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
     }
 
     /**
