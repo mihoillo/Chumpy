@@ -10,13 +10,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** UI-process side of the AIDL link to [TunnelService]. */
+/**
+ * UI-process side of the AIDL link to [AuroraVpnService]. Connect and disconnect travel as
+ * service commands (the VPN must be started, not merely bound); the binder carries status
+ * callbacks, traffic counters and delay measurements.
+ */
 class TunnelClient(private val context: Context) {
     private val _status = MutableStateFlow(TunnelStatus())
     val status: StateFlow<TunnelStatus> = _status.asStateFlow()
 
     private var service: ITunnelService? = null
-    private var pendingAction: ((ITunnelService) -> Unit)? = null
     private var bound = false
 
     private val callback = object : ITunnelCallback.Stub() {
@@ -30,12 +33,10 @@ class TunnelClient(private val context: Context) {
             val remote = ITunnelService.Stub.asInterface(binder)
             service = remote
             call(remote) { it.registerCallback(callback) }
-            pendingAction?.let { action -> call(remote, action) }
-            pendingAction = null
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
-            // ":tunnel" died; BIND_AUTO_CREATE brings it back and we reconnect automatically.
+            // ":core" died; BIND_AUTO_CREATE brings it back and we reconnect automatically.
             service = null
             _status.value = TunnelStatus()
         }
@@ -43,7 +44,11 @@ class TunnelClient(private val context: Context) {
 
     fun bind() {
         if (bound) return
-        bound = context.bindService(Intent(context, TunnelService::class.java), connection, Context.BIND_AUTO_CREATE)
+        bound = context.bindService(
+            Intent(context, AuroraVpnService::class.java),
+            connection,
+            Context.BIND_AUTO_CREATE,
+        )
     }
 
     fun unbind() {
@@ -54,9 +59,13 @@ class TunnelClient(private val context: Context) {
         bound = false
     }
 
-    fun connect() = perform { it.connect() }
+    /**
+     * Connect (or reload, if already up) using the config the caller just wrote with
+     * [CoreConfigFile]. The caller must hold the VPN consent already.
+     */
+    fun connect() = AuroraVpnService.startConnect(context)
 
-    fun disconnect() = perform { it.disconnect() }
+    fun disconnect() = AuroraVpnService.startDisconnect(context)
 
     /** Wall-clock millis of the last transition to UP, or null while not bound. */
     fun connectedAtMillis(): Long? {
@@ -78,9 +87,27 @@ class TunnelClient(private val context: Context) {
         }
     }
 
-    private fun perform(action: (ITunnelService) -> Unit) {
-        val remote = service
-        if (remote != null) call(remote, action) else pendingAction = action
+    /**
+     * A real delay measurement through [configJson], performed by a one-off core instance
+     * in the ":core" process. Blocking — call from Dispatchers.IO. Null when unreachable.
+     */
+    fun measureDelay(configJson: String, testUrl: String): Long? {
+        val remote = service ?: return null
+        return try {
+            remote.measureDelay(configJson, testUrl).takeIf { it >= 0 }
+        } catch (_: RemoteException) {
+            null
+        }
+    }
+
+    /** The Xray core version, or null while the core process is unreachable. */
+    fun coreVersion(): String? {
+        val remote = service ?: return null
+        return try {
+            remote.coreVersion()
+        } catch (_: RemoteException) {
+            null
+        }
     }
 
     private fun call(remote: ITunnelService, action: (ITunnelService) -> Unit) {

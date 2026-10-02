@@ -1,8 +1,8 @@
 package slop.miho.aurora.core
 
 import android.app.PendingIntent
-import android.graphics.drawable.Icon
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -10,11 +10,12 @@ import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import slop.miho.aurora.MainActivity
-import slop.miho.aurora.data.ProfileStore
+import slop.miho.aurora.R
 
 /**
- * Quick Settings toggle, modelled on WireGuard's QuickTileService. It runs inside the ":tunnel"
- * process and talks to [TunnelCore] directly, so it keeps working when the UI is long gone.
+ * Quick Settings toggle, modelled on WireGuard's QuickTileService. It runs inside the ":core"
+ * process and talks to [XrayCore] and the VPN service directly, so it keeps working when the
+ * UI is long gone.
  */
 class QuickTileService : TileService() {
 
@@ -28,20 +29,20 @@ class QuickTileService : TileService() {
     }
 
     override fun onStartListening() {
-        TunnelCore.register(callback)
+        XrayCore.register(callback)
         updateTile()
     }
 
     override fun onStopListening() {
-        TunnelCore.unregister(callback)
+        XrayCore.unregister(callback)
     }
 
     override fun onClick() {
-        when (TunnelCore.currentStatus().state) {
-            TunnelState.UP, TunnelState.CONNECTING -> TunnelCore.disconnect()
+        when (XrayCore.currentStatus().state) {
+            TunnelState.UP, TunnelState.CONNECTING -> AuroraVpnService.startDisconnect(this)
             TunnelState.DISCONNECTING -> Unit
             else -> {
-                val needsSetup = !ProfileStore.hasProfile(this) || VpnService.prepare(this) != null
+                val needsSetup = !CoreConfigFile.has(this) || VpnService.prepare(this) != null
                 if (needsSetup) {
                     // Missing config or VPN consent: hand over to the app once unlocked.
                     unlockAndRun {
@@ -56,7 +57,7 @@ class QuickTileService : TileService() {
                         }
                     }
                 } else {
-                    TunnelCore.connect()
+                    AuroraVpnService.startConnect(this)
                 }
             }
         }
@@ -64,18 +65,17 @@ class QuickTileService : TileService() {
 
     private fun updateTile() {
         val tile = qsTile ?: return
-        val hasProfile = ProfileStore.hasProfile(this)
-        val up = TunnelCore.currentStatus().state == TunnelState.UP
-        tile.label = getString(slop.miho.aurora.R.string.app_name)
+        val hasConfig = CoreConfigFile.has(this)
+        val up = XrayCore.currentStatus().state == TunnelState.UP
+        tile.label = getString(R.string.app_name)
         // The wordmark lights up when connected and goes hollow when not. Distinct resource
         // names per state also defeat SystemUI's per-resId tile icon caching.
         tile.icon = Icon.createWithResource(
             this,
-            if (up) slop.miho.aurora.R.drawable.ic_tile_on
-            else slop.miho.aurora.R.drawable.ic_tile_off,
+            if (up) R.drawable.ic_tile_on else R.drawable.ic_tile_off,
         )
         tile.state = when {
-            !hasProfile -> Tile.STATE_UNAVAILABLE
+            !hasConfig -> Tile.STATE_UNAVAILABLE
             up -> Tile.STATE_ACTIVE
             else -> Tile.STATE_INACTIVE
         }
