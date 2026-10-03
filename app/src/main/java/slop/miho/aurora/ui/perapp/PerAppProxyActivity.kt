@@ -18,7 +18,6 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -43,12 +42,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ColorMatrixColorFilter
@@ -56,7 +58,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,7 +72,9 @@ import kotlinx.coroutines.withContext
 import slop.miho.aurora.R
 import slop.miho.aurora.data.ConnectionStore
 import slop.miho.aurora.data.SettingsStore
+import slop.miho.aurora.ui.components.WavyPullToRefreshBox
 import slop.miho.aurora.ui.components.pressBounce
+import slop.miho.aurora.ui.components.pullShiftedPadding
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.main.FloatingBottomBarReservedHeight
 import slop.miho.aurora.ui.main.PillDestination
@@ -139,10 +145,16 @@ fun PerAppProxyScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    // The launcher's own list — labels and icons of every launchable app. Both loads are
-    // package-manager work: off the main thread, once, then the rows are pure recomposition.
-    val apps by produceState(initialValue = emptyList<AppEntry>()) {
+    val density = LocalDensity.current
+    // The launcher's own list — labels and icons of every launchable app, re-queried on
+    // every pull. Both loads are package-manager work: off the main thread, and the
+    // pull's wave makes the wait legible — it also answers the page's own first load.
+    var refreshes by remember { mutableIntStateOf(0) }
+    var loading by remember { mutableStateOf(true) }
+    val apps by produceState(initialValue = emptyList<AppEntry>(), refreshes) {
+        loading = true
         value = withContext(Dispatchers.IO) { installedApps(context) }
+        loading = false
     }
     // The picked apps' block rides on top, frozen as the page opened: a toggle repaints
     // the row where it sits rather than re-sorting the blocks under the finger — the
@@ -150,34 +162,44 @@ fun PerAppProxyScreen(
     val initialBypassed = remember { bypassed }
     val selected = remember(apps) { apps.filter { it.packageName in initialBypassed } }
     val rest = remember(apps) { apps.filter { it.packageName !in initialBypassed } }
+    // The master switch's own height, measured as laid out — the list rests clear of the
+    // block whatever the fonts and scale make of its two lines.
+    var toggleBlockHeight by remember { mutableStateOf(80.dp) }
 
+    val surface = MaterialTheme.colorScheme.surface
     Box(modifier = modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .screenPadding()
-                .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp),
-        ) {
-            PerAppToggleRow(
-                enabled = enabled,
-                count = bypassed.size,
-                onChange = onToggleEnabled,
-            )
+        // The wave grows with the pull while the list re-queries; the first load rides
+        // the same wave, so the wait is never a blank page.
+        WavyPullToRefreshBox(
+            isRefreshing = loading,
+            onRefresh = { refreshes++ },
+            modifier = Modifier.fillMaxSize(),
+        ) { pullShift ->
+            // Rows travel under the toggle above and the floating bar below (fading out
+            // behind the gradients) and rest clear of both thanks to the content padding.
+            // The pull pushes the rows down through the top padding (see
+            // WavyPullToRefreshBox).
+            val topContentPadding = WindowInsets.statusBars.asPaddingValues()
+                .calculateTopPadding() + 24.dp + toggleBlockHeight + 24.dp
+            val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues()
+                .calculateBottomPadding() + FloatingBottomBarReservedHeight
             val outer = MaterialTheme.shapes.extraLarge
             val inner = MaterialTheme.shapes.extraSmall
             LazyColumn(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
+                    .fillMaxSize()
+                    .screenPadding(),
                 // The servers list's segmented container: 2dp gaps between rows instead
                 // of dividers, each block carrying the group's outer corners on its
                 // first and last rows, the small inner ones on the rest.
                 verticalArrangement = Arrangement.spacedBy(2.dp),
-                contentPadding = PaddingValues(
-                    top = 16.dp,
-                    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-                        FloatingBottomBarReservedHeight,
-                ),
+                contentPadding = remember(
+                    topContentPadding,
+                    bottomContentPadding,
+                    pullShift,
+                ) {
+                    pullShiftedPadding(topContentPadding, bottomContentPadding, pullShift)
+                },
             ) {
                 itemsIndexed(selected, key = { _, app -> app.packageName }) { index, app ->
                     AppRow(
@@ -202,6 +224,57 @@ fun PerAppProxyScreen(
                 }
             }
         }
+
+        // The master switch rides over the list, and the rows dissolve behind the
+        // gradient under it instead of meeting a hard edge — the same fade the shell
+        // draws below the floating bar.
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .screenPadding()
+                .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp),
+        ) {
+            PerAppToggleRow(
+                enabled = enabled,
+                count = bypassed.size,
+                onChange = onToggleEnabled,
+                modifier = Modifier.onSizeChanged { size ->
+                    with(density) { toggleBlockHeight = size.height.toDp() }
+                },
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(24.dp)
+                    .drawBehind {
+                        drawRect(
+                            Brush.verticalGradient(
+                                listOf(surface.copy(alpha = 0.97f), surface.copy(alpha = 0f)),
+                            ),
+                        )
+                    },
+            )
+        }
+
+        // Content scrolls under the floating bar and fades out behind it.
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(
+                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                        FloatingBottomBarReservedHeight + 8.dp,
+                )
+                .drawBehind {
+                    drawRect(
+                        Brush.verticalGradient(
+                            listOf(surface.copy(alpha = 0f), surface.copy(alpha = 0.97f)),
+                        ),
+                    )
+                },
+        )
+
         SubScreenBottomBar(
             items = PerAppDestination.entries.toList(),
             selected = PerAppDestination.APPS,
@@ -224,6 +297,7 @@ private fun PerAppToggleRow(
     enabled: Boolean,
     count: Int,
     onChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -237,7 +311,7 @@ private fun PerAppToggleRow(
         shape = MaterialTheme.shapes.extraLarge,
         color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
         contentColor = colors.onSurface,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier
