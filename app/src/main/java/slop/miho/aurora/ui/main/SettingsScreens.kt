@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -1202,7 +1203,12 @@ private fun TestUrlRow(
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                // 80, not the field's own 56: the stadium gets its 16dp of air above
+                // and below to match the sides — the gap reads square, not wider
+                // than tall, the add row's cross the same way.
+                .heightIn(min = 80.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             OutlinedTextField(
@@ -1236,7 +1242,11 @@ private fun TestUrlRow(
                     Icon(
                         painter = painterResource(R.drawable.ic_edit),
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp),
+                        // The glyph turns inside the backing — the backing stays put.
+                        // A pencil resting at its writing angle, tip down.
+                        modifier = Modifier
+                            .size(24.dp)
+                            .graphicsLayer { rotationZ = -45f },
                     )
                 }
             }
