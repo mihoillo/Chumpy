@@ -10,9 +10,20 @@ import slop.miho.aurora.db.ProfileEntity
  * Routing intent of a session: everything through the tunnel, or everything but the
  * geo-RU block. The rule sets mirror v2rayNG's global and "white Russia" presets.
  */
-enum class RoutingMode {
-    GLOBAL,
-    RU_BYPASS,
+/**
+ * The routing modes: one bypass region each — the region's own sites and addresses go
+ * direct, the rest rides the proxy — with the whole-world mode last. The region set is
+ * the panels' own (hiddify's ir/cn/ru/af/id/tr/br, v2rayNG's Russia and Iran presets).
+ */
+enum class RoutingMode(val region: String?) {
+    BYPASS_RU("ru"),
+    BYPASS_CN("cn"),
+    BYPASS_IR("ir"),
+    BYPASS_AF("af"),
+    BYPASS_ID("id"),
+    BYPASS_TR("tr"),
+    BYPASS_BR("br"),
+    GLOBAL(null),
 }
 
 /**
@@ -186,10 +197,28 @@ object XrayConfigBuilder {
         put(
             "rules",
             buildJsonArray {
-                // Sniffed BitTorrent goes direct in bypass mode, as in v2rayNG's preset.
-                if (mode == RoutingMode.RU_BYPASS) {
+                mode.region?.let { region ->
+                    // Sniffed BitTorrent goes direct in bypass mode, as in v2rayNG's presets.
                     rule {
                         put("protocol", buildJsonArray { add(JsonPrimitive("bittorrent")) })
+                        put("outboundTag", DIRECT_TAG)
+                    }
+                    rule {
+                        put("domain", buildJsonArray {
+                            // The geosite lists exist for the big three (v2rayNG's own
+                            // presets use these codes); the rest ride the country's TLD.
+                            when (region) {
+                                "ru" -> "geosite:category-ru"
+                                "ir" -> "geosite:category-ir"
+                                "cn" -> "geosite:cn"
+                                else -> null
+                            }?.let { add(JsonPrimitive(it)) }
+                            add(JsonPrimitive("domain:$region"))
+                        })
+                        put("outboundTag", DIRECT_TAG)
+                    }
+                    rule {
+                        put("ip", buildJsonArray { add(JsonPrimitive("geoip:$region")) })
                         put("outboundTag", DIRECT_TAG)
                     }
                 }
@@ -206,16 +235,6 @@ object XrayConfigBuilder {
                 rule {
                     put("domain", buildJsonArray { add(JsonPrimitive("geosite:private")) })
                     put("outboundTag", DIRECT_TAG)
-                }
-                if (mode == RoutingMode.RU_BYPASS) {
-                    rule {
-                        put("domain", buildJsonArray { add(JsonPrimitive("geosite:category-ru")) })
-                        put("outboundTag", DIRECT_TAG)
-                    }
-                    rule {
-                        put("ip", buildJsonArray { add(JsonPrimitive("geoip:ru")) })
-                        put("outboundTag", DIRECT_TAG)
-                    }
                 }
                 // Whatever matched nothing rides the first outbound: the proxy.
             },

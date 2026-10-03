@@ -57,7 +57,12 @@ object ConnectionStore {
             selectedSubscriptionId = prefs.getString(KEY_SUB, null),
             selectedProfileId = prefs.getString(KEY_PROFILE, null),
             routingMode = prefs.getString(KEY_ROUTING, null)
-                ?.let { stored -> RoutingMode.entries.firstOrNull { it.name == stored } }
+                // "RU_BYPASS" is the old spelling of the Russia bypass from before the
+                // region list grew; carried over so an update keeps the pick.
+                ?.let { stored ->
+                    RoutingMode.entries.firstOrNull { it.name == stored }
+                        ?: if (stored == "RU_BYPASS") RoutingMode.BYPASS_RU else null
+                }
                 ?: RoutingMode.GLOBAL,
             delayTestUrl = prefs.getString(KEY_TEST_URL, null)?.takeIf { it.isNotBlank() }
                 ?: XrayConfigBuilder.DEFAULT_TEST_URL,

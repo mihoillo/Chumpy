@@ -119,9 +119,15 @@
     <!-- Connection settings -->
     <string name="settings_routing">Routing</string>
     <string name="settings_routing_global">Global</string>
-    <string name="settings_routing_global_hint">Everything but the local network goes through the tunnel</string>
-    <string name="settings_routing_ru">Bypass RU</string>
-    <string name="settings_routing_ru_hint">Russian sites and addresses go direct, the rest through the tunnel</string>
+    <string name="settings_routing_global_hint">Route everything</string>
+    <string name="settings_routing_dont_route">Don\'t route %s</string>
+    <string name="region_ru">Russia</string>
+    <string name="region_cn">China</string>
+    <string name="region_ir">Iran</string>
+    <string name="region_af">Afghanistan</string>
+    <string name="region_id">Indonesia</string>
+    <string name="region_tr">Turkey</string>
+    <string name="region_br">Brazil</string>
     <string name="settings_test_url">Delay test URL</string>
     <string name="settings_test_url_hint">Fetched through every server to measure the real ping</string>
     <string name="per_app_title">Per-app proxy</string>

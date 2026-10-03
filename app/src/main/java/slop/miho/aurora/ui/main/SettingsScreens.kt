@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,6 +44,7 @@ import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -841,6 +843,8 @@ fun ConnectionScreen(
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        // Routing and the per-app bypass share one block: both decide what the tunnel
+        // carries — whole countries by their sites and addresses, single apps by name.
         SettingsGroup(
             {
                 RoutingRow(
@@ -851,8 +855,6 @@ fun ConnectionScreen(
                     },
                 )
             },
-        )
-        SettingsGroup(
             {
                 ScreenLinkRow(
                     title = stringResource(R.string.per_app_title),
@@ -895,11 +897,11 @@ fun ConnectionScreen(
 }
 
 /**
- * The routing mode, picked right in its row the way the font is: the title with the
- * selected mode's story under it, one square tile per mode at the row's end — the globe
- * for the whole-world mode, the bypassed country's flag for its own. The flag follows
- * the flag style setting like the servers' flags do; the plain-globe style spells the
- * country out in its two letters instead.
+ * The routing mode, picked right in its row the way the font is. The regions run as one
+ * horizontally scrolling strip of tiles — each the region's own flag (the plain-globe
+ * style spells it out in its two letters instead), the whole-world mode's globe tile
+ * closing the list. The selected mode's story runs under the strip: a region tells which
+ * one stays out of the tunnel, the whole-world mode routes everything.
  */
 @Composable
 private fun RoutingRow(
@@ -907,58 +909,78 @@ private fun RoutingRow(
     flagStyle: slop.miho.aurora.data.FlagStyle,
     onSelect: (slop.miho.aurora.xray.RoutingMode) -> Unit,
 ) {
-    val hint = when (selected) {
-        slop.miho.aurora.xray.RoutingMode.GLOBAL -> stringResource(R.string.settings_routing_global_hint)
-        slop.miho.aurora.xray.RoutingMode.RU_BYPASS -> stringResource(R.string.settings_routing_ru_hint)
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.settings_routing),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = hint,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    val hint = regionNameRes(selected)?.let { name ->
+        stringResource(R.string.settings_routing_dont_route, stringResource(name))
+    } ?: stringResource(R.string.settings_routing_global_hint)
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.settings_routing),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+        )
+        // The scroll runs the card's full width with the padding inside the scrolled
+        // content, as in the font picker: the tiles slide under the card's rounding
+        // instead of stopping short of it.
         Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RoutingTile(
-                label = stringResource(R.string.settings_routing_global),
-                selected = selected == slop.miho.aurora.xray.RoutingMode.GLOBAL,
-                onClick = { onSelect(slop.miho.aurora.xray.RoutingMode.GLOBAL) },
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_public),
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-            RoutingTile(
-                label = stringResource(R.string.settings_routing_ru),
-                selected = selected == slop.miho.aurora.xray.RoutingMode.RU_BYPASS,
-                onClick = { onSelect(slop.miho.aurora.xray.RoutingMode.RU_BYPASS) },
-            ) {
-                when (flagStyle) {
-                    slop.miho.aurora.data.FlagStyle.TWEMOJI -> CountryFlag(code = "RU", twemoji = true)
-                    slop.miho.aurora.data.FlagStyle.SYSTEM -> CountryFlag(code = "RU", twemoji = false)
-                    slop.miho.aurora.data.FlagStyle.GLOBE ->
-                        Text(text = "RU", style = MaterialTheme.typography.titleMedium)
+            slop.miho.aurora.xray.RoutingMode.entries.forEach { mode ->
+                key(mode) {
+                    val region = mode.region
+                    RoutingTile(
+                        label = regionNameRes(mode)?.let { name -> stringResource(name) }
+                            ?: stringResource(R.string.settings_routing_global),
+                        selected = selected == mode,
+                        onClick = { onSelect(mode) },
+                    ) {
+                        if (region == null) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_public),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        } else {
+                            when (flagStyle) {
+                                slop.miho.aurora.data.FlagStyle.TWEMOJI ->
+                                    CountryFlag(code = region.uppercase(), twemoji = true)
+                                slop.miho.aurora.data.FlagStyle.SYSTEM ->
+                                    CountryFlag(code = region.uppercase(), twemoji = false)
+                                slop.miho.aurora.data.FlagStyle.GLOBE ->
+                                    Text(
+                                        text = region.uppercase(),
+                                        style = MaterialTheme.typography.titleMedium,
+                                    )
+                            }
+                        }
+                    }
                 }
             }
         }
+        Text(
+            text = hint,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        )
     }
+}
+
+/** The region modes' country names; the whole-world mode has none. */
+private fun regionNameRes(mode: slop.miho.aurora.xray.RoutingMode): Int? = when (mode) {
+    slop.miho.aurora.xray.RoutingMode.BYPASS_RU -> R.string.region_ru
+    slop.miho.aurora.xray.RoutingMode.BYPASS_CN -> R.string.region_cn
+    slop.miho.aurora.xray.RoutingMode.BYPASS_IR -> R.string.region_ir
+    slop.miho.aurora.xray.RoutingMode.BYPASS_AF -> R.string.region_af
+    slop.miho.aurora.xray.RoutingMode.BYPASS_ID -> R.string.region_id
+    slop.miho.aurora.xray.RoutingMode.BYPASS_TR -> R.string.region_tr
+    slop.miho.aurora.xray.RoutingMode.BYPASS_BR -> R.string.region_br
+    slop.miho.aurora.xray.RoutingMode.GLOBAL -> null
 }
 
 /**

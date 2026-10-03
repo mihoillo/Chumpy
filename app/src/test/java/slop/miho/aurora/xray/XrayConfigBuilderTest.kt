@@ -52,7 +52,7 @@ class XrayConfigBuilderTest {
 
     @Test
     fun `ru bypass rules all carry effective fields`() {
-        val rules = rulesOf(XrayConfigBuilder.buildFull(profile, RoutingMode.RU_BYPASS))
+        val rules = rulesOf(XrayConfigBuilder.buildFull(profile, RoutingMode.BYPASS_RU))
         assertEquals(6, rules.size)
         rules.forEach { rule ->
             val scalar = rule.keys.any { it == "port" || it == "network" }
@@ -72,6 +72,29 @@ class XrayConfigBuilderTest {
             (r["protocol"]?.jsonArray ?: emptyList()).map { it.jsonPrimitive.content }
         }
         assertTrue("bittorrent missing", protocols.contains("bittorrent"))
+    }
+
+    @Test
+    fun `small regions ride the TLD instead of a geosite list`() {
+        val rules = rulesOf(XrayConfigBuilder.buildFull(profile, RoutingMode.BYPASS_TR))
+        val domains = rules.flatMap { r ->
+            (r["domain"]?.jsonArray ?: emptyList()).map { it.jsonPrimitive.content }
+        }
+        assertEquals(listOf("domain:tr"), domains.filterNot { it == "geosite:private" })
+        val ips = rules.flatMap { r ->
+            (r["ip"]?.jsonArray ?: emptyList()).map { it.jsonPrimitive.content }
+        }
+        assertTrue("geoip:tr missing", ips.contains("geoip:tr"))
+    }
+
+    @Test
+    fun `iran bypass carries the geosite list and the TLD`() {
+        val rules = rulesOf(XrayConfigBuilder.buildFull(profile, RoutingMode.BYPASS_IR))
+        val domains = rules.flatMap { r ->
+            (r["domain"]?.jsonArray ?: emptyList()).map { it.jsonPrimitive.content }
+        }
+        assertTrue("category-ir missing", domains.contains("geosite:category-ir"))
+        assertTrue("domain:ir missing", domains.contains("domain:ir"))
     }
 
     @Test

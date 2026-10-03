@@ -6,7 +6,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
@@ -175,8 +174,8 @@ fun PerAppProxyScreen(
 
 /**
  * One app's row: the app's own icon, its name with its package under it, and the toggle
- * tile — the globe while the app rides the tunnel, the do-not-touch mark in the accent
- * once it's pulled out. The whole row taps.
+ * tile — the block mark, in the accent once the app is pulled out of the tunnel, plain
+ * tonal while it still rides it. The whole row taps.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -252,19 +251,11 @@ private fun AppRow(
                 .semantics { contentDescription = toggleLabel },
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Crossfade(
-                    targetState = bypassed,
-                    animationSpec = motion.defaultEffectsSpec(),
-                    label = "app toggle tile icon",
-                ) { out ->
-                    Icon(
-                        painter = painterResource(
-                            if (out) R.drawable.ic_do_not_touch else R.drawable.ic_public,
-                        ),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
+                Icon(
+                    painter = painterResource(R.drawable.ic_block),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                )
             }
         }
     }
