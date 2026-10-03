@@ -5,6 +5,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import slop.miho.aurora.db.ProfileEntity
+import slop.miho.aurora.db.ProfileType
 
 /**
  * Routing intent of a session: everything through the tunnel, or everything but the
@@ -51,10 +52,38 @@ object XrayConfigBuilder {
     private const val TUN_MTU = 1500
     private const val USER_LEVEL = 8
 
-    /** The document the VPN service hands to startLoop alongside the TUN descriptor. */
-    fun buildFull(profile: ProfileEntity, mode: RoutingMode): String = buildJsonObject {
-        put("stats", buildJsonObject {})
-        put("log", buildJsonObject { put("loglevel", "warning") })
+    /** The tag of the balancer over the members, when the session runs one. */
+    private const val BALANCER_TAG = "balancer"
+
+    /** How often the observatory re-probes a balancer's members. */
+    private const val OBSERVATORY_PROBE_INTERVAL = "1m"
+
+    /**
+     * The strategies the core's balancer switch knows; the two observing ones need the
+     * root-level observatory, which the builder emits with them.
+     */
+    private val OBSERVING_STRATEGIES = setOf("leastping", "leastload")
+
+    /**
+     * The document the VPN service hands to startLoop alongside the TUN descriptor.
+     *
+     * A BALANCER profile carries no endpoint of its own: its [members] — the resolved
+     * member rows — ride along instead, each its own tagged outbound, with the balancer
+     * over them and the routing's fall-through aimed at it. The first member keeps the
+     * plain proxy tag: it is the default outbound a dead balancer falls back to, and the
+     * tag the stats have always counted.
+     */
+    fun buildFull(
+        profile: ProfileEntity,
+        mode: RoutingMode,
+        members: List<ProfileEntity> = emptyList(),
+        testUrl: String = DEFAULT_TEST_URL,
+    ): String {
+        val balancerMembers = if (profile.type == ProfileType.BALANCER) members else emptyList()
+        val strategy = profile.balancerStrategy.ifEmpty { "random" }
+        return buildJsonObject {
+            put("stats", buildJsonObject {})
+            put("log", buildJsonObject { put("loglevel", "warning") })
         put(
             "policy",
             buildJsonObject {
@@ -121,7 +150,13 @@ object XrayConfigBuilder {
         put(
             "outbounds",
             buildJsonArray {
-                add(OutboundBuilder.build(profile, PROXY_TAG))
+                if (balancerMembers.isEmpty()) {
+                    add(OutboundBuilder.build(profile, PROXY_TAG))
+                } else {
+                    balancerMembers.forEachIndexed { index, member ->
+                        add(OutboundBuilder.build(member, memberTag(index)))
+                    }
+                }
                 add(
                     buildJsonObject {
                         put("tag", DIRECT_TAG)
@@ -138,7 +173,21 @@ object XrayConfigBuilder {
                 )
             },
         )
-        put("routing", routing(mode))
+        put("routing", routing(mode, balanced = balancerMembers.isNotEmpty(), strategy = strategy))
+        if (strategy in OBSERVING_STRATEGIES && balancerMembers.isNotEmpty()) {
+            // The observing strategies need a probe source: one root-level observatory
+            // over the members, probing the delay-test URL the user's own settings
+            // carry, on the clock of OBSERVATORY_PROBE_INTERVAL.
+            put(
+                "observatory",
+                buildJsonObject {
+                    put("subjectSelector", buildJsonArray { add(JsonPrimitive(PROXY_TAG)) })
+                    put("probeURL", testUrl)
+                    put("probeInterval", OBSERVATORY_PROBE_INTERVAL)
+                    put("enableConcurrency", true)
+                },
+            )
+        }
         put(
             "dns",
             buildJsonObject {
@@ -153,7 +202,8 @@ object XrayConfigBuilder {
                 )
             },
         )
-    }.toString()
+        }.toString()
+    }
 
     /**
      * The bare document for [slop.miho.aurora.core.XrayCore.measureOutboundDelay]: one
@@ -192,8 +242,24 @@ object XrayConfigBuilder {
         )
     }
 
-    private fun routing(mode: RoutingMode) = buildJsonObject {
+    private fun routing(mode: RoutingMode, balanced: Boolean, strategy: String) = buildJsonObject {
         put("domainStrategy", "AsIs")
+        if (balanced) {
+            put(
+                "balancers",
+                buildJsonArray {
+                    add(
+                        buildJsonObject {
+                            put("tag", BALANCER_TAG)
+                            // Every member tag carries the proxy prefix — the first is
+                            // the plain tag itself — so the one selector covers them all.
+                            put("selector", buildJsonArray { add(JsonPrimitive(PROXY_TAG)) })
+                            put("strategy", buildJsonObject { put("type", strategy) })
+                        },
+                    )
+                },
+            )
+        }
         put(
             "rules",
             buildJsonArray {
@@ -236,6 +302,15 @@ object XrayConfigBuilder {
                     put("domain", buildJsonArray { add(JsonPrimitive("geosite:private")) })
                     put("outboundTag", DIRECT_TAG)
                 }
+                if (balanced) {
+                    // The catch-all rides the balancer: whatever the bypass rules let
+                    // through, the core picks the member for — at random, by ping or by
+                    // load, as the panel asked.
+                    rule {
+                        put("network", "tcp,udp")
+                        put("balancerTag", BALANCER_TAG)
+                    }
+                }
                 // Whatever matched nothing rides the first outbound: the proxy.
             },
         )
@@ -251,4 +326,11 @@ object XrayConfigBuilder {
             },
         )
     }
+
+    /**
+     * The member tags: the first member is the plain proxy tag — the default outbound a
+     * dead balancer falls back to — and the rest ride the proxy prefix, so the one
+     * balancer selector covers them all.
+     */
+    private fun memberTag(index: Int): String = if (index == 0) PROXY_TAG else "$PROXY_TAG-${index + 1}"
 }

@@ -7,6 +7,7 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.zip.GZIPInputStream
 
+import slop.miho.aurora.db.SubscriptionEntity
 import slop.miho.aurora.xray.XrayConfigBuilder.LOCAL_SOCKS_PORT
 
 /**
@@ -39,8 +40,12 @@ class SubscriptionFetcher(private val tunnelUp: () -> Boolean) {
         val metadata: SubscriptionMetadata,
     )
 
-    /** Throws [IOException] with a readable message on failure. */
-    fun fetch(rawUrl: String): FetchResult {
+    /**
+     * Throws [IOException] with a readable message on failure. The subscription, when
+     * one is being refreshed, carries the Happ spoof: its fingerprint takes the UA and
+     * the x- headers over from the app's own identity.
+     */
+    fun fetch(rawUrl: String, subscription: SubscriptionEntity? = null): FetchResult {
         val url = normalizeUrl(rawUrl)
         // openConnection(Proxy) throws IllegalArgumentException on a null proxy, so the
         // no-tunnel path takes the plain overload instead of passing null in.
@@ -49,9 +54,13 @@ class SubscriptionFetcher(private val tunnelUp: () -> Boolean) {
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
             useCaches = false
-            setRequestProperty("User-Agent", USER_AGENT)
-            setRequestProperty("Accept", "*/*")
-            setRequestProperty("Accept-Encoding", "gzip")
+            if (subscription?.happSpoof == true) {
+                HappSpoof.apply(this, subscription)
+            } else {
+                setRequestProperty("User-Agent", USER_AGENT)
+                setRequestProperty("Accept", "*/*")
+                setRequestProperty("Accept-Encoding", "gzip")
+            }
         }
         try {
             val code = connection.responseCode

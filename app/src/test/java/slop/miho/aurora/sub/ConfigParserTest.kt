@@ -6,6 +6,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import slop.miho.aurora.db.ProfileType
+import slop.miho.aurora.db.balancerMemberKeys
+import slop.miho.aurora.db.computeLinkKey
 
 /**
  * The raw-config subscription dialect, exercised on the shapes panels actually serve: an
@@ -195,6 +197,88 @@ class ConfigParserTest {
         assertNull(ConfigParser.parse("[not json at all"))
         assertNull(ConfigParser.parse("""{"outbounds": "not-an-array"}"""))
         assertNull(ConfigParser.parse("""{"dns": {"servers": []}}"""))
+    }
+
+    /** The balancer-bearing bundle: the same two servers, plus a routing balancer over them. */
+    private val balanced = """
+        {
+          "remarks": "Автовыбор",
+          "outbounds": [
+            {
+              "tag": "auto-🇩🇪 Германия #3",
+              "protocol": "vless",
+              "settings": {
+                "vnext": [
+                  { "address": "1.2.3.4", "port": 443, "users": [ { "id": "00000000-1111-2222-3333-444444444444", "encryption": "none", "flow": "xtls-rprx-vision" } ] }
+                ]
+              },
+              "streamSettings": { "network": "tcp", "security": "reality", "realitySettings": { "serverName": "pl4.example.org", "publicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "shortId": "0000000000000000", "fingerprint": "edge" } }
+            },
+            {
+              "tag": "auto-🇬🇧 Англия",
+              "protocol": "vless",
+              "settings": {
+                "vnext": [
+                  { "address": "1.2.3.5", "port": 443, "users": [ { "id": "00000000-1111-2222-3333-444444444444", "encryption": "none", "flow": "xtls-rprx-vision" } ] }
+                ]
+              },
+              "streamSettings": { "network": "tcp", "security": "reality", "realitySettings": { "serverName": "pl4.example.org", "publicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "shortId": "0000000000000000", "fingerprint": "edge" } }
+            }
+          ],
+          "routing": {
+            "balancers": [
+              { "tag": "auto_Balancer", "selector": ["auto-"], "strategy": { "type": "leastPing" } }
+            ]
+          }
+        }
+    """
+
+    @Test
+    fun `a config's balancer parses as a profile over its members' linkKeys`() {
+        val profiles = ConfigParser.parse("[$single,$balanced]")!!
+        val balancer = profiles.first { it.type == ProfileType.BALANCER }
+        // One balancer with a remarks prefix: the prefix is the name, the strategy
+        // normalized to what the core switches on.
+        assertEquals("Автовыбор", balancer.remarks)
+        assertEquals("leastping", balancer.balancerStrategy)
+        // The members ride as linkKeys and resolve to the servers the array carries —
+        // including the one the single config named first, deduped into one row.
+        val keys = balancer.balancerMemberKeys.toSet()
+        assertEquals(2, keys.size)
+        val servers = profiles.filter { it.type != ProfileType.BALANCER }
+        assertTrue(servers.any { it.computeLinkKey() in keys && it.remarks == "🇩🇪 Германия #3" })
+        assertTrue(servers.any { it.computeLinkKey() in keys && it.remarks == "auto-🇬🇧 Англия" })
+    }
+
+    @Test
+    fun `a balancer under two members is dropped, its fallback carries it`() {
+        fun body(selector: List<String>, fallback: String?) = """
+            {
+              "outbounds": [
+                { "tag": "a", "protocol": "vless", "settings": { "vnext": [ { "address": "1.1.1.1", "port": 443, "users": [ { "id": "00000000-1111-2222-3333-444444444444", "encryption": "none" } ] } ] } },
+                { "tag": "b", "protocol": "vless", "settings": { "vnext": [ { "address": "2.2.2.2", "port": 443, "users": [ { "id": "00000000-1111-2222-3333-444444444444", "encryption": "none" } ] } ] } }
+              ],
+              "routing": {
+                "balancers": [
+                  { "tag": "x", "selector": ${if (selector.isEmpty()) "[]" else selector.joinToString(prefix = "[", separator = ",", postfix = "]") { "\"$it\"" }}, "fallbackTag": ${fallback?.let { "\"$it\"" } ?: "null"} }
+                ]
+              }
+            }
+        """
+
+        // A selector that matches only one of two outbounds, no fallback: not worth an entry.
+        assertNull(ConfigParser.parse(body(listOf("a"), null))?.firstOrNull { it.type == ProfileType.BALANCER })
+        // With the fallback joining in: a degraded balancer still beats none.
+        val carried = ConfigParser.parse(body(listOf("a"), "b"))!!
+        assertEquals(1, carried.count { it.type == ProfileType.BALANCER })
+        assertEquals(2, carried.first { it.type == ProfileType.BALANCER }.balancerMemberKeys.size)
+    }
+
+    @Test
+    fun `unknown strategies fall back to random`() {
+        val body = balanced.replace("\"leastPing\"", "\"chaos\"")
+        val balancer = ConfigParser.parse(body)!!.first { it.type == ProfileType.BALANCER }
+        assertEquals("random", balancer.balancerStrategy)
     }
 
     @Test

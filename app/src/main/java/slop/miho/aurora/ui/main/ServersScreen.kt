@@ -79,7 +79,9 @@ import java.util.Date
 import slop.miho.aurora.R
 import slop.miho.aurora.data.FlagStyle
 import slop.miho.aurora.db.ProfileEntity
+import slop.miho.aurora.db.ProfileType
 import slop.miho.aurora.db.SubscriptionEntity
+import slop.miho.aurora.db.balancerMemberKeys
 import slop.miho.aurora.ui.ServersUiState
 import slop.miho.aurora.ui.components.CookieBackdrop
 import slop.miho.aurora.ui.components.EmojiFlag
@@ -118,6 +120,7 @@ fun ServersScreen(
     onSelectSubscription: (String) -> Unit,
     onAddSubscription: (url: String, name: String?, onDone: (String?) -> Unit) -> Unit,
     onDeleteSubscription: (String) -> Unit,
+    onSaveSubscription: (SubscriptionEntity) -> Unit,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -129,7 +132,9 @@ fun ServersScreen(
     var addOpen by rememberSaveable { mutableStateOf(false) }
     var addUrl by rememberSaveable { mutableStateOf("") }
 
-    // One dialog at a time.
+    // One dialog at a time. The long press on a subscription row opens that
+    // subscription's own settings — the Happ spoof and the way to the delete question.
+    var optionsTarget by remember { mutableStateOf<SubscriptionEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<SubscriptionEntity?>(null) }
 
     // Rows sit under the floating bar while the list outgrows the screen.
@@ -220,7 +225,7 @@ fun ServersScreen(
                                     dropdownOpen = false
                                     if (id != selectedSubscription?.id) onSelectSubscription(id)
                                 },
-                                onDeleteRequest = { deleteTarget = it },
+                                onOptionsRequest = { optionsTarget = it },
                             )
                         }
                     } else {
@@ -238,6 +243,18 @@ fun ServersScreen(
                 }
             }
         }
+    }
+
+    optionsTarget?.let { subscription ->
+        HappSpoofDialog(
+            subscription = subscription,
+            onSave = onSaveSubscription,
+            onDeleteRequest = {
+                optionsTarget = null
+                deleteTarget = subscription
+            },
+            onDismiss = { optionsTarget = null },
+        )
     }
 
     deleteTarget?.let { subscription ->
@@ -265,12 +282,14 @@ private fun ServersHeader(state: ServersUiState) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (state.profiles.isNotEmpty()) {
+            // Balancers are picks over servers, not servers — the counts count servers.
+            val servers = state.profiles.filter { it.type != ProfileType.BALANCER }
             InfoChip(
-                value = stringResource(R.string.servers_total, state.profiles.size),
+                value = stringResource(R.string.servers_total, servers.size),
                 icon = R.drawable.ic_servers,
                 animateValue = true,
             )
-            val reachable = state.profiles.count { (it.testDelayMillis ?: -1L) > 0L }
+            val reachable = servers.count { (it.testDelayMillis ?: -1L) > 0L }
             if (reachable > 0) {
                 InfoChip(
                     value = stringResource(R.string.servers_online, reachable),
@@ -692,8 +711,9 @@ private fun UpdateButton(
  * The unfolded subscription list: one row per subscription — the servers' own segmented
  * container, Surface подложки, cookie-marked pick and all — with the "add subscription"
  * row closing the list off, one of the rows itself, its icon on the square backing the
- * card's tile wears. A long press on a row asks the heavier question: deleting that
- * subscription and everything it brought in.
+ * card's tile wears. A long press on a row opens that subscription's own settings —
+ * the Happ spoof, and the way to the heavier question of deleting it and everything
+ * it brought in.
  */
 @Composable
 private fun SubscriptionDropdown(
@@ -705,7 +725,7 @@ private fun SubscriptionDropdown(
     onAddUrlChange: (String) -> Unit,
     onAdd: (url: String, onDone: (String?) -> Unit) -> Unit,
     onSelect: (String) -> Unit,
-    onDeleteRequest: (SubscriptionEntity) -> Unit,
+    onOptionsRequest: (SubscriptionEntity) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val outer = MaterialTheme.shapes.extraLarge
@@ -725,7 +745,7 @@ private fun SubscriptionDropdown(
                 subscription = subscription,
                 selected = subscription.id == selectedId,
                 onClick = { onSelect(subscription.id) },
-                onLongClick = { onDeleteRequest(subscription) },
+                onLongClick = { onOptionsRequest(subscription) },
                 shape = RoundedCornerShape(
                     topStart = if (first) outer.topStart else inner.topStart,
                     topEnd = if (first) outer.topEnd else inner.topEnd,
@@ -1439,8 +1459,10 @@ private fun ServerRow(
                     // The last real ping: a number, "can't ping", or nothing at all yet.
                     // A sweep's fresh answer takes the old one's seat with a hand-over:
                     // the old fades out, the new flies in from the right — the rows trade
-                    // their numbers one by one as the sweep answers each of them.
-                    AnimatedContent(
+                    // their numbers one by one as the sweep answers each of them. A
+                    // balancer wears no number: its member of the moment is the live
+                    // tunnel's own delay, which Home's chip reads.
+                    if (profile.type != ProfileType.BALANCER) AnimatedContent(
                         targetState = profile.testDelayMillis to profile.lastTestAt,
                         transitionSpec = {
                             (fadeIn(motion.defaultEffectsSpec()) +
@@ -1465,10 +1487,21 @@ private fun ServerRow(
             },
             supportingContent = {
                 Text(
-                    text = listOfNotNull(
-                        protocolLabel(profile),
-                        "${profile.server}:${profile.serverPort}",
-                    ).joinToString("  ·  "),
+                    text = if (profile.type == ProfileType.BALANCER) {
+                        // The balancer's own line: how wide it picks, and how.
+                        listOfNotNull(
+                            stringResource(
+                                R.string.servers_balancer_members,
+                                profile.balancerMemberKeys.size,
+                            ),
+                            balancerStrategyLabel(profile),
+                        ).joinToString("  ·  ")
+                    } else {
+                        listOfNotNull(
+                            protocolLabel(profile),
+                            "${profile.server}:${profile.serverPort}",
+                        ).joinToString("  ·  ")
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1500,6 +1533,13 @@ private fun ServerRow(
                         flag != null && flagStyle != FlagStyle.GLOBE -> EmojiFlag(
                             emoji = flag,
                             twemoji = flagStyle == FlagStyle.TWEMOJI,
+                        )
+
+                        profile.type == ProfileType.BALANCER -> Icon(
+                            painter = painterResource(R.drawable.ic_auto),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = iconColor,
                         )
 
                         else -> Icon(
@@ -1538,6 +1578,21 @@ private fun protocolLabel(profile: ProfileEntity): String? = when (profile.type)
     slop.miho.aurora.db.ProfileType.SOCKS -> "socks"
     slop.miho.aurora.db.ProfileType.WIREGUARD -> "wireguard"
     slop.miho.aurora.db.ProfileType.HYSTERIA2 -> "hysteria2"
+    // The supporting line of a balancer row is its own — see balancerStrategyLabel.
+    slop.miho.aurora.db.ProfileType.BALANCER -> null
+}
+
+/**
+ * The balancer row's second half: how the core picks the member of the moment. The
+ * strategy column already carries one of the four names the parser normalized to;
+ * anything odd fell back to random there, so the label is exhaustive in practice.
+ */
+@Composable
+private fun balancerStrategyLabel(profile: ProfileEntity): String = when (profile.balancerStrategy) {
+    "roundrobin" -> stringResource(R.string.servers_balancer_round_robin)
+    "leastping" -> stringResource(R.string.servers_balancer_least_ping)
+    "leastload" -> stringResource(R.string.servers_balancer_least_load)
+    else -> stringResource(R.string.servers_balancer_random)
 }
 
 /**

@@ -36,7 +36,9 @@ import slop.miho.aurora.ui.components.splitLeadingFlag
 import slop.miho.aurora.data.SettingsStore
 import slop.miho.aurora.data.UiSettings
 import slop.miho.aurora.db.ProfileEntity
+import slop.miho.aurora.db.ProfileType
 import slop.miho.aurora.db.SubscriptionEntity
+import slop.miho.aurora.db.balancerMemberKeys
 import slop.miho.aurora.sub.SubscriptionRepository
 import slop.miho.aurora.xray.RoutingMode
 import slop.miho.aurora.xray.XrayConfigBuilder
@@ -297,7 +299,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun applyConfigAndConnect() {
         val profile = selectedProfile.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            val config = XrayConfigBuilder.buildFull(profile, connection.value.routingMode)
+            // A balancer's members are resolved against the very list the selection
+            // came from: linkKeys from the column, rows from the subscription. A
+            // balancer whose members have all fallen away degrades to the whole
+            // subscription — still a pick, just a wider one.
+            val members = if (profile.type == ProfileType.BALANCER) {
+                val keys = profile.balancerMemberKeys.toSet()
+                val resolved = _servers.value.profiles.filter {
+                    it.type != ProfileType.BALANCER && it.linkKey in keys
+                }
+                resolved.ifEmpty { _servers.value.profiles.filter { it.type != ProfileType.BALANCER } }
+            } else {
+                emptyList()
+            }
+            val config = XrayConfigBuilder.buildFull(
+                profile,
+                connection.value.routingMode,
+                members,
+                connection.value.delayTestUrl,
+            )
             CoreConfigFile.write(
                 app,
                 config,
@@ -379,6 +399,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.setSubscriptionAutoUpdate(id, enabled) }
     }
 
+    /**
+     * Persists an edited subscription — the Happ spoof editor's save. The fingerprint
+     * only ever rides a fetch, so there is nothing else to nudge here.
+     */
+    fun saveSubscription(subscription: SubscriptionEntity) {
+        viewModelScope.launch { repository.saveSubscription(subscription) }
+    }
+
     /** Manual import: a link, a WireGuard .conf body, or a list of links. */
     fun addManualProfiles(text: String, onDone: (String?) -> Unit) {
         viewModelScope.launch {
@@ -399,7 +427,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * unreachable.
      */
     fun pingServers() {
-        val profiles = _servers.value.profiles
+        // Balancers have no endpoint to measure: their "ping" is whichever member the
+        // live routing is on, which the live loop reads anyway.
+        val profiles = _servers.value.profiles.filter { it.type != ProfileType.BALANCER }
         if (profiles.isEmpty() || _servers.value.isPinging) return
         _servers.update { it.copy(isPinging = true) }
         viewModelScope.launch(Dispatchers.IO) {
@@ -432,6 +462,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun pingSelected() {
         val profile = selectedProfile.value ?: return
+        // A balancer is measured by living: the live loop reports the tunnel's own delay.
+        if (profile.type == ProfileType.BALANCER) return
         viewModelScope.launch(Dispatchers.IO) {
             val delay = tunnelClient.measureDelay(
                 XrayConfigBuilder.buildTest(profile),

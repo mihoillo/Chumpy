@@ -44,10 +44,15 @@ object OutboundBuilder {
         ProfileType.SOCKS -> "socks"
         ProfileType.WIREGUARD -> "wireguard"
         ProfileType.HYSTERIA2 -> "hysteria"
+        // A balancer never reaches an outbound: it is unwrapped into its members at
+        // build time, in XrayConfigBuilder.
+        ProfileType.BALANCER -> error("a balancer is not an outbound")
     }
 
     private fun settings(profile: ProfileEntity): JsonObject = buildJsonObject {
         when (profile.type) {
+            ProfileType.BALANCER -> error("a balancer is not an outbound")
+
             ProfileType.VMESS -> {
                 put("address", host(profile))
                 put("port", profile.serverPort)

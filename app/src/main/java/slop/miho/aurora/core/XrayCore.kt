@@ -246,11 +246,12 @@ object XrayCore {
                 val parts = entry.split(',', limit = 3)
                 if (parts.size != 3) return@forEach
                 val value = parts[2].toLongOrNull() ?: return@forEach
-                when (parts[0]) {
-                    "proxy" -> when (parts[1]) {
-                        "downlink" -> rx += value
-                        "uplink" -> tx += value
-                    }
+                // A balancer session spreads its traffic over the member outbounds, all
+                // of which ride the proxy tag's prefix — the plain tag included — while
+                // direct and block stay out of the count, as they always have.
+                if (parts[0] == "proxy" || parts[0].startsWith("proxy-")) when (parts[1]) {
+                    "downlink" -> rx += value
+                    "uplink" -> tx += value
                 }
             }
         } catch (e: Exception) {

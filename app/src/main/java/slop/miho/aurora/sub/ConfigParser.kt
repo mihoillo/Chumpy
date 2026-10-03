@@ -33,6 +33,21 @@ object ConfigParser {
     /** The protocols that mark a real proxy outbound; everything else is plumbing. */
     private val PROXY_PROTOCOLS = setOf("vless", "vmess", "trojan", "shadowsocks", "socks")
 
+    /** The strategies this core runs, normalized to the names it switches on. */
+    private val STRATEGIES = setOf("random", "roundrobin", "leastping", "leastload")
+    private const val STRATEGY_RANDOM = "random"
+
+    /**
+     * One config's reading: the outbounds parsed as (tag, profile) pairs — the tags are
+     * what a routing balancer's selectors match against — plus the balancers its routing
+     * carries, kept as raw objects until they are turned into drafts.
+     */
+    private class Bundle(
+        val prefix: String,
+        val entries: List<Pair<String, ProfileEntity>>,
+        val balancerSpecs: List<JsonObject>,
+    )
+
     /** The profiles found in a raw-config body, deduplicated; null when it is not one. */
     fun parse(body: String): List<ProfileEntity>? {
         val trimmed = body.trim()
@@ -49,34 +64,106 @@ object ConfigParser {
         }
         if (configs.none { it.array("outbounds") != null }) return null
 
-        val singles = mutableListOf<ProfileEntity>()
-        val aggregators = mutableListOf<JsonObject>()
-        configs.forEach { config ->
+        // One config's reading, tag and profile together.
+        val bundles = configs.map { config ->
             val proxies = proxyOutbounds(config)
-            when {
+            Bundle(
+                prefix = config.str("remarks")?.trim()?.ifBlank { null }.orEmpty(),
+                entries = proxies.mapNotNull { outbound ->
+                    outboundToProfile(outbound)?.let { outbound.str("tag").orEmpty() to it }
+                },
+                balancerSpecs = config.obj("routing")?.array("balancers")?.arrayOfObjects().orEmpty(),
+            )
+        }
+
+        val singles = bundles
+            .filter { it.entries.size == 1 }
+            .map { bundle ->
                 // One proxy per config: the panel's own page for that server, its
                 // "remarks" the name the user picked for it.
-                proxies.size == 1 -> outboundToProfile(proxies.first())?.let { outbound ->
-                    singles.add(
-                        outbound.copy(remarks = config.str("remarks")?.ifBlank { null } ?: outbound.remarks),
-                    )
-                }
-
-                // Many: an aggregator bundle — the same servers under group labels.
-                proxies.size > 1 -> aggregators.add(config)
+                val (tag, profile) = bundle.entries.first()
+                profile.copy(remarks = bundle.prefix.ifEmpty { tag })
             }
-        }
+        val aggregators = bundles.filter { it.entries.size > 1 }
 
         // Aggregators only add servers the individual configs never named; their own
         // tags carry the name there.
         val seen = singles.mapTo(HashSet()) { it.computeLinkKey() }
         val fromGroups = aggregators
-            .flatMap(::proxyOutbounds)
-            .mapNotNull(::outboundToProfile)
+            .flatMap { it.entries }
+            .map { it.second }
             .filter { seen.add(it.computeLinkKey()) }
 
-        val profiles = (singles + fromGroups).distinctBy { it.computeLinkKey() }
+        val servers = (singles + fromGroups).distinctBy { it.computeLinkKey() }
+
+        // The balancers lead the list: a balancer is the panel's own pick-over-servers,
+        // so it stands above them — one entry to tap instead of N to choose between.
+        val balancers = bundles.flatMap(::balancersOf).distinctBy { it.computeLinkKey() }
+        val profiles = balancers + servers
         return if (profiles.isEmpty()) null else profiles
+    }
+
+    /**
+     * The balancers one config's routing carries, as profile drafts: a balancer is not
+     * a server but a routing pick over the config's own outbounds — the core chooses
+     * among them by strategy at connect time. Members are matched the way Xray matches
+     * them (selector prefixes against outbound tags) and carried as linkKeys, so the
+     * rows they resolve to survive subscription refreshes. A balancer under two members
+     * is not worth an entry and is dropped — unless its fallbackTag can carry it, a
+     * degraded balancer still beating none, BetterExclave's own call.
+     */
+    private fun balancersOf(bundle: Bundle): List<ProfileEntity> {
+        if (bundle.entries.isEmpty() || bundle.balancerSpecs.isEmpty()) return emptyList()
+        val multiple = bundle.balancerSpecs.size >= 2
+        return bundle.balancerSpecs.mapNotNull { spec ->
+            val selector = spec.array("selector")?.strings().orEmpty()
+            val fallbackTag = spec.str("fallbackTag")?.trim().orEmpty()
+            if (selector.isEmpty() && fallbackTag.isEmpty()) return@mapNotNull null
+            val members = ArrayList<Pair<String, ProfileEntity>>()
+            for ((tag, profile) in bundle.entries) {
+                if (selector.any { it.isNotEmpty() && tag.startsWith(it) } &&
+                    members.none { it.second === profile }
+                ) {
+                    members.add(tag to profile)
+                }
+            }
+            // The fallback is not a candidate the core ever picks — it is where a
+            // dead balancer lands — so it joins the members only to keep a lone one
+            // alive.
+            if (members.size < 2 && fallbackTag.isNotEmpty()) {
+                for ((tag, profile) in bundle.entries) {
+                    if (tag == fallbackTag && members.none { it.second === profile }) {
+                        members.add(tag to profile)
+                    }
+                }
+            }
+            if (members.size < 2) return@mapNotNull null
+
+            val tagName = spec.str("tag")?.trim().orEmpty()
+            val shortTag = tagName
+                .removeSuffix("_Balancer")
+                .removeSuffix("Balancer")
+                .takeIf { it.isNotEmpty() } ?: tagName.ifEmpty { "Balancer" }
+            val name = when {
+                bundle.prefix.isNotEmpty() && multiple -> "${bundle.prefix} ($shortTag)"
+                bundle.prefix.isNotEmpty() -> bundle.prefix
+                else -> tagName.ifEmpty { "Balancer" }
+            }
+            ProfileEntity(id = "", subscriptionId = null, type = ProfileType.BALANCER).copy(
+                remarks = name,
+                balancerStrategy = normalizeStrategy(spec.obj("strategy")?.str("type")),
+                balancerMembers = members.joinToString("\n") { it.second.computeLinkKey() },
+            )
+        }
+    }
+
+    /**
+     * The strategies this core runs, normalized to the names it switches on; anything
+     * a panel spells some other way falls back to random, which always works.
+     */
+    private fun normalizeStrategy(type: String?): String {
+        val normalized = type?.trim()?.lowercase().orEmpty()
+        return if (normalized in STRATEGIES) normalized else STRATEGY_RANDOM
     }
 
     private fun proxyOutbounds(config: JsonObject): List<JsonObject> =

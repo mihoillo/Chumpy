@@ -26,6 +26,11 @@
     <!-- Servers -->
     <string name="servers_total">Servers: %1$d</string>
     <string name="servers_online">Reachable: %1$d</string>
+    <string name="servers_balancer_members">%1$d servers</string>
+    <string name="servers_balancer_random">random</string>
+    <string name="servers_balancer_round_robin">round robin</string>
+    <string name="servers_balancer_least_ping">least ping</string>
+    <string name="servers_balancer_least_load">least load</string>
     <string name="servers_ping_ms">%1$d ms</string>
     <string name="servers_offline">can\'t ping</string>
     <string name="servers_empty_title">No servers</string>
@@ -54,6 +59,20 @@
     <string name="subscription_delete_title">Delete this subscription?</string>
     <string name="subscription_delete_text">\"%1$s\" and all of its servers will be removed from Aurora.</string>
     <string name="subscription_delete_confirm">Delete</string>
+
+    <string name="happ_title">Happ spoof</string>
+    <string name="happ_hint">Present as the official Happ client when this subscription is fetched</string>
+    <string name="happ_app_version">App version</string>
+    <string name="happ_os">OS</string>
+    <string name="happ_os_version">OS version</string>
+    <string name="happ_device_model">Device model</string>
+    <string name="happ_locale">Language</string>
+    <string name="happ_user_id">User ID</string>
+    <string name="happ_hwid">HWID</string>
+    <string name="happ_regenerate">Regenerate identity</string>
+    <string name="happ_save">Save</string>
+    <string name="happ_cancel">Cancel</string>
+    <string name="happ_delete">Delete subscription</string>
 
     <!-- Welcome (first run) -->
     <string name="welcome_title">Hello, stranger!</string>

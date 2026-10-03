@@ -24,7 +24,7 @@ object Graph {
             context.applicationContext,
             AuroraDatabase::class.java,
             AuroraDatabase.NAME,
-        ).build()
+        ).addMigrations(AuroraDatabase.MIGRATION_1_2).build()
         subscriptions = SubscriptionRepository(
             context = context.applicationContext,
             db = database,

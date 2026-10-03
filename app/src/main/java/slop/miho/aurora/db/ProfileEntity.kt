@@ -15,6 +15,9 @@ enum class ProfileType {
     SOCKS,
     WIREGUARD,
     HYSTERIA2,
+
+    /** Not a server: a routing balancer over the subscription's other profiles. */
+    BALANCER,
 }
 
 /**
@@ -98,6 +101,12 @@ data class ProfileEntity(
     /** "1,2,3"-style client reserved bytes. */
     val wgReserved: String = "",
 
+    // Balancer (BALANCER profiles only).
+    /** The Xray strategy: random, roundrobin, leastping or leastload. */
+    val balancerStrategy: String = "",
+    /** The members' linkKeys, newline-joined; resolved against the subscription's rows. */
+    val balancerMembers: String = "",
+
     // Measurements.
     /** The last real ping through the core, in millis; null when never measured. */
     val testDelayMillis: Long? = null,
@@ -113,40 +122,51 @@ data class ProfileEntity(
 
 /** The canonical digest used for update diffing; see [linkKey]. */
 fun ProfileEntity.computeLinkKey(): String {
-    val canonical = listOf(
-        type.name,
-        server,
-        serverPort.toString(),
-        password,
-        method,
-        username,
-        network,
-        headerType,
-        host,
-        path,
-        seed,
-        serviceName,
-        authority,
-        mode,
-        xhttpExtra.orEmpty(),
-        security,
-        sni,
-        alpn,
-        fingerprint,
-        flow,
-        allowInsecure.toString(),
-        publicKey,
-        shortId,
-        spiderX,
-        obfsPassword,
-        portHopping,
-        portHoppingInterval,
-        wgSecretKey,
-        wgPresharedKey,
-        wgLocalAddress,
-        wgMtu.toString(),
-        wgReserved,
-    ).joinToString("\u0001")
+    // A balancer is its name and its strategy, not its members: the panel reshuffles the
+    // members between updates, and the balancer — its row's identity, the selection
+    // riding on it — is meant to survive that, as BetterExclave's by-name updates do.
+    val canonical = if (type == ProfileType.BALANCER) {
+        listOf(type.name, remarks, balancerStrategy)
+    } else {
+        listOf(
+            type.name,
+            server,
+            serverPort.toString(),
+            password,
+            method,
+            username,
+            network,
+            headerType,
+            host,
+            path,
+            seed,
+            serviceName,
+            authority,
+            mode,
+            xhttpExtra.orEmpty(),
+            security,
+            sni,
+            alpn,
+            fingerprint,
+            flow,
+            allowInsecure.toString(),
+            publicKey,
+            shortId,
+            spiderX,
+            obfsPassword,
+            portHopping,
+            portHoppingInterval,
+            wgSecretKey,
+            wgPresharedKey,
+            wgLocalAddress,
+            wgMtu.toString(),
+            wgReserved,
+        )
+    }.joinToString("\u0001")
     val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(Charsets.UTF_8))
     return digest.joinToString("") { "%02x".format(it) }
 }
+
+/** The balancer's member linkKeys, in column order. */
+val ProfileEntity.balancerMemberKeys: List<String>
+    get() = balancerMembers.split('\n').filter { it.isNotBlank() }

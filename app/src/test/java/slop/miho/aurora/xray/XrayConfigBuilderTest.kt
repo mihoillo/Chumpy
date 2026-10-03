@@ -105,6 +105,59 @@ class XrayConfigBuilderTest {
         assertEquals("udp", quic["network"]?.jsonPrimitive?.content)
     }
 
+    @Test
+    fun `a balancer session spreads its members over the proxy tag prefix`() {
+        val balancer = profile.copy(
+            id = "9",
+            type = ProfileType.BALANCER,
+            remarks = "Автовыбор",
+            balancerStrategy = "leastping",
+        )
+        val config = Json.parseToJsonElement(
+            XrayConfigBuilder.buildFull(
+                balancer,
+                RoutingMode.GLOBAL,
+                members = listOf(profile, profile.copy(id = "2", server = "second.example.com")),
+            ),
+        ).jsonObject
+
+        // The members ride as their own outbounds: the first keeps the plain proxy tag
+        // — the default a dead balancer falls back to — the rest the prefix.
+        val tags = config["outbounds"]!!.jsonArray.map { it.jsonObject["tag"]!!.jsonPrimitive.content }
+        assertEquals(listOf("proxy", "proxy-2", "direct", "block"), tags)
+
+        // One balancer over them all, the strategy the panel asked for.
+        val balancers = config["routing"]!!.jsonObject["balancers"]!!.jsonArray
+        val b = balancers.single().jsonObject
+        assertEquals("balancer", b["tag"]!!.jsonPrimitive.content)
+        assertEquals("proxy", b["selector"]!!.jsonArray.single().jsonPrimitive.content)
+        assertEquals("leastping", b["strategy"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+
+        // The fall-through rides the balancer, and nothing else does.
+        val rules = rulesOf(config.toString())
+        val catchAll = rules.last()
+        assertEquals("balancer", catchAll["balancerTag"]!!.jsonPrimitive.content)
+        assertEquals("tcp,udp", catchAll["network"]!!.jsonPrimitive.content)
+        assertTrue(rules.dropLast(1).none { it.containsKey("balancerTag") })
+
+        // The observing strategy gets its probe source: one root-level observatory over
+        // the members, probing the test URL.
+        val observatory = config["observatory"]!!.jsonObject
+        assertEquals("proxy", observatory["subjectSelector"]!!.jsonArray.single().jsonPrimitive.content)
+        assertEquals("https://www.gstatic.com/generate_204", observatory["probeURL"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a plain session keeps no balancer and no observatory`() {
+        val config = Json.parseToJsonElement(
+            XrayConfigBuilder.buildFull(profile, RoutingMode.GLOBAL),
+        ).jsonObject
+        assertTrue(config["routing"]!!.jsonObject.containsKey("balancers").not())
+        assertTrue(config.containsKey("observatory").not())
+        val tags = config["outbounds"]!!.jsonArray.map { it.jsonObject["tag"]!!.jsonPrimitive.content }
+        assertEquals(listOf("proxy", "direct", "block"), tags)
+    }
+
     private fun rulesOf(config: String) =
         Json.parseToJsonElement(config)
             .jsonObject["routing"]!!.jsonObject["rules"]!!.jsonArray

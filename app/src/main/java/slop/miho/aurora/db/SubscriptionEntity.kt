@@ -35,4 +35,17 @@ data class SubscriptionEntity(
 
     /** The message of the last failed update, shown on the subscription card. */
     val lastError: String? = null,
+
+    // The Happ panel fingerprint (see slop.miho.aurora.sub.HappSpoof): off means the
+    // fetch goes out with the app's own UA and no x- headers. Empty fields fall back to
+    // the defaults at fetch time; the user id and HWID are generated once on the first
+    // enable and kept, so the panel keeps seeing the same "device".
+    val happSpoof: Boolean = false,
+    val happAppVersion: String = "",
+    val happOs: String = "",
+    val happOsVersion: String = "",
+    val happDeviceModel: String = "",
+    val happLocale: String = "",
+    val happUserId: String = "",
+    val happHwid: String = "",
 )

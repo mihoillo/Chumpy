@@ -7,6 +7,8 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -75,7 +77,7 @@ abstract class ProfileDao {
  */
 @Database(
     entities = [SubscriptionEntity::class, ProfileEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AuroraDatabase : RoomDatabase() {
@@ -84,5 +86,24 @@ abstract class AuroraDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "aurora.db"
+
+        /**
+         * v2: the Happ fingerprint columns on subscriptions, and the balancer columns
+         * (strategy, member linkKeys) on profiles.
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN happSpoof INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN happAppVersion TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN happOs TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN happOsVersion TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN happDeviceModel TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN happLocale TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN happUserId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN happHwid TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE profiles ADD COLUMN balancerStrategy TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE profiles ADD COLUMN balancerMembers TEXT NOT NULL DEFAULT ''")
+            }
+        }
     }
 }
