@@ -1315,10 +1315,10 @@ fun AboutScreen(
             .screenPadding()
             .verticalScroll(scrollState)
             .padding(
-                // A breath more of sky above the hero than the other settings pages
-                // carry: the mark and the name open the app's own story, they get to
-                // stand clear of the top edge.
-                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 32.dp,
+                // The hero's own sky: the mark stands a mark's height clear of the top
+                // edge, so the name under it sits well down the page, on its way to the
+                // middle rather than hugging the status bar.
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 96.dp,
                 bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
                     FloatingBottomBarReservedHeight,
             ),
@@ -1378,7 +1378,7 @@ fun AboutScreen(
                 ExternalLinkRow(
                     title = stringResource(R.string.settings_about_telegram),
                     supporting = stringResource(R.string.settings_about_telegram_handle),
-                    icon = R.drawable.ic_send,
+                    icon = R.drawable.ic_telegram,
                     url = "https://t.me/AuroraFragments",
                 )
             },
@@ -1386,7 +1386,7 @@ fun AboutScreen(
                 ExternalLinkRow(
                     title = stringResource(R.string.settings_about_github),
                     supporting = stringResource(R.string.settings_about_github_handle),
-                    icon = R.drawable.ic_code,
+                    icon = R.drawable.ic_github,
                     url = "https://github.com/mihoillo/Aurora",
                 )
             },
@@ -1395,8 +1395,10 @@ fun AboutScreen(
 }
 
 /**
- * A row that leaves the app: the screen-link row's own layout and trailing pair, but
- * the tap opens the browser on [url] instead of one of this app's own screens.
+ * A row that leaves the app: the screen-link row's own layout, but the tap opens the
+ * browser on [url] instead of one of this app's own screens. The trailing mark is the
+ * brand's own sign on the tile, alone — no "menu" triangle: nothing unfolds here, the
+ * row simply goes out.
  */
 @Composable
 private fun ExternalLinkRow(
@@ -1439,17 +1441,11 @@ private fun ExternalLinkRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // The pair bounces as one widget when tapped.
+        // The tile bounces as one widget when tapped.
         Box(
             modifier = Modifier.pressBounce(pressed, taps),
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LinkIconTile(icon = icon, pressed = pressed)
-                TriangleTile(pressed = pressed)
-            }
+            LinkIconTile(icon = icon, pressed = pressed)
         }
     }
 }
