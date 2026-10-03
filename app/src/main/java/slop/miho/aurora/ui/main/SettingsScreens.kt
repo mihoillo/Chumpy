@@ -64,9 +64,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
@@ -1371,9 +1373,9 @@ private fun IconVariantRow(
         }
         Row(
             modifier = Modifier.padding(start = 16.dp),
-            // Tighter than the swatches' 12: the ring's wrapper already carries its own
-            // margin around every preview.
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // Tighter than the swatches look: every preview's wrapper carries its own
+            // margin around the 48dp icon.
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             IconVariant.entries.forEach { variant ->
                 IconPreviewButton(
@@ -1423,18 +1425,39 @@ private fun IconPreviewButton(
     val poke = rememberHapticPoke()
     // Bumped in the click handler: the pop keys off it, so it fires on every click.
     var taps by remember { mutableIntStateOf(0) }
-    // The pick's mark: the accent's ring, grown from nothing so it reads as arriving.
+    // The pick's mark: the accent's ring, a breath off the icon — never touching it —
+    // while the icon itself yields, shrinking a little under the ring so the marked
+    // preview reads no bigger than its neighbors.
     val ringWidth by animateDpAsState(
         targetValue = if (selected) 3.dp else 0.dp,
         animationSpec = motion.defaultSpatialSpec(),
         label = "icon preview ring width",
+    )
+    val mark by animateFloatAsState(
+        targetValue = if (selected) ICON_MARK_SCALE else 1f,
+        animationSpec = motion.defaultSpatialSpec(),
+        label = "icon preview mark scale",
     )
     Box(
         modifier = Modifier
             .size(60.dp)
             .pressBounce(pressed, taps)
             .clip(CircleShape)
-            .border(ringWidth, colors.primary, CircleShape)
+            .drawBehind {
+                // Drawn only once there's width to draw: a zero-width stroke would still
+                // leave its hairline behind, a phantom ring at rest.
+                val stroke = ringWidth.toPx()
+                if (stroke > 0.5f) {
+                    drawCircle(
+                        color = colors.primary,
+                        style = Stroke(stroke),
+                        // The ring rides off the shrinking icon's own rim, the gap held
+                        // at a breath — it closes in as the icon yields, settling level
+                        // with the neighbors' edges.
+                        radius = 24.dp.toPx() * mark + 3.dp.toPx() + stroke / 2,
+                    )
+                }
+            }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -1450,6 +1473,10 @@ private fun IconPreviewButton(
         Box(
             modifier = Modifier
                 .size(48.dp)
+                .graphicsLayer {
+                    scaleX = mark
+                    scaleY = mark
+                }
                 .clip(CircleShape)
                 .background(background)
                 .border(1.dp, colors.outlineVariant, CircleShape),
@@ -1474,3 +1501,6 @@ private fun IconPreviewButton(
         }
     }
 }
+
+/** How far the icon yields under the pick's ring. */
+private const val ICON_MARK_SCALE = 0.85f

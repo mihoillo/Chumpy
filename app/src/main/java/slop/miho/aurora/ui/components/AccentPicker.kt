@@ -2,6 +2,7 @@ package slop.miho.aurora.ui.components
 
 import android.os.Build
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -33,7 +34,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -91,7 +95,10 @@ fun AccentRow(
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            // Tighter than it looks: every swatch's wrapper carries its own margin
+            // around the 48dp color, so the circles sit a breath further apart
+            // than the raw spacing says.
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // The adaptive swatch shows the actual wallpaper-derived color, like the system
@@ -171,8 +178,9 @@ fun SwatchDivider() {
 }
 
 /**
- * A round color swatch; the selected one wears the accent's own ring, grown around its
- * rim — no check over the color, the pick stays plain to see. Pressing squashes it like
+ * A round color swatch; the pick's mark is the accent's own ring, drawn a breath off the
+ * color — never touching it — while the color itself yields, shrinking a little under the
+ * ring so the marked swatch reads no bigger than its neighbors. Pressing squashes it like
  * the square buttons, with the same light poke.
  */
 @Composable
@@ -183,26 +191,44 @@ private fun Swatch(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val poke = rememberHapticPoke()
     // Bumped in the click handler: the pop keys off it, so it fires on every click — the
     // press state alone can go unnoticed on a quick tap.
     var taps by remember { mutableIntStateOf(0) }
-    // The pick's mark: the accent's ring, grown from nothing so it reads as arriving.
-    val motion = MaterialTheme.motionScheme
     val ringWidth by animateDpAsState(
         targetValue = if (selected) 3.dp else 0.dp,
         animationSpec = motion.defaultSpatialSpec(),
         label = "swatch ring width",
     )
+    val mark by animateFloatAsState(
+        targetValue = if (selected) SWATCH_MARK_SCALE else 1f,
+        animationSpec = motion.defaultSpatialSpec(),
+        label = "swatch mark scale",
+    )
     Box(
         modifier = Modifier
-            .size(48.dp)
+            .size(60.dp)
             .pressBounce(pressed, taps)
             .clip(CircleShape)
-            .background(color)
-            .border(ringWidth, MaterialTheme.colorScheme.primary, CircleShape)
+            .drawBehind {
+                // Drawn only once there's width to draw: a zero-width stroke would still
+                // leave its hairline behind, a phantom ring at rest.
+                val stroke = ringWidth.toPx()
+                if (stroke > 0.5f) {
+                    drawCircle(
+                        color = colors.primary,
+                        style = Stroke(stroke),
+                        // The ring rides off the shrinking circle's own rim, the gap
+                        // between them held at a breath — the ring closes in as the color
+                        // yields, settling level with the neighbors' edges.
+                        radius = 24.dp.toPx() * mark + SWATCH_RING_GAP.toPx() + stroke / 2,
+                    )
+                }
+            }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -219,8 +245,26 @@ private fun Swatch(
                 onClick()
             }
             .semantics { contentDescription = label },
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .graphicsLayer {
+                    scaleX = mark
+                    scaleY = mark
+                }
+                .clip(CircleShape)
+                .background(color),
+        )
+    }
 }
+
+/** How far the color yields under the pick's ring. */
+private const val SWATCH_MARK_SCALE = 0.85f
+
+/** The breath between the color and the ring. */
+private val SWATCH_RING_GAP = 3.dp
 
 /** The outline circle standing in for a wallpaper seed that isn't there (yet). */
 @Composable
