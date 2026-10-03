@@ -34,6 +34,7 @@ class SubscriptionRepository(
     private val context: Context,
     private val db: AuroraDatabase,
     private val tunnelUp: () -> Boolean,
+    private val happSpoof: () -> HappSpoof.Fingerprint?,
 ) {
     private companion object {
         const val TAG = "Aurora/SubRepo"
@@ -43,7 +44,7 @@ class SubscriptionRepository(
         const val WORK_PREFIX = "subscription-update-"
     }
 
-    private val fetcher = SubscriptionFetcher(tunnelUp)
+    private val fetcher = SubscriptionFetcher(tunnelUp, happSpoof)
     private val subscriptions = db.subscriptionDao()
     private val profiles = db.profileDao()
 
@@ -65,7 +66,7 @@ class SubscriptionRepository(
     suspend fun addSubscription(url: String, name: String? = null): Result<SubscriptionEntity> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val (body, metadata) = fetchWithNestedExpansion(url, null)
+                val (body, metadata) = fetchWithNestedExpansion(url)
                 val parsed = SubscriptionParser.parse(body)
                 require(parsed.isNotEmpty()) { "No server links found in the response" }
 
@@ -98,7 +99,7 @@ class SubscriptionRepository(
                 val entity = subscriptions.byId(id) ?: error("Subscription not found")
                 val attemptAt = System.currentTimeMillis()
                 try {
-                    val (body, metadata) = fetchWithNestedExpansion(entity.url, entity)
+                    val (body, metadata) = fetchWithNestedExpansion(entity.url)
                     val parsed = SubscriptionParser.parse(body)
                     require(parsed.isNotEmpty()) { "No server links found in the response" }
 
@@ -142,14 +143,6 @@ class SubscriptionRepository(
                 WorkManager.getInstance(context).cancelUniqueWork(WORK_PREFIX + id)
             }
         }
-    }
-
-    /**
-     * Persists an edited subscription row — the Happ spoof editor's save. The fields
-     * only ever ride the next fetch; nothing about the running tunnel depends on them.
-     */
-    suspend fun saveSubscription(subscription: SubscriptionEntity) = withContext(Dispatchers.IO) {
-        subscriptions.upsert(subscription)
     }
 
     /**
@@ -214,15 +207,15 @@ class SubscriptionRepository(
     /**
      * Some panels answer a subscription URL with a single URL line — a nested
      * subscription. One level of expansion, Hiddify-style, covers the panels that do it.
-     * The second fetch carries the same fingerprint as the first.
+     * The second fetch dresses up the same way the first did — the fingerprint is global.
      */
-    private fun fetchWithNestedExpansion(url: String, subscription: SubscriptionEntity?): Pair<String, SubscriptionMetadata> {
-        val first = fetcher.fetch(url, subscription)
+    private fun fetchWithNestedExpansion(url: String): Pair<String, SubscriptionMetadata> {
+        val first = fetcher.fetch(url)
         val nested = SubscriptionParser.isNestedSubscriptionUrl(first.body)
             ?.takeIf { it != url }
             ?: return first.body to first.metadata
         Log.d(TAG, "Subscription is nested; following one level")
-        val second = fetcher.fetch(nested, subscription)
+        val second = fetcher.fetch(nested)
         return second.body to second.metadata
     }
 

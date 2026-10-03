@@ -61,7 +61,7 @@
     <string name="subscription_delete_confirm">Delete</string>
 
     <string name="happ_title">Happ spoof</string>
-    <string name="happ_hint">Present as the official Happ client when this subscription is fetched</string>
+    <string name="happ_hint">Present as the official Happ client when fetching subscriptions</string>
     <string name="happ_app_version">App version</string>
     <string name="happ_os">OS</string>
     <string name="happ_os_version">OS version</string>
@@ -70,9 +70,7 @@
     <string name="happ_user_id">User ID</string>
     <string name="happ_hwid">HWID</string>
     <string name="happ_regenerate">Regenerate identity</string>
-    <string name="happ_save">Save</string>
-    <string name="happ_cancel">Cancel</string>
-    <string name="happ_delete">Delete subscription</string>
+    <string name="happ_regenerate_hint">A new user id and HWID — the identity the panel sees</string>
 
     <!-- Welcome (first run) -->
     <string name="welcome_title">Hello, stranger!</string>

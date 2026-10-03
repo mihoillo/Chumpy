@@ -77,7 +77,7 @@ abstract class ProfileDao {
  */
 @Database(
     entities = [SubscriptionEntity::class, ProfileEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AuroraDatabase : RoomDatabase() {
@@ -103,6 +103,23 @@ abstract class AuroraDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE subscriptions ADD COLUMN happHwid TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE profiles ADD COLUMN balancerStrategy TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE profiles ADD COLUMN balancerMembers TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * v3: the Happ fingerprint moved out of the subscriptions — one global block in
+         * the settings now — so its per-subscription columns go.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happSpoof")
+                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happAppVersion")
+                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happOs")
+                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happOsVersion")
+                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happDeviceModel")
+                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happLocale")
+                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happUserId")
+                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happHwid")
             }
         }
     }

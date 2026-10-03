@@ -5,6 +5,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import slop.miho.aurora.sub.HappSpoof
 
 /**
  * The light/dark choice. AMOLED is the dark theme gone darker — a pure black background and
@@ -97,6 +98,18 @@ data class UiSettings(
     val hapticFeedback: Boolean = true,
     /** Whether the home screen's exit IP chip reads "Hidden"; flipped by tapping the chip. */
     val hideIp: Boolean = false,
+
+    // The Happ panel's client fingerprint every subscription fetch goes out with (see
+    // slop.miho.aurora.sub.HappSpoof): on out of the box, the fields starting whole —
+    // the device's honest defaults and a generated identity the panel keeps seeing.
+    val happSpoof: Boolean = true,
+    val happAppVersion: String = "",
+    val happOs: String = "",
+    val happOsVersion: String = "",
+    val happDeviceModel: String = "",
+    val happLocale: String = "",
+    val happUserId: String = "",
+    val happHwid: String = "",
     /** The [FontRegistry] id of the app-wide typeface; Inter out of the box. */
     val fontId: String = FontRegistry.INTER_ID,
     /** How the server list draws each exit's country. */
@@ -197,7 +210,13 @@ object SettingsStore {
 
     private fun read(context: Context): UiSettings {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return UiSettings(
+        // The fingerprint's identity half (user id, HWID) is generated once and kept:
+        // panels bind accounts to it, so a blank stored identity is seeded and written
+        // back right here — the panel sees the same "device" from the very first fetch.
+        val identityBlank =
+            prefs.getString(KEY_HAPP_USER_ID, null).isNullOrBlank() ||
+                prefs.getString(KEY_HAPP_HWID, null).isNullOrBlank()
+        val settings = UiSettings(
             themeMode = enumEntry(prefs.getString(KEY_THEME, null), ThemeMode.SYSTEM),
             accent = enumEntry(prefs.getString(KEY_ACCENT, null), Accent.ADAPTIVE),
             // The speed setting used to be a three-way enum; a stored SLOW carries over.
@@ -210,6 +229,20 @@ object SettingsStore {
             grayscaleOffline = prefs.getBoolean(KEY_GRAYSCALE_OFFLINE, false),
             hapticFeedback = prefs.getBoolean(KEY_HAPTIC, true),
             hideIp = prefs.getBoolean(KEY_HIDE_IP, false),
+            happSpoof = prefs.getBoolean(KEY_HAPP_SPOOF, true),
+            happAppVersion = prefs.getString(KEY_HAPP_APP_VERSION, null).orEmpty()
+                .ifBlank { HappSpoof.DEFAULT_APP_VERSION },
+            happOs = prefs.getString(KEY_HAPP_OS, null).orEmpty().ifBlank { "Android" },
+            happOsVersion = prefs.getString(KEY_HAPP_OS_VERSION, null).orEmpty()
+                .ifBlank { HappSpoof.defaultOsVersion() },
+            happDeviceModel = prefs.getString(KEY_HAPP_DEVICE_MODEL, null).orEmpty()
+                .ifBlank { HappSpoof.defaultDeviceModel() },
+            happLocale = prefs.getString(KEY_HAPP_LOCALE, null).orEmpty()
+                .ifBlank { HappSpoof.defaultLocale() },
+            happUserId = prefs.getString(KEY_HAPP_USER_ID, null).orEmpty()
+                .ifBlank { HappSpoof.randomUserId() },
+            happHwid = prefs.getString(KEY_HAPP_HWID, null).orEmpty()
+                .ifBlank { HappSpoof.randomHwid() },
             fontId = prefs.getString(KEY_FONT, null) ?: FontRegistry.INTER_ID,
             flagStyle = enumEntry(prefs.getString(KEY_FLAG_STYLE, null), FlagStyle.TWEMOJI),
             iconVariant = enumEntry(prefs.getString(KEY_ICON_VARIANT, null), IconVariant.AURORA),
@@ -239,6 +272,8 @@ object SettingsStore {
                 null
             },
         )
+        if (identityBlank) write(context, settings)
+        return settings
     }
 
     private fun write(context: Context, settings: UiSettings) {
@@ -252,6 +287,14 @@ object SettingsStore {
             .putBoolean(KEY_GRAYSCALE_OFFLINE, settings.grayscaleOffline)
             .putBoolean(KEY_HAPTIC, settings.hapticFeedback)
             .putBoolean(KEY_HIDE_IP, settings.hideIp)
+            .putBoolean(KEY_HAPP_SPOOF, settings.happSpoof)
+            .putString(KEY_HAPP_APP_VERSION, settings.happAppVersion)
+            .putString(KEY_HAPP_OS, settings.happOs)
+            .putString(KEY_HAPP_OS_VERSION, settings.happOsVersion)
+            .putString(KEY_HAPP_DEVICE_MODEL, settings.happDeviceModel)
+            .putString(KEY_HAPP_LOCALE, settings.happLocale)
+            .putString(KEY_HAPP_USER_ID, settings.happUserId)
+            .putString(KEY_HAPP_HWID, settings.happHwid)
             .putString(KEY_FONT, settings.fontId)
             .putString(KEY_FLAG_STYLE, settings.flagStyle.name)
             .putString(KEY_ICON_VARIANT, settings.iconVariant.name)
@@ -313,6 +356,16 @@ object SettingsStore {
     private const val KEY_HAPTIC = "haptic_feedback"
     private const val KEY_SIMPLE_TRANSITIONS = "simple_transitions"
     private const val KEY_HIDE_IP = "hide_ip"
+
+    // The Happ fingerprint keys, all one global block.
+    private const val KEY_HAPP_SPOOF = "happ_spoof"
+    private const val KEY_HAPP_APP_VERSION = "happ_app_version"
+    private const val KEY_HAPP_OS = "happ_os"
+    private const val KEY_HAPP_OS_VERSION = "happ_os_version"
+    private const val KEY_HAPP_DEVICE_MODEL = "happ_device_model"
+    private const val KEY_HAPP_LOCALE = "happ_locale"
+    private const val KEY_HAPP_USER_ID = "happ_user_id"
+    private const val KEY_HAPP_HWID = "happ_hwid"
     private const val KEY_FONT = "font"
     private const val KEY_FLAG_STYLE = "flag_style"
     private const val KEY_ICON_VARIANT = "icon_variant"

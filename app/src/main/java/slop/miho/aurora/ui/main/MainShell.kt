@@ -67,7 +67,6 @@ import slop.miho.aurora.ui.HomeUiState
 import slop.miho.aurora.ui.ServersUiState
 import slop.miho.aurora.ui.StatsUiState
 import slop.miho.aurora.data.UiSettings
-import slop.miho.aurora.db.SubscriptionEntity
 import slop.miho.aurora.ui.components.RefreshRateRequest
 import slop.miho.aurora.ui.components.SystemBarsIconsDark
 import slop.miho.aurora.ui.theme.LocalDarkTheme
@@ -265,7 +264,6 @@ fun MainShell(viewModel: MainViewModel) {
             onSelectSubscription = viewModel::selectSubscription,
             onAddSubscription = viewModel::addSubscription,
             onDeleteSubscription = viewModel::deleteSubscription,
-            onSaveSubscription = viewModel::saveSubscription,
             onToggleAutoUpdate = viewModel::setSubscriptionAutoUpdate,
             onSelect = viewModel::selectProfile,
             onConnect = {
@@ -391,7 +389,6 @@ private fun MainPagerStrip(
     onSelectSubscription: (String) -> Unit,
     onAddSubscription: (url: String, name: String?, onDone: (String?) -> Unit) -> Unit,
     onDeleteSubscription: (String) -> Unit,
-    onSaveSubscription: (SubscriptionEntity) -> Unit,
     onToggleAutoUpdate: (String, Boolean) -> Unit,
     onSelect: (String) -> Unit,
     onConnect: () -> Unit,
@@ -465,7 +462,6 @@ private fun MainPagerStrip(
                         onSelectSubscription = onSelectSubscription,
                         onAddSubscription = onAddSubscription,
                         onDeleteSubscription = onDeleteSubscription,
-                        onSaveSubscription = onSaveSubscription,
                         onSelect = onSelect,
                     )
                     MainTab.STATS -> {
@@ -489,7 +485,9 @@ private fun MainPagerStrip(
                         connection = connection,
                         subscriptions = subscriptions,
                         flagStyle = uiSettings.flagStyle,
+                        settings = uiSettings,
                         onChangeConnection = onChangeConnection,
+                        onChangeSettings = onUiSettingsChange,
                         onToggleAutoUpdate = onToggleAutoUpdate,
                     )
                     SettingsCategory.ABOUT -> AboutScreen(coreVersion = coreVersion)

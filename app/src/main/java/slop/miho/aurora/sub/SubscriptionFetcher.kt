@@ -7,7 +7,6 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.zip.GZIPInputStream
 
-import slop.miho.aurora.db.SubscriptionEntity
 import slop.miho.aurora.xray.XrayConfigBuilder.LOCAL_SOCKS_PORT
 
 /**
@@ -15,8 +14,14 @@ import slop.miho.aurora.xray.XrayConfigBuilder.LOCAL_SOCKS_PORT
  * request goes through the running core's loopback SOCKS inbound — the app package is
  * excluded from the VPN routes, so this is the only way a blocked panel stays reachable
  * (the arrangement Hiddify uses, and the reason the config always listens on it).
+ *
+ * Every fetch dresses up as the Happ client when the global spoof is on: the fingerprint
+ * is read at fetch time, so a flip in the settings is live on the very next fetch.
  */
-class SubscriptionFetcher(private val tunnelUp: () -> Boolean) {
+class SubscriptionFetcher(
+    private val tunnelUp: () -> Boolean,
+    private val happSpoof: () -> HappSpoof.Fingerprint?,
+) {
     private companion object {
         const val TAG = "Aurora/SubFetch"
 
@@ -41,11 +46,11 @@ class SubscriptionFetcher(private val tunnelUp: () -> Boolean) {
     )
 
     /**
-     * Throws [IOException] with a readable message on failure. The subscription, when
-     * one is being refreshed, carries the Happ spoof: its fingerprint takes the UA and
-     * the x- headers over from the app's own identity.
+     * Throws [IOException] with a readable message on failure. The Happ fingerprint,
+     * when the settings carry one, takes the UA and the x- headers over from the app's
+     * own identity.
      */
-    fun fetch(rawUrl: String, subscription: SubscriptionEntity? = null): FetchResult {
+    fun fetch(rawUrl: String): FetchResult {
         val url = normalizeUrl(rawUrl)
         // openConnection(Proxy) throws IllegalArgumentException on a null proxy, so the
         // no-tunnel path takes the plain overload instead of passing null in.
@@ -54,8 +59,9 @@ class SubscriptionFetcher(private val tunnelUp: () -> Boolean) {
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
             useCaches = false
-            if (subscription?.happSpoof == true) {
-                HappSpoof.apply(this, subscription)
+            val fingerprint = happSpoof()
+            if (fingerprint != null) {
+                HappSpoof.apply(this, fingerprint)
             } else {
                 setRequestProperty("User-Agent", USER_AGENT)
                 setRequestProperty("Accept", "*/*")

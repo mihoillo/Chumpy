@@ -120,7 +120,6 @@ fun ServersScreen(
     onSelectSubscription: (String) -> Unit,
     onAddSubscription: (url: String, name: String?, onDone: (String?) -> Unit) -> Unit,
     onDeleteSubscription: (String) -> Unit,
-    onSaveSubscription: (SubscriptionEntity) -> Unit,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -132,9 +131,7 @@ fun ServersScreen(
     var addOpen by rememberSaveable { mutableStateOf(false) }
     var addUrl by rememberSaveable { mutableStateOf("") }
 
-    // One dialog at a time. The long press on a subscription row opens that
-    // subscription's own settings — the Happ spoof and the way to the delete question.
-    var optionsTarget by remember { mutableStateOf<SubscriptionEntity?>(null) }
+    // One dialog at a time: the delete question a long press on a subscription row asks.
     var deleteTarget by remember { mutableStateOf<SubscriptionEntity?>(null) }
 
     // Rows sit under the floating bar while the list outgrows the screen.
@@ -225,7 +222,7 @@ fun ServersScreen(
                                     dropdownOpen = false
                                     if (id != selectedSubscription?.id) onSelectSubscription(id)
                                 },
-                                onOptionsRequest = { optionsTarget = it },
+                                onDeleteRequest = { deleteTarget = it },
                             )
                         }
                     } else {
@@ -243,18 +240,6 @@ fun ServersScreen(
                 }
             }
         }
-    }
-
-    optionsTarget?.let { subscription ->
-        HappSpoofDialog(
-            subscription = subscription,
-            onSave = onSaveSubscription,
-            onDeleteRequest = {
-                optionsTarget = null
-                deleteTarget = subscription
-            },
-            onDismiss = { optionsTarget = null },
-        )
     }
 
     deleteTarget?.let { subscription ->
@@ -711,9 +696,8 @@ private fun UpdateButton(
  * The unfolded subscription list: one row per subscription — the servers' own segmented
  * container, Surface подложки, cookie-marked pick and all — with the "add subscription"
  * row closing the list off, one of the rows itself, its icon on the square backing the
- * card's tile wears. A long press on a row opens that subscription's own settings —
- * the Happ spoof, and the way to the heavier question of deleting it and everything
- * it brought in.
+ * card's tile wears. A long press on a row asks the heavier question: deleting that
+ * subscription and everything it brought in.
  */
 @Composable
 private fun SubscriptionDropdown(
@@ -725,7 +709,7 @@ private fun SubscriptionDropdown(
     onAddUrlChange: (String) -> Unit,
     onAdd: (url: String, onDone: (String?) -> Unit) -> Unit,
     onSelect: (String) -> Unit,
-    onOptionsRequest: (SubscriptionEntity) -> Unit,
+    onDeleteRequest: (SubscriptionEntity) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val outer = MaterialTheme.shapes.extraLarge
@@ -745,7 +729,7 @@ private fun SubscriptionDropdown(
                 subscription = subscription,
                 selected = subscription.id == selectedId,
                 onClick = { onSelect(subscription.id) },
-                onLongClick = { onOptionsRequest(subscription) },
+                onLongClick = { onDeleteRequest(subscription) },
                 shape = RoundedCornerShape(
                     topStart = if (first) outer.topStart else inner.topStart,
                     topEnd = if (first) outer.topEnd else inner.topEnd,

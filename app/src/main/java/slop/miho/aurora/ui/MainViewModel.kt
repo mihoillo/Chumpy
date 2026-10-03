@@ -399,14 +399,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.setSubscriptionAutoUpdate(id, enabled) }
     }
 
-    /**
-     * Persists an edited subscription — the Happ spoof editor's save. The fingerprint
-     * only ever rides a fetch, so there is nothing else to nudge here.
-     */
-    fun saveSubscription(subscription: SubscriptionEntity) {
-        viewModelScope.launch { repository.saveSubscription(subscription) }
-    }
-
     /** Manual import: a link, a WireGuard .conf body, or a list of links. */
     fun addManualProfiles(text: String, onDone: (String?) -> Unit) {
         viewModelScope.launch {

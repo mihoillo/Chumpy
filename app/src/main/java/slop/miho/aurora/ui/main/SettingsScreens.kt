@@ -932,7 +932,9 @@ fun ConnectionScreen(
     connection: slop.miho.aurora.data.ConnectionSettings,
     subscriptions: List<slop.miho.aurora.db.SubscriptionEntity>,
     flagStyle: slop.miho.aurora.data.FlagStyle,
+    settings: slop.miho.aurora.data.UiSettings,
     onChangeConnection: ((slop.miho.aurora.data.ConnectionSettings) -> slop.miho.aurora.data.ConnectionSettings) -> Unit,
+    onChangeSettings: ((slop.miho.aurora.data.UiSettings) -> slop.miho.aurora.data.UiSettings) -> Unit,
     onToggleAutoUpdate: (String, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -994,6 +996,44 @@ fun ConnectionScreen(
                             slop.miho.aurora.ui.perapp.PerAppProxyActivity.EXTRA_PAGE,
                             slop.miho.aurora.ui.perapp.PerAppProxyActivity.PAGE_NETWORKS,
                         )
+                    },
+                )
+            },
+        )
+        // The Happ spoof's own block, between the carrying and the measuring: the
+        // fingerprint every fetch goes out with — the toggle over the fields that
+        // spell it. Off, the fields stay put but sleep — uneditable, dimmed, waiting —
+        // and the identity they hold is kept, so the panel sees the same "device" the
+        // moment the spoof comes back.
+        SettingsGroup(
+            {
+                ToggleRow(
+                    title = stringResource(R.string.happ_title),
+                    supporting = stringResource(R.string.happ_hint),
+                    icon = R.drawable.ic_device,
+                    checked = settings.happSpoof,
+                    onChange = { enabled ->
+                        onChangeSettings { it.copy(happSpoof = enabled) }
+                    },
+                )
+            },
+            {
+                HappFields(
+                    settings = settings,
+                    enabled = settings.happSpoof,
+                    onChangeSettings = onChangeSettings,
+                )
+            },
+            {
+                HappRegenerateRow(
+                    enabled = settings.happSpoof,
+                    onRegenerate = {
+                        onChangeSettings {
+                            it.copy(
+                                happUserId = slop.miho.aurora.sub.HappSpoof.randomUserId(),
+                                happHwid = slop.miho.aurora.sub.HappSpoof.randomHwid(),
+                            )
+                        }
                     },
                 )
             },
@@ -1264,6 +1304,186 @@ private fun TestUrlRow(
             color = colors.onSurfaceVariant,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         )
+    }
+}
+
+/**
+ * The fingerprint's own fields, the delay test URL's card language grown to a form: the
+ * bare fields filling the card edge to edge, the short ones paired two across so the
+ * block keeps its height, the device model — the only long one — on its own line. Each
+ * field carries its name as the floating label the borderless field has; committed on
+ * every keystroke, Done commits the trim.
+ *
+ * Off, the block is asleep — the same fields at the same places, only dimmed and
+ * uneditable — so nothing moves and nothing is lost when the spoof blinks out.
+ */
+@Composable
+private fun HappFields(
+    settings: slop.miho.aurora.data.UiSettings,
+    enabled: Boolean,
+    onChangeSettings: ((slop.miho.aurora.data.UiSettings) -> slop.miho.aurora.data.UiSettings) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HappField(
+                label = stringResource(R.string.happ_app_version),
+                value = settings.happAppVersion,
+                enabled = enabled,
+                onValueChange = { value -> onChangeSettings { it.copy(happAppVersion = value) } },
+                modifier = Modifier.weight(1f),
+            )
+            HappField(
+                label = stringResource(R.string.happ_locale),
+                value = settings.happLocale,
+                enabled = enabled,
+                onValueChange = { value -> onChangeSettings { it.copy(happLocale = value) } },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HappField(
+                label = stringResource(R.string.happ_os),
+                value = settings.happOs,
+                enabled = enabled,
+                onValueChange = { value -> onChangeSettings { it.copy(happOs = value) } },
+                modifier = Modifier.weight(1f),
+            )
+            HappField(
+                label = stringResource(R.string.happ_os_version),
+                value = settings.happOsVersion,
+                enabled = enabled,
+                onValueChange = { value -> onChangeSettings { it.copy(happOsVersion = value) } },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        HappField(
+            label = stringResource(R.string.happ_device_model),
+            value = settings.happDeviceModel,
+            enabled = enabled,
+            onValueChange = { value -> onChangeSettings { it.copy(happDeviceModel = value) } },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HappField(
+                label = stringResource(R.string.happ_user_id),
+                value = settings.happUserId,
+                enabled = enabled,
+                onValueChange = { value -> onChangeSettings { it.copy(happUserId = value) } },
+                modifier = Modifier.weight(1f),
+            )
+            HappField(
+                label = stringResource(R.string.happ_hwid),
+                value = settings.happHwid,
+                enabled = enabled,
+                onValueChange = { value -> onChangeSettings { it.copy(happHwid = value) } },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+/** One fingerprint field: the borderless stadium of the delay test URL, with its name. */
+@Composable
+private fun HappField(
+    label: String,
+    value: String,
+    enabled: Boolean,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        enabled = enabled,
+        label = { Text(label, maxLines = 1) },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = {
+            val trimmedNow = value.trim()
+            if (value != trimmedNow) onValueChange(trimmedNow)
+        }),
+        // No outline and no fill of its own: the card is the field's — asleep or awake.
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = Color.Transparent,
+            unfocusedBorderColor = Color.Transparent,
+            disabledBorderColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            disabledContainerColor = Color.Transparent,
+        ),
+        modifier = modifier,
+    )
+}
+
+/**
+ * The identity's own deliberate act: a new user id and HWID, generated and kept. The
+ * row sleeps with the rest of the block when the spoof is off — same tile, same words,
+ * gone quiet — because a panel binds the account to that pair, and handing it a fresh
+ * one is a choice, not a side effect.
+ */
+@Composable
+private fun HappRegenerateRow(
+    enabled: Boolean,
+    onRegenerate: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val poke = rememberHapticPoke()
+    var taps by remember { mutableIntStateOf(0) }
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (enabled) 1f else 0.45f,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "happ regenerate alpha",
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                role = Role.Button,
+            ) {
+                poke()
+                taps++
+                onRegenerate()
+            }
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .graphicsLayer { alpha = contentAlpha },
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = colors.secondaryContainer,
+            contentColor = colors.onSecondaryContainer,
+            modifier = Modifier.size(48.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_renew),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+        Column {
+            Text(
+                text = stringResource(R.string.happ_regenerate),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                text = stringResource(R.string.happ_regenerate_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurfaceVariant,
+            )
+        }
     }
 }
 
