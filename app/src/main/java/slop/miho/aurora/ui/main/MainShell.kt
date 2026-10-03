@@ -4,6 +4,7 @@ import android.net.VpnService
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -28,11 +29,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -312,10 +315,10 @@ fun MainShell(viewModel: MainViewModel) {
                     settingsOpen = false
                 },
                 settingsOpen = settingsOpen,
-                // The gear always lands on the interface settings, not wherever the user left off.
+                // The gear always lands on the About page, not wherever the user left off.
                 onSettingsOpenChange = { open ->
                     settingsOpen = open
-                    if (open) selectedCategory = SettingsCategory.INTERFACE
+                    if (open) selectedCategory = SettingsCategory.ABOUT
                 },
                 selectedCategory = selectedCategory,
                 onCategorySelected = { selectedCategory = it },
@@ -347,6 +350,12 @@ private fun bottomScrimHeight() =
  * it back in place and reads as the animation being skipped.
  */
 private class PageTarget(val position: Int)
+
+/**
+ * How far the heavy page must travel before the release counts as a page turn — a
+ * quarter of the way; less than that and it springs back home.
+ */
+private const val DirectSwipeCommitFraction = 0.25f
 
 /**
  * Two paging modes over one destination set: main tabs at strip positions 0..3, settings
@@ -415,6 +424,9 @@ private fun MainPagerStrip(
         // finger left it and settles the rest of the way to the landing page.
         val stripPosition = remember { Animatable(targetPosition.toFloat()) }
         var dragPosition by remember { mutableFloatStateOf(Float.NaN) }
+        // The slot of the page a direct-mode swipe is carrying out, MIN when none: the
+        // dragged page alone translates by the drag — every other page stands still.
+        var draggedSlot by remember { mutableIntStateOf(Int.MIN_VALUE) }
         LaunchedEffect(targetPosition) {
             stripPosition.animateTo(targetPosition.toFloat(), motion.defaultSpatialSpec())
         }
@@ -501,24 +513,30 @@ private fun MainPagerStrip(
                     state = dragState,
                     orientation = Orientation.Horizontal,
                     onDragStarted = {
-                        dragPosition = stripPosition.value
+                        when {
+                            // Mid-return spring: the finger takes the page over from
+                            // wherever it has got to.
+                            draggedSlot == targetPosition && !dragPosition.isNaN() -> {}
+                            // Expressive continuity: wherever the strip's settle stands.
+                            expressiveNow.value -> dragPosition = stripPosition.value
+                            else -> dragPosition = targetPosition.toFloat()
+                        }
+                        draggedSlot = targetPosition
                     },
                     onDragStopped = { velocity ->
                         // A quick flick outstrips any position: it carries a full page.
                         val fling = abs(velocity) > pageWidth * 0.8f
-                        val landing = (
-                            if (fling) {
-                                // Leftward velocity (negative) throws to the next page.
-                                dragPosition.roundToInt() + if (velocity < 0) 1 else -1
-                            } else {
-                                dragPosition.roundToInt()
-                            }
-                            ).coerceIn(firstPageNow.value, lastPageNow.value)
-                        // The settle starts from under the finger, wherever it is: the
-                        // expressive strip glides to the landing from there, the direct
-                        // mode's own slide-up takes over from the landing.
-                        val from = dragPosition
                         if (expressiveNow.value) {
+                            val landing = (
+                                if (fling) {
+                                    // Leftward velocity (negative) throws to the next page.
+                                    dragPosition.roundToInt() + if (velocity < 0) 1 else -1
+                                } else {
+                                    dragPosition.roundToInt()
+                                }
+                                ).coerceIn(firstPageNow.value, lastPageNow.value)
+                            // The settle starts from under the finger, wherever it is.
+                            val from = dragPosition
                             scope.launch {
                                 stripPosition.snapTo(from)
                                 stripPosition.animateTo(
@@ -526,9 +544,42 @@ private fun MainPagerStrip(
                                     motion.defaultSpatialSpec(),
                                 )
                             }
+                            dragPosition = Float.NaN
+                            draggedSlot = Int.MIN_VALUE
+                            if (landing != targetPosition) onSelectPage(landing)
+                        } else {
+                            // The heavy page: flung or carried a quarter of the way, the
+                            // landing takes over — the dragged page fades right where the
+                            // finger left it, the landing rises with the standard slide
+                            // (the dragged page's own dispose carries the drag states out
+                            // behind it, see the direct branch). Not far enough, and the
+                            // heavy page springs back home.
+                            val offset = dragPosition - targetPosition
+                            val step = when {
+                                fling -> if (velocity < 0) 1 else -1
+                                abs(offset) > DirectSwipeCommitFraction ->
+                                    if (offset > 0) 1 else -1
+                                else -> 0
+                            }
+                            val landing = (targetPosition + step)
+                                .coerceIn(firstPageNow.value, lastPageNow.value)
+                            if (landing != targetPosition) {
+                                onSelectPage(landing)
+                            } else {
+                                val from = dragPosition
+                                scope.launch {
+                                    animate(
+                                        initialValue = from,
+                                        targetValue = targetPosition.toFloat(),
+                                        animationSpec = motion.defaultSpatialSpec(),
+                                    ) { value, _ ->
+                                        dragPosition = value
+                                    }
+                                    dragPosition = Float.NaN
+                                    draggedSlot = Int.MIN_VALUE
+                                }
+                            }
                         }
-                        dragPosition = Float.NaN
-                        if (landing != targetPosition) onSelectPage(landing)
                     },
                 ),
         ) {
@@ -560,10 +611,42 @@ private fun MainPagerStrip(
                         label = "direct page switch",
                     ) { page ->
                         // The switch plays out over a spring: ask the display for its high
-                        // gear while it runs, so a dynamically-refreshed screen doesn't idle
-                        // at 60.
-                        RefreshRateRequest(active = transition.isRunning)
-                        destinationPage(page.position)
+                        // gear while it runs, so a dynamically-refreshed screen doesn't
+                        // idle at 60. The heavy swipe's own travel rides a graphics layer
+                        // the same invisible way — same request while the page is in hand.
+                        RefreshRateRequest(active = transition.isRunning || !dragPosition.isNaN())
+                        // The dragged page alone rides under the finger — the direct
+                        // mode's heavy swipe: no next page pulls in; the current one
+                        // simply follows the finger out, and on the release the landing
+                        // rises with the standard slide while this one fades wherever the
+                        // finger left it. The page's instance carries its own disposal:
+                        // when its fade ends and it finally leaves, it takes the drag's
+                        // states with it — unless a newer drag has already claimed them.
+                        val slot = page.position
+                        val draggedSlotNow = rememberUpdatedState(draggedSlot)
+                        DisposableEffect(slot) {
+                            onDispose {
+                                if (draggedSlotNow.value == slot) {
+                                    draggedSlot = Int.MIN_VALUE
+                                    dragPosition = Float.NaN
+                                }
+                            }
+                        }
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    translationX = if (
+                                        slot == draggedSlotNow.value && !dragPosition.isNaN()
+                                    ) {
+                                        -(dragPosition - slot) * pageWidth
+                                    } else {
+                                        0f
+                                    }
+                                },
+                        ) {
+                            destinationPage(slot)
+                        }
                     }
                 } else {
                     // Expressive transitions: one continuous strip, scrolled to the target —
