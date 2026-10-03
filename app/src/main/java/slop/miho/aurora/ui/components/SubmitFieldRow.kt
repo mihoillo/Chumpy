@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,6 +70,18 @@ fun SubmitFieldRow(
     // click — the press state alone can go unnoticed on a quick tap.
     var taps by remember { mutableIntStateOf(0) }
     var closeTaps by remember { mutableIntStateOf(0) }
+    val ready = value.isNotBlank()
+    // The tile trades the paste for the arrow the moment the field fills or empties —
+    // the trade bounces too, the same pop as a click. Keyed off the flip and merged
+    // into the taps counter, so a click that also flips the state bounces once.
+    var flips by remember { mutableIntStateOf(0) }
+    var wasReady by remember { mutableStateOf(ready) }
+    LaunchedEffect(ready) {
+        if (ready != wasReady) {
+            wasReady = ready
+            flips++
+        }
+    }
     val focusRequester = remember { FocusRequester() }
     Row(
         modifier = modifier,
@@ -98,7 +111,6 @@ fun SubmitFieldRow(
                 .weight(1f)
                 .focusRequester(focusRequester),
         )
-        val ready = value.isNotBlank()
         val colors = MaterialTheme.colorScheme
         val motion = MaterialTheme.motionScheme
         // The tile with the close tight against it — the pair reads as one control, the
@@ -123,7 +135,7 @@ fun SubmitFieldRow(
                 },
                 modifier = Modifier
                     .size(48.dp)
-                    .pressBounce(pressed, taps),
+                    .pressBounce(pressed, taps + flips),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Crossfade(

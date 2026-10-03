@@ -801,7 +801,10 @@ private fun AddSubscriptionRow(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 72.dp)
+                        // 80, not the closed face's 72: the stadium's 16dp of air on the
+                        // sides is matched above and below too — the gap reads square,
+                        // not wider than tall. The height swap rides the face change.
+                        .heightIn(min = 80.dp)
                         .padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
