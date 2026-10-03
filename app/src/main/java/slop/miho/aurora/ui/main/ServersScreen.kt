@@ -1030,11 +1030,11 @@ private fun SubscriptionRow(
 /**
  * What the panel reports about a subscription, on the card: the bars come first, right
  * after the header, running to the column's end — the quota's drain and the days' —
- * then the quota's own numbers on one line (the share left, the traffic eaten — the
- * subscription list's rows keep their own tighter trade), the days under them. The
- * eaten traffic is hiddify's "used / total"; panels that keep the quota to themselves
- * (total=0, the common unlimited case) still get their used bytes counted out.
- * [textInset] keeps the numbers clear of whatever anchors at the foot (the card's
+ * then the days' number, then the quota's own reading on one line below it: the traffic
+ * eaten, a dot, the share left (the subscription list's rows keep their own tighter
+ * trade). The eaten traffic is hiddify's "used / total"; panels that keep the quota to
+ * themselves (total=0, the common unlimited case) still get their used bytes counted
+ * out. [textInset] keeps the numbers clear of whatever anchors at the foot (the card's
  * chevron) without pulling the bars short.
  */
 @Composable
@@ -1076,40 +1076,31 @@ private fun SubscriptionInfo(
             verticalArrangement = Arrangement.spacedBy(2.dp),
             modifier = Modifier.padding(end = textInset),
         ) {
-            // The quota's own report on one line: the share left and the share eaten,
-            // side by side — one reading, not a number here and its arithmetic under it.
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (subscription.totalBytes > 0) {
-                    val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
-                        subscription.totalBytes).coerceIn(0f, 1f)
-                    Text(
-                        text = stringResource(R.string.subscription_bw_remaining, (ratio * 100).toInt()),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = supportingColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                consumed?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = supportingColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = if (subscription.totalBytes > 0) {
-                            Modifier.weight(1f)
-                        } else {
-                            Modifier.fillMaxWidth()
-                        },
-                    )
-                }
-            }
-            // The days read under the quota's line, on their own — time is the other axis.
+            // The days' number first, above the quota's own report — time is the axis
+            // the card reads on first.
             days?.let {
                 Text(
                     text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = supportingColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            // The quota's report on one line: the traffic eaten, a dot, the share left —
+            // one reading, not a number here and its arithmetic under it. The
+            // subscription list's rows keep their own tighter trade.
+            val percent = if (subscription.totalBytes > 0) {
+                val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
+                    subscription.totalBytes).coerceIn(0f, 1f)
+                stringResource(R.string.subscription_bw_percent, (ratio * 100).toInt())
+            } else {
+                null
+            }
+            val trafficLine = listOfNotNull(consumed, percent).joinToString(" · ")
+            if (trafficLine.isNotEmpty()) {
+                Text(
+                    text = trafficLine,
                     style = MaterialTheme.typography.bodyMedium,
                     color = supportingColor,
                     maxLines = 1,
