@@ -9,7 +9,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -960,7 +959,8 @@ fun ConnectionScreen(
     // the fingerprint's own — stays above the keys, the focused one asking for its
     // visibility again once the keys have risen. The bar's reserved height drops out
     // for the same reason: the bar rides the navigation bars only, so while the keys
-    // stand over it there is nothing under them to keep the seat for.
+    // stand over it there is nothing under them to keep the seat for — but the page
+    // still keeps its own margin off the edge, the same 16 it holds everywhere else.
     val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     Column(
         modifier = modifier
@@ -971,7 +971,7 @@ fun ConnectionScreen(
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp,
                 bottom = WindowInsets.navigationBars.union(WindowInsets.ime)
                     .asPaddingValues().calculateBottomPadding() +
-                    if (imeOpen) 0.dp else FloatingBottomBarReservedHeight,
+                    if (imeOpen) 16.dp else FloatingBottomBarReservedHeight,
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -1025,7 +1025,7 @@ fun ConnectionScreen(
         // own fold kept inside the one block. The regenerator rides the header's right
         // end, between the texts and the toggle: a new identity is a deliberate tap,
         // awake only while the fingerprint rides.
-        HappGroup(
+        FoldingGroup(
             expanded = settings.happSpoof,
             header = {
                 HappToggleRow(
@@ -1043,7 +1043,7 @@ fun ConnectionScreen(
                     },
                 )
             },
-            fields = listOf(
+            rows = listOf(
                 {
                     HappFieldRow(
                         label = stringResource(R.string.happ_app_version),
@@ -1105,14 +1105,13 @@ fun ConnectionScreen(
         )
         if (subscriptions.isNotEmpty()) {
             // The panel's own schedule, one row per subscription behind a fold: the
-            // doorway counts how many refresh, the dropdown below holds the switches.
-            // The servers list's own trade — opening, the switches rise in under the
-            // row; closing, they fold back up — drawn unclipped, the height riding
-            // along.
+            // doorway counts how many refresh, the switches riding under it inside the
+            // same card — the Happ block's own fold, unrolling with the seam.
             var refreshOpen by rememberSaveable { mutableStateOf(false) }
             val autoCount = subscriptions.count { it.autoUpdate }
-            SettingsGroup(
-                {
+            FoldingGroup(
+                expanded = refreshOpen,
+                header = {
                     BackgroundRefreshRow(
                         supporting = when {
                             autoCount == 0 -> stringResource(R.string.per_app_disabled)
@@ -1125,34 +1124,20 @@ fun ConnectionScreen(
                         onToggle = { refreshOpen = !refreshOpen },
                     )
                 },
+                rows = subscriptions.map { subscription ->
+                    @Composable {
+                        ToggleRow(
+                            title = subscription.name.ifEmpty { subscription.url },
+                            supporting = null,
+                            icon = R.drawable.ic_clock,
+                            checked = subscription.autoUpdate,
+                            onChange = { enabled ->
+                                onToggleAutoUpdate(subscription.id, enabled)
+                            },
+                        )
+                    }
+                },
             )
-            val motion = MaterialTheme.motionScheme
-            // The fold: the switches unroll down from the doorway and roll back up under
-            // it, the fade riding strong on top. Once folded the rows leave the
-            // composition entirely — nothing left standing in the way of a tap.
-            AnimatedVisibility(
-                visible = refreshOpen,
-                enter = expandVertically(motion.defaultSpatialSpec(), expandFrom = Alignment.Top) +
-                    fadeIn(tween(durationMillis = 150)),
-                exit = shrinkVertically(motion.defaultSpatialSpec(), shrinkTowards = Alignment.Top) +
-                    fadeOut(tween(durationMillis = 150)),
-            ) {
-                SettingsGroup(
-                    *subscriptions.map { subscription ->
-                        @Composable {
-                            ToggleRow(
-                                title = subscription.name.ifEmpty { subscription.url },
-                                supporting = null,
-                                icon = R.drawable.ic_clock,
-                                checked = subscription.autoUpdate,
-                                onChange = { enabled ->
-                                    onToggleAutoUpdate(subscription.id, enabled)
-                                },
-                            )
-                        }
-                    }.toTypedArray(),
-                )
-            }
         }
     }
 }
@@ -1377,17 +1362,17 @@ private fun TestUrlRow(
 }
 
 /**
- * The Happ spoof's own block: [SettingsGroup]'s body with one fold built in — the header
- * stands, the field rows under it unroll and roll back up — because the whole thing is
- * one card, not a doorway group with a second one hanging under it. The seam the fold
- * rides on is the header's own bottom corners: the card's outer ones while the rows are
- * folded, the inner seam once they stand under it, animating with the fold itself.
+ * [SettingsGroup]'s body with one fold built in — the header stands, the rows under it
+ * unroll and roll back up — because the whole thing is one card, not a doorway group
+ * with a second one hanging under it. The seam the fold rides on is the header's own
+ * bottom corners: the card's outer ones while the rows are folded, the inner seam once
+ * they stand under it, animating on the same clock the rows themselves unroll on.
  */
 @Composable
-private fun HappGroup(
+private fun FoldingGroup(
     expanded: Boolean,
     header: @Composable () -> Unit,
-    fields: List<@Composable () -> Unit>,
+    rows: List<@Composable () -> Unit>,
 ) {
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.extraSmall
@@ -1438,18 +1423,18 @@ private fun HappGroup(
                 Modifier.padding(top = 2.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                fields.forEachIndexed { index, field ->
+                rows.forEachIndexed { index, row ->
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainer.withSurfaceOpacity(),
                         shape = RoundedCornerShape(
                             topStart = inner.topStart,
                             topEnd = inner.topEnd,
-                            bottomStart = if (index == fields.lastIndex) outer.bottomStart else inner.bottomStart,
-                            bottomEnd = if (index == fields.lastIndex) outer.bottomEnd else inner.bottomEnd,
+                            bottomStart = if (index == rows.lastIndex) outer.bottomStart else inner.bottomStart,
+                            bottomEnd = if (index == rows.lastIndex) outer.bottomEnd else inner.bottomEnd,
                         ),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        field()
+                        row()
                     }
                 }
             }
