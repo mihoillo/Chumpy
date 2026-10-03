@@ -86,8 +86,8 @@
     <string name="settings_accent_rainbow">Rainbow</string>
     <string name="settings_slow_animations">Slow animations</string>
     <string name="settings_slow_animations_hint">Springs get softer, everything moves slower</string>
-    <string name="settings_expressive_transitions">Expressive transitions</string>
-    <string name="settings_expressive_transitions_hint">Scrolls the whole page strip instead of the direct slide</string>
+    <string name="settings_simple_transitions">Simple transitions</string>
+    <string name="settings_simple_transitions_hint">Better for weaker devices</string>
     <string name="settings_haptic_feedback">Haptic feedback</string>
     <string name="settings_haptic_feedback_hint">A light poke when the buttons are tapped</string>
     <string name="settings_fonts">Fonts</string>

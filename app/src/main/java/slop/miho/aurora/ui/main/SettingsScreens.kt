@@ -315,17 +315,17 @@ fun InterfaceScreen(
                 },
                 {
                     ToggleRow(
-                        title = stringResource(R.string.settings_expressive_transitions),
-                        supporting = stringResource(R.string.settings_expressive_transitions_hint),
-                        // Sliding arrows while the carousel strip is on, fade circle for the
-                        // direct switch.
-                        icon = if (settings.expressiveTransitions) {
-                            R.drawable.ic_swap_horizontal
-                        } else {
+                        title = stringResource(R.string.settings_simple_transitions),
+                        supporting = stringResource(R.string.settings_simple_transitions_hint),
+                        // Fade circle for the simple switch, sliding arrows while the
+                        // carousel strip is on.
+                        icon = if (settings.simpleTransitions) {
                             R.drawable.ic_opacity
+                        } else {
+                            R.drawable.ic_swap_horizontal
                         },
-                        checked = settings.expressiveTransitions,
-                        onChange = { checked -> onChange { it.copy(expressiveTransitions = checked) } },
+                        checked = settings.simpleTransitions,
+                        onChange = { checked -> onChange { it.copy(simpleTransitions = checked) } },
                     )
                 },
             )

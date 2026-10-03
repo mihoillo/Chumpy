@@ -1,5 +1,6 @@
 package slop.miho.aurora.data
 
+import android.app.ActivityManager
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -82,7 +83,11 @@ data class UiSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val accent: Accent = Accent.ADAPTIVE,
     val slowAnimations: Boolean = false,
-    val expressiveTransitions: Boolean = false,
+    /**
+     * Whether page switches take the simple slide-up instead of the expressive strip
+     * scroll. Weak devices get it out of the box; everyone else starts expressive.
+     */
+    val simpleTransitions: Boolean = false,
     /**
      * Whether the wallpaper picture drains to grayscale while the tunnel is down: only the
      * picture loses its color — the interface over it keeps the accent — and the color
@@ -201,7 +206,7 @@ object SettingsStore {
             } else {
                 prefs.getString(KEY_SPEED, null) == "SLOW"
             },
-            expressiveTransitions = prefs.getBoolean(KEY_EXPRESSIVE_TRANSITIONS, false),
+            simpleTransitions = prefs.getBoolean(KEY_SIMPLE_TRANSITIONS, isWeakDevice(context)),
             grayscaleOffline = prefs.getBoolean(KEY_GRAYSCALE_OFFLINE, false),
             hapticFeedback = prefs.getBoolean(KEY_HAPTIC, true),
             hideIp = prefs.getBoolean(KEY_HIDE_IP, false),
@@ -242,9 +247,9 @@ object SettingsStore {
             .putString(KEY_ACCENT, settings.accent.name)
             .putBoolean(KEY_SLOW, settings.slowAnimations)
             .remove(KEY_SPEED)
-            .putBoolean(KEY_EXPRESSIVE_TRANSITIONS, settings.expressiveTransitions)
+            .remove(KEY_EXPRESSIVE_TRANSITIONS)
+            .putBoolean(KEY_SIMPLE_TRANSITIONS, settings.simpleTransitions)
             .putBoolean(KEY_GRAYSCALE_OFFLINE, settings.grayscaleOffline)
-            .remove(KEY_SIMPLE_TRANSITIONS)
             .putBoolean(KEY_HAPTIC, settings.hapticFeedback)
             .putBoolean(KEY_HIDE_IP, settings.hideIp)
             .putString(KEY_FONT, settings.fontId)
@@ -284,17 +289,28 @@ object SettingsStore {
     private inline fun <reified T : Enum<T>> enumEntry(name: String?, default: T): T =
         name?.let { stored -> enumValues<T>().firstOrNull { it.name == stored } } ?: default
 
+    /**
+     * Whether the device is weak enough that the strip's continuous scroll would
+     * stutter: the cutoff rides on RAM — the phones that never got past 4 GB
+     * (an 821-class one) can't carry it, while anything an 855 shipped in starts
+     * at 6.
+     */
+    private fun isWeakDevice(context: Context): Boolean {
+        val info = ActivityManager.MemoryInfo()
+        context.getSystemService(ActivityManager::class.java).getMemoryInfo(info)
+        return info.totalMem < 6L * 1024 * 1024 * 1024
+    }
+
     private const val KEY_THEME = "theme_mode"
     private const val KEY_ACCENT = "accent"
     private const val KEY_SLOW = "slow_animations"
 
     /** Legacy key of the old three-way animation speed enum, read once for the migration. */
     private const val KEY_SPEED = "animation_speed"
+    /** Legacy key of the expressive-transitions toggle the simple one replaced; dropped on the next write. */
     private const val KEY_EXPRESSIVE_TRANSITIONS = "expressive_transitions"
     private const val KEY_GRAYSCALE_OFFLINE = "grayscale_offline"
     private const val KEY_HAPTIC = "haptic_feedback"
-
-    /** Legacy key of the old simple-transitions toggle, removed on the next write. */
     private const val KEY_SIMPLE_TRANSITIONS = "simple_transitions"
     private const val KEY_HIDE_IP = "hide_ip"
     private const val KEY_FONT = "font"

@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import slop.miho.aurora.R
@@ -427,6 +428,10 @@ private fun MainPagerStrip(
         // The slot of the page a direct-mode swipe is carrying out, MIN when none: the
         // dragged page alone translates by the drag — every other page stands still.
         var draggedSlot by remember { mutableIntStateOf(Int.MIN_VALUE) }
+        // The running drag-following animation, if any: the fly-out after a committed
+        // release or the spring home after a failed one. A fresh drag cancels it — the
+        // finger takes the page over from wherever the animation has got it.
+        var dragAnimJob by remember { mutableStateOf<Job?>(null) }
         LaunchedEffect(targetPosition) {
             stripPosition.animateTo(targetPosition.toFloat(), motion.defaultSpatialSpec())
         }
@@ -495,7 +500,7 @@ private fun MainPagerStrip(
         // finger left drags the page left, the next one in from the right.
         // The mode and the corridor reach the delta handler through updated states, so a
         // flip of either hands the drag fresh bounds with no stale capture.
-        val expressiveNow = rememberUpdatedState(uiSettings.expressiveTransitions)
+        val expressiveNow = rememberUpdatedState(!uiSettings.simpleTransitions)
         val firstPageNow = rememberUpdatedState(firstPage)
         val lastPageNow = rememberUpdatedState(lastPage)
         val dragState = rememberDraggableState { delta ->
@@ -513,6 +518,10 @@ private fun MainPagerStrip(
                     state = dragState,
                     orientation = Orientation.Horizontal,
                     onDragStarted = {
+                        // Whatever the released page was still doing — flying out or
+                        // springing home — stops here: the finger takes it over.
+                        dragAnimJob?.cancel()
+                        dragAnimJob = null
                         when {
                             // Mid-return spring: the finger takes the page over from
                             // wherever it has got to.
@@ -549,11 +558,11 @@ private fun MainPagerStrip(
                             if (landing != targetPosition) onSelectPage(landing)
                         } else {
                             // The heavy page: flung or carried a quarter of the way, the
-                            // landing takes over — the dragged page fades right where the
-                            // finger left it, the landing rises with the standard slide
-                            // (the dragged page's own dispose carries the drag states out
-                            // behind it, see the direct branch). Not far enough, and the
-                            // heavy page springs back home.
+                            // landing takes over — the dragged page flies out the rest of
+                            // the way on its own momentum while the landing rises with the
+                            // standard slide (the dragged page's own dispose carries the
+                            // drag states out behind it, see the direct branch). Not far
+                            // enough, and the heavy page springs back home.
                             val offset = dragPosition - targetPosition
                             val step = when {
                                 fling -> if (velocity < 0) 1 else -1
@@ -564,10 +573,31 @@ private fun MainPagerStrip(
                             val landing = (targetPosition + step)
                                 .coerceIn(firstPageNow.value, lastPageNow.value)
                             if (landing != targetPosition) {
+                                // The release is a throw: whatever distance the page has
+                                // left, it covers on its own — the finger's momentum carries
+                                // it fully out in the swipe's direction.
+                                val from = dragPosition
+                                val out = (
+                                    draggedSlot + if (landing > targetPosition) 1 else -1
+                                    ).toFloat()
+                                dragAnimJob = scope.launch {
+                                    animate(
+                                        initialValue = from,
+                                        targetValue = out,
+                                        animationSpec = motion.defaultSpatialSpec(),
+                                    ) { value, _ ->
+                                        dragPosition = value
+                                    }
+                                    // If the page's own disposal has already cleaned the
+                                    // states behind its fade, our writes since were
+                                    // invisible — drop them here too. Otherwise the fade's
+                                    // disposal still owns them.
+                                    if (draggedSlot == Int.MIN_VALUE) dragPosition = Float.NaN
+                                }
                                 onSelectPage(landing)
                             } else {
                                 val from = dragPosition
-                                scope.launch {
+                                dragAnimJob = scope.launch {
                                     animate(
                                         initialValue = from,
                                         targetValue = targetPosition.toFloat(),
@@ -587,17 +617,17 @@ private fun MainPagerStrip(
             // composed while it fades out, so a press in progress — the toggle's own bounce —
             // plays out on it instead of being cut off by the subtree swap.
             AnimatedContent(
-                targetState = uiSettings.expressiveTransitions,
+                targetState = uiSettings.simpleTransitions,
                 transitionSpec = {
                     fadeIn(motion.fastEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec())
                 },
                 label = "pager mode",
-            ) { expressive ->
-                if (!expressive) {
-                    // The default: a direct switch — only the old and the new screen are
-                    // composed, the old fades out while the new slides up from below and
+            ) { simple ->
+                if (simple) {
+                    // Simple transitions: a direct switch — only the old and the new screen
+                    // are composed, the old fades out while the new slides up from below and
                     // fades in. No intermediate pages are rendered or scrolled past, which
-                    // is what lagged the legacy devices.
+                    // is what lags the weaker devices.
                     // Fresh identity per navigation: every switch gets the full slide, even
                     // when the previous one is still running (see PageTarget).
                     val target = remember(targetPosition) { PageTarget(targetPosition) }
@@ -617,11 +647,12 @@ private fun MainPagerStrip(
                         RefreshRateRequest(active = transition.isRunning || !dragPosition.isNaN())
                         // The dragged page alone rides under the finger — the direct
                         // mode's heavy swipe: no next page pulls in; the current one
-                        // simply follows the finger out, and on the release the landing
-                        // rises with the standard slide while this one fades wherever the
-                        // finger left it. The page's instance carries its own disposal:
-                        // when its fade ends and it finally leaves, it takes the drag's
-                        // states with it — unless a newer drag has already claimed them.
+                        // simply follows the finger out, and on the release it flies the
+                        // rest of the way out on its own momentum while the landing rises
+                        // with the standard slide. The page's instance carries its own
+                        // disposal: when its fade ends and it finally leaves, it takes the
+                        // drag's states with it — unless a newer drag has already claimed
+                        // them.
                         val slot = page.position
                         val draggedSlotNow = rememberUpdatedState(draggedSlot)
                         DisposableEffect(slot) {
@@ -649,8 +680,8 @@ private fun MainPagerStrip(
                         }
                     }
                 } else {
-                    // Expressive transitions: one continuous strip, scrolled to the target —
-                    // and by the finger while it drags (the corridor above).
+                    // The default — expressive transitions: one continuous strip, scrolled
+                    // to the target — and by the finger while it drags (the corridor above).
                     val pageCount = settingsOffset + SettingsCategory.entries.size
                     // Which pages are near enough to show: derived, so the strip recomposes
                     // only when a page enters or leaves — the per-frame slide itself is read
