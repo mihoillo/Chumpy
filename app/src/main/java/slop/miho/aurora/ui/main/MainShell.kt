@@ -3,6 +3,9 @@ package slop.miho.aurora.ui.main
 import android.net.VpnService
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -39,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -349,6 +353,12 @@ private fun bottomScrimHeight() =
 private class PageTarget(val position: Int)
 
 /**
+ * How far off its slot the strip must travel before the direct mode composes the
+ * neighbor: a breath, so an accidental graze composes nothing.
+ */
+private const val SwipeNeighborEpsilon = 0.02f
+
+/**
  * Two paging modes over one destination set: main tabs at strip positions 0..3, settings
  * categories continuing to the right, matching their order in the bottom bar. The default
  * swaps pages directly with a slide-up fade, composing only the old and the new screen;
@@ -412,16 +422,25 @@ private fun MainPagerStrip(
         // The strip's position between pages: an animation while the finger is up, the
         // finger's own while it drags. [dragPosition] stands in for the animation for as
         // long as the drag lasts; on release the strip is handed back already where the
-        // finger left it and settles the rest of the way to the landing page.
+        // finger left it and settles the rest of the way to the landing page. Both pager
+        // modes read it — the expressive one positions its whole strip by it, the direct
+        // one translates the two pages the drag composes.
         val stripPosition = remember { Animatable(targetPosition.toFloat()) }
         var dragPosition by remember { mutableFloatStateOf(Float.NaN) }
-        // How far the finger has carried the page, px leftward-negative: the direct mode's
-        // pages don't follow the finger, only the release decides there, by this and the
-        // fling's speed.
-        var dragTravel by remember { mutableFloatStateOf(0f) }
+        // Whether a swipe — or its settle — is carrying the pages. The direct mode keys
+        // its finger-following on it: while it holds, the current page rides under the
+        // finger beside the neighbor the drag pulls in, and the page switch's own
+        // slide-up animation steps aside (the settle has already carried the pages); when
+        // it drops, the pages stand at rest and the switch animates again. The settle's
+        // own coroutines and the target's effect below both bring it down.
+        var swipeCarry by remember { mutableStateOf(false) }
         LaunchedEffect(targetPosition) {
             stripPosition.animateTo(targetPosition.toFloat(), motion.defaultSpatialSpec())
+            swipeCarry = false
         }
+        // The page under the finger, or under the settle: one read, shared by both modes'
+        // layers and derived states.
+        val displayPosition = { if (dragPosition.isNaN()) stripPosition.value else dragPosition }
 
         // The screen at a strip position: main tabs at 0..2, settings categories after them.
         @Composable
@@ -492,12 +511,10 @@ private fun MainPagerStrip(
         val lastPageNow = rememberUpdatedState(lastPage)
         val dragState = rememberDraggableState { delta ->
             // A positive delta: the finger moves right, the strip travels toward the
-            // previous page.
-            dragTravel += delta
-            if (expressiveNow.value) {
-                dragPosition = (dragPosition - delta / pageWidth)
-                    .coerceIn(firstPageNow.value.toFloat(), lastPageNow.value.toFloat())
-            }
+            // previous page. Both modes move the same coordinate — the direct mode
+            // translates its pair of pages by it (see its branch).
+            dragPosition = (dragPosition - delta / pageWidth)
+                .coerceIn(firstPageNow.value.toFloat(), lastPageNow.value.toFloat())
         }
         Box(
             modifier = Modifier
@@ -507,45 +524,56 @@ private fun MainPagerStrip(
                     orientation = Orientation.Horizontal,
                     onDragStarted = {
                         dragPosition = stripPosition.value
-                        dragTravel = 0f
+                        swipeCarry = true
                     },
                     onDragStopped = { velocity ->
                         // A quick flick outstrips any position: it carries a full page.
                         val fling = abs(velocity) > pageWidth * 0.8f
-                        val landing = if (expressiveNow.value) {
-                            val nearest = dragPosition.roundToInt()
-                                .coerceIn(firstPageNow.value, lastPageNow.value)
+                        val landing = (
                             if (fling) {
                                 // Leftward velocity (negative) throws to the next page.
-                                (nearest + if (velocity < 0) 1 else -1)
-                                    .coerceIn(firstPageNow.value, lastPageNow.value)
+                                dragPosition.roundToInt() + if (velocity < 0) 1 else -1
                             } else {
-                                nearest
+                                dragPosition.roundToInt()
                             }
-                        } else {
-                            val step = when {
-                                fling -> if (velocity < 0) 1 else -1
-                                // A deliberate carry of a fifth of the page counts too.
-                                abs(dragTravel) > pageWidth * 0.2f ->
-                                    if (dragTravel < 0) 1 else -1
-                                else -> 0
-                            }
-                            (targetPosition + step).coerceIn(firstPageNow.value, lastPageNow.value)
-                        }
+                            ).coerceIn(firstPageNow.value, lastPageNow.value)
+                        // The settle starts from under the finger, wherever it is.
+                        val from = dragPosition
+                        val commit = landing != targetPosition
                         if (expressiveNow.value) {
-                            // Hand the animation the drag's own position, so the settle
-                            // runs from under the finger rather than snapping back.
-                            val from = dragPosition
+                            // The strip keeps the outgoing page composed until it leaves
+                            // the frame, so the selection can land right away.
                             scope.launch {
                                 stripPosition.snapTo(from)
                                 stripPosition.animateTo(
                                     landing.toFloat(),
                                     motion.defaultSpatialSpec(),
                                 )
+                                swipeCarry = false
+                            }
+                            if (commit) onSelectPage(landing)
+                        } else {
+                            // The direct mode's pair settles like the strip's own; the
+                            // commit waits for the settle to carry the old page fully out,
+                            // landing unseen under the already-arrived neighbor (the
+                            // switch's animation is stepped aside for it — see the branch).
+                            scope.launch {
+                                stripPosition.snapTo(from)
+                                stripPosition.animateTo(
+                                    landing.toFloat(),
+                                    motion.defaultSpatialSpec(),
+                                )
+                                if (commit) {
+                                    onSelectPage(landing)
+                                    // Hold the carry a frame past the commit, so the
+                                    // snap-swapped page settles in beneath the neighbor
+                                    // before the translation comes off.
+                                    withFrameNanos { }
+                                }
+                                swipeCarry = false
                             }
                         }
                         dragPosition = Float.NaN
-                        if (landing != targetPosition) onSelectPage(landing)
                     },
                 ),
         ) {
@@ -564,23 +592,84 @@ private fun MainPagerStrip(
                     // composed, the old fades out while the new slides up from below and
                     // fades in. No intermediate pages are rendered or scrolled past, which
                     // is what lagged the legacy devices.
+                    // The swipe keeps that economy: while the finger drags, exactly one
+                    // more page composes — the neighbor it pulls in, riding beside the
+                    // current one. Both translate by the strip's position, so the pages
+                    // follow the finger the expressive strip's own way; on release the
+                    // pair settles on the same spring, and the commit lands at the end of
+                    // it, under the already-arrived page, with the switch's own animation
+                    // stepped aside (see [swipeCarry]). The current page never leaves its
+                    // AnimatedContent — its state rides the swipe untouched.
                     // Fresh identity per navigation: every switch gets the full slide, even
                     // when the previous one is still running (see PageTarget).
                     val target = remember(targetPosition) { PageTarget(targetPosition) }
-                    AnimatedContent(
-                        targetState = target,
-                        transitionSpec = {
-                            (fadeIn(motion.defaultEffectsSpec()) +
-                                slideInVertically(motion.defaultSpatialSpec()) { it / 3 }) togetherWith
-                                fadeOut(motion.defaultEffectsSpec())
-                        },
-                        label = "direct page switch",
-                    ) { page ->
-                        // The switch plays out over a spring: ask the display for its high
-                        // gear while it runs, so a dynamically-refreshed screen doesn't idle
-                        // at 60.
-                        RefreshRateRequest(active = transition.isRunning)
-                        destinationPage(page.position)
+                    // The neighbor the finger is pulling in, if any: the strip's position
+                    // a breath past the target's own slot, one page to a side. Derived, so
+                    // the neighbor composes only when it really shows.
+                    val neighborSlot by remember(targetPosition) {
+                        derivedStateOf {
+                            val position = displayPosition()
+                            when {
+                                position > targetPosition + SwipeNeighborEpsilon -> targetPosition + 1
+                                position < targetPosition - SwipeNeighborEpsilon -> targetPosition - 1
+                                else -> null
+                            }
+                        }
+                    }
+                    // The strip travels by a graphics layer the system won't clock on its
+                    // own — same request as the switch's own, while the pages travel.
+                    val stripBusy by remember(targetPosition) {
+                        derivedStateOf { displayPosition() != targetPosition.toFloat() }
+                    }
+                    RefreshRateRequest(active = stripBusy)
+                    // The current page rides under the finger while the swipe carries.
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                translationX = if (swipeCarry) {
+                                    (targetPosition - displayPosition()) * pageWidth
+                                } else {
+                                    0f
+                                }
+                            },
+                    ) {
+                        AnimatedContent(
+                            targetState = target,
+                            transitionSpec = {
+                                if (swipeCarry) {
+                                    // The settle has already carried the pages here: the
+                                    // switch lands unseen, beneath the arrived one.
+                                    ContentTransform(EnterTransition.None, ExitTransition.None)
+                                } else {
+                                    (fadeIn(motion.defaultEffectsSpec()) +
+                                        slideInVertically(motion.defaultSpatialSpec()) { it / 3 }) togetherWith
+                                        fadeOut(motion.defaultEffectsSpec())
+                                }
+                            },
+                            label = "direct page switch",
+                        ) { page ->
+                            // The switch plays out over a spring: ask the display for its
+                            // high gear while it runs, so a dynamically-refreshed screen
+                            // doesn't idle at 60.
+                            RefreshRateRequest(active = transition.isRunning)
+                            destinationPage(page.position)
+                        }
+                    }
+                    neighborSlot?.let { slot ->
+                        // The page the finger pulls in, keyed so it keeps whatever it
+                        // remembers for as long as the drag pulls it around.
+                        key(slot) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        translationX = (slot - displayPosition()) * pageWidth
+                                    },
+                            ) {
+                                destinationPage(slot)
+                            }
+                        }
                     }
                 } else {
                     // Expressive transitions: one continuous strip, scrolled to the target —
@@ -591,8 +680,7 @@ private fun MainPagerStrip(
                     // inside each page's layer.
                     val nearPages by remember {
                         derivedStateOf {
-                            val position =
-                                if (dragPosition.isNaN()) stripPosition.value else dragPosition
+                            val position = displayPosition()
                             (0 until pageCount).filter { abs(it - position) < 1.5f }
                         }
                     }
@@ -603,8 +691,7 @@ private fun MainPagerStrip(
                     val targetPositionState = rememberUpdatedState(targetPosition)
                     val stripBusy by remember {
                         derivedStateOf {
-                            !dragPosition.isNaN() ||
-                                stripPosition.value != targetPositionState.value.toFloat()
+                            displayPosition() != targetPositionState.value.toFloat()
                         }
                     }
                     RefreshRateRequest(active = stripBusy)
@@ -613,9 +700,7 @@ private fun MainPagerStrip(
                         key(position) {
                             Page(
                                 position = position,
-                                animatedPosition = {
-                                    if (dragPosition.isNaN()) stripPosition.value else dragPosition
-                                },
+                                animatedPosition = displayPosition,
                                 pageWidth = pageWidth,
                             ) {
                                 destinationPage(position)
