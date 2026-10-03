@@ -147,7 +147,6 @@
     <string name="trusted_add_cancel">Cancel</string>
     <string name="trusted_current">Current network</string>
     <string name="settings_subscriptions">Subscriptions</string>
-    <string name="settings_auto_update_hint">Refreshes in the background on the panel\'s own schedule</string>
     <string name="settings_background_refresh">Background refresh</string>
     <string name="settings_background_refresh_count">Auto-updates %d subscriptions</string>
     <string name="settings_about_core">Xray core</string>

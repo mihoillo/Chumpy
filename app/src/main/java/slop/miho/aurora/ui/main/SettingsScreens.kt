@@ -1,21 +1,17 @@
 package slop.miho.aurora.ui.main
 
 import android.content.Intent
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -827,8 +823,8 @@ private fun TriangleTile(pressed: Boolean) {
 
 /**
  * The background refresh's doorway, the screen-link row's twin: the count under the
- * title, the clock on the square tile, and the triangle — the per-app row's own —
- * pointing down while the fold is closed, flipping over to point up as it opens.
+ * title, and the triangle — the per-app row's own — pointing down while the fold is
+ * closed, flipping over to point up as it opens.
  */
 @Composable
 private fun BackgroundRefreshRow(
@@ -869,17 +865,11 @@ private fun BackgroundRefreshRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // The pair bounces as one widget when tapped.
+        // The triangle bounces alone when tapped.
         Box(
             modifier = Modifier.pressBounce(pressed, taps),
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LinkIconTile(icon = R.drawable.ic_clock, pressed = pressed)
-                FlipTriangleTile(pressed = pressed, expanded = expanded)
-            }
+            FlipTriangleTile(pressed = pressed, expanded = expanded)
         }
     }
 }
@@ -1027,38 +1017,31 @@ fun ConnectionScreen(
                 },
             )
             val motion = MaterialTheme.motionScheme
-            AnimatedContent(
-                targetState = refreshOpen,
-                transitionSpec = {
-                    ContentTransform(
-                        targetContentEnter = fadeIn(motion.defaultEffectsSpec()) +
-                            slideInVertically(motion.defaultSpatialSpec()) { it / 8 },
-                        initialContentExit = fadeOut(motion.defaultEffectsSpec()) +
-                            slideOutVertically(motion.defaultSpatialSpec()) {
-                                if (targetState) it / 8 else -it / 8
-                            },
-                        sizeTransform = SizeTransform(clip = false),
-                    )
-                },
-                label = "background refresh fold",
-            ) { open ->
-                if (open) {
-                    SettingsGroup(
-                        *subscriptions.map { subscription ->
-                            @Composable {
-                                ToggleRow(
-                                    title = subscription.name.ifEmpty { subscription.url },
-                                    supporting = stringResource(R.string.settings_auto_update_hint),
-                                    icon = R.drawable.ic_clock,
-                                    checked = subscription.autoUpdate,
-                                    onChange = { enabled ->
-                                        onToggleAutoUpdate(subscription.id, enabled)
-                                    },
-                                )
-                            }
-                        }.toTypedArray(),
-                    )
-                }
+            // The fold: the switches unroll down from the doorway and roll back up under
+            // it, the fade riding strong on top. Once folded the rows leave the
+            // composition entirely — nothing left standing in the way of a tap.
+            AnimatedVisibility(
+                visible = refreshOpen,
+                enter = expandVertically(motion.defaultSpatialSpec(), expandFrom = Alignment.Top) +
+                    fadeIn(tween(durationMillis = 150)),
+                exit = shrinkVertically(motion.defaultSpatialSpec(), shrinkTowards = Alignment.Top) +
+                    fadeOut(tween(durationMillis = 150)),
+            ) {
+                SettingsGroup(
+                    *subscriptions.map { subscription ->
+                        @Composable {
+                            ToggleRow(
+                                title = subscription.name.ifEmpty { subscription.url },
+                                supporting = null,
+                                icon = R.drawable.ic_clock,
+                                checked = subscription.autoUpdate,
+                                onChange = { enabled ->
+                                    onToggleAutoUpdate(subscription.id, enabled)
+                                },
+                            )
+                        }
+                    }.toTypedArray(),
+                )
             }
         }
     }
