@@ -1377,7 +1377,10 @@ private fun IconVariantRow(
             // margin around the 48dp icon.
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            IconVariant.entries.forEach { variant ->
+            // Themed is benched for now — its launcher alias doesn't sit right yet.
+            // Everything behind it (the alias, the storage, the QS tile) stays, so it
+            // walks back in the day it's fixed.
+            IconVariant.entries.filter { it != IconVariant.THEMED }.forEach { variant ->
                 IconPreviewButton(
                     variant = variant,
                     selected = variant == selected,
