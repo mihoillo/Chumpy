@@ -249,15 +249,17 @@ class AuroraVpnService : VpnService() {
             ?: getString(R.string.notif_profile_unknown)
         val subscription = CoreConfigFile.readSubscriptionName(this)
         // The app's name and the state it is in share the title — "Aurora • Connected" —
-        // and the line under it tells the hop the home card does: the subscription, the
-        // same arrow, then the region — its flag emoji lifted off the way the list does.
+        // and the line under it tells the hop the home card does: the subscription, an
+        // arrow, then the region — its flag emoji lifted off the way the list does. The
+        // "→" renders crooked in the notification's system font; the "›" chevron — the
+        // text twin of the chevron the cards point with — sits straight everywhere.
         val state = when (status.state) {
             TunnelState.UP -> getString(R.string.notif_connected)
             TunnelState.CONNECTING -> getString(R.string.notif_connecting)
             else -> getString(R.string.notif_disconnected)
         }
         val title = getString(R.string.app_name) + " " + getString(R.string.notif_separator) + " " + state
-        val text = if (subscription != null) "$subscription → $profile" else profile
+        val text = if (subscription != null) "$subscription › $profile" else profile
         // The notification's own off switch: the same disconnect path the app and the QS
         // tile take, without opening anything.
         val disconnect = PendingIntent.getService(
