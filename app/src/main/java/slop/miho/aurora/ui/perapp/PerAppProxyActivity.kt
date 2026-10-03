@@ -36,7 +36,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -49,7 +51,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +72,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -82,6 +87,7 @@ import kotlinx.coroutines.withContext
 import slop.miho.aurora.R
 import slop.miho.aurora.data.ConnectionStore
 import slop.miho.aurora.data.SettingsStore
+import slop.miho.aurora.ui.components.SystemBarsIconsDark
 import slop.miho.aurora.ui.components.WavyPullToRefreshBox
 import slop.miho.aurora.ui.components.pressBounce
 import slop.miho.aurora.ui.components.pullShiftedPadding
@@ -89,9 +95,15 @@ import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.main.FloatingBottomBarReservedHeight
 import slop.miho.aurora.ui.main.PillDestination
 import slop.miho.aurora.ui.main.SubScreenBottomBar
+import slop.miho.aurora.ui.main.recordBehindBar
+import slop.miho.aurora.ui.main.rememberContentUnderBar
 import slop.miho.aurora.ui.main.screenPadding
 import slop.miho.aurora.ui.theme.AuroraTheme
+import slop.miho.aurora.ui.theme.LocalDarkTheme
+import slop.miho.aurora.ui.wallpapers.LocalBarCoverage
+import slop.miho.aurora.ui.wallpapers.LocalBarUnderlay
 import slop.miho.aurora.ui.wallpapers.LocalSurfaceOpacity
+import slop.miho.aurora.ui.wallpapers.ReportBarCoverage
 
 /**
  * The per-app proxy and the trusted networks, two pages of one deep-dive screen in the
@@ -121,9 +133,13 @@ class PerAppProxyActivity : ComponentActivity() {
             val ui by SettingsStore.settings(this).collectAsStateWithLifecycle()
             val connection by ConnectionStore.settings(this).collectAsStateWithLifecycle()
             AuroraTheme(settings = ui) {
+                // The window's own bars answer to the theme, as in the main shell — there
+                // is no wallpaper here for them to hang on instead.
+                SystemBarsIconsDark(dark = LocalDarkTheme.current)
                 Surface(color = MaterialTheme.colorScheme.surface) {
                     PerAppProxyScreen(
                         initialPage = startPage,
+                        frost = ui.navigationBarBlur,
                         appsEnabled = connection.perAppEnabled,
                         bypassedApps = connection.bypassedApps,
                         trustedWifiEnabled = connection.trustedWifiEnabled,
@@ -186,6 +202,7 @@ private data class NetworkEntry(
 @Composable
 private fun PerAppProxyScreen(
     initialPage: PerAppPage,
+    frost: Boolean,
     appsEnabled: Boolean,
     bypassedApps: Set<String>,
     trustedWifiEnabled: Boolean,
@@ -199,62 +216,80 @@ private fun PerAppProxyScreen(
 ) {
     var page by remember { mutableStateOf(initialPage) }
     val surface = MaterialTheme.colorScheme.surface
+    // The bar's glass, the shell's own law in this window too: the pages report whether
+    // their rows sit under the bar — it steps a tone up over them — and while the frost
+    // setting is on everything the bar floats over is recorded, so its pills re-draw the
+    // slice behind themselves, blurred, as their glass.
+    val barCoverage = remember { mutableStateOf(false) }
+    val barUnderlay = remember { mutableStateOf(false) }
+    val behindBar = rememberGraphicsLayer()
     Box(modifier = modifier.fillMaxSize()) {
-        when (page) {
-            PerAppPage.APPS -> AppsPage(
-                enabled = appsEnabled,
-                bypassed = bypassedApps,
-                onToggleEnabled = onToggleAppsEnabled,
-                onToggle = onToggleApp,
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .recordBehindBar(behindBar, frost),
+        ) {
+            CompositionLocalProvider(
+                LocalBarCoverage provides barCoverage,
+                LocalBarUnderlay provides barUnderlay,
+            ) {
+                when (page) {
+                    PerAppPage.APPS -> AppsPage(
+                        enabled = appsEnabled,
+                        bypassed = bypassedApps,
+                        onToggleEnabled = onToggleAppsEnabled,
+                        onToggle = onToggleApp,
+                    )
+                    PerAppPage.NETWORKS -> NetworksPage(
+                        enabled = trustedWifiEnabled,
+                        trusted = trustedWifiSsids,
+                        onToggleEnabled = onToggleTrustedWifiEnabled,
+                        onToggle = onToggleTrustedWifi,
+                    )
+                }
+            }
+
+            // Content scrolls under the status bar and fades out behind this gradient, the
+            // shell's own page fade.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp)
+                    .drawBehind {
+                        drawRect(
+                            Brush.verticalGradient(
+                                listOf(surface.copy(alpha = 0.97f), surface.copy(alpha = 0f)),
+                            ),
+                        )
+                    },
             )
-            PerAppPage.NETWORKS -> NetworksPage(
-                enabled = trustedWifiEnabled,
-                trusted = trustedWifiSsids,
-                onToggleEnabled = onToggleTrustedWifiEnabled,
-                onToggle = onToggleTrustedWifi,
+
+            // Content scrolls under the floating bar and fades out behind it.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(
+                        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                            FloatingBottomBarReservedHeight + 8.dp,
+                    )
+                    .drawBehind {
+                        drawRect(
+                            Brush.verticalGradient(
+                                listOf(surface.copy(alpha = 0f), surface.copy(alpha = 0.97f)),
+                            ),
+                        )
+                    },
             )
         }
-
-        // Content scrolls under the status bar and fades out behind this gradient, the
-        // shell's own page fade.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp)
-                .drawBehind {
-                    drawRect(
-                        Brush.verticalGradient(
-                            listOf(surface.copy(alpha = 0.97f), surface.copy(alpha = 0f)),
-                        ),
-                    )
-                },
-        )
-
-        // Content scrolls under the floating bar and fades out behind it.
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(
-                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-                        FloatingBottomBarReservedHeight + 8.dp,
-                )
-                .drawBehind {
-                    drawRect(
-                        Brush.verticalGradient(
-                            listOf(surface.copy(alpha = 0f), surface.copy(alpha = 0.97f)),
-                        ),
-                    )
-                },
-        )
 
         SubScreenBottomBar(
             items = PerAppPage.entries.toList(),
             selected = page,
             onSelect = { page = it },
             onBack = onBack,
-            backdrop = null,
+            backdrop = behindBar,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
@@ -292,6 +327,15 @@ private fun AppsPage(
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.extraSmall
 
+    // The page's report into the screen's bar: covered once the list has anywhere to
+    // travel, properly under it once the last rows reach past the bar's rim.
+    val listState = rememberLazyListState()
+    val covered by remember(listState) {
+        derivedStateOf { listState.canScrollForward || listState.canScrollBackward }
+    }
+    val underlaid by rememberContentUnderBar(listState)
+    ReportBarCoverage(covered, underlaid = underlaid)
+
     // The wave grows with the pull while the list re-queries; the first load rides
     // the same wave, so the wait is never a blank page.
     WavyPullToRefreshBox(
@@ -304,6 +348,7 @@ private fun AppsPage(
         // pull pushes the rows down through the top padding (see
         // WavyPullToRefreshBox).
         PagedList(
+            listState = listState,
             pullShift = pullShift,
             toggle = {
                 MasterSwitchRow(
@@ -402,12 +447,21 @@ private fun NetworksPage(
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.extraSmall
 
+    // The apps page's own report into the screen's bar.
+    val listState = rememberLazyListState()
+    val covered by remember(listState) {
+        derivedStateOf { listState.canScrollForward || listState.canScrollBackward }
+    }
+    val underlaid by rememberContentUnderBar(listState)
+    ReportBarCoverage(covered, underlaid = underlaid)
+
     WavyPullToRefreshBox(
         isRefreshing = loading,
         onRefresh = { refreshes++ },
         modifier = Modifier.fillMaxSize(),
     ) { pullShift ->
         PagedList(
+            listState = listState,
             pullShift = pullShift,
             toggle = {
                 MasterSwitchRow(
@@ -483,6 +537,7 @@ private fun NetworksPage(
 /** The shared page skeleton: the pull-to-refresh box, the padding law, the list. */
 @Composable
 private fun PagedList(
+    listState: LazyListState,
     pullShift: () -> Dp,
     toggle: @Composable () -> Unit,
     content: LazyListScope.() -> Unit,
@@ -494,6 +549,7 @@ private fun PagedList(
     val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues()
         .calculateBottomPadding() + FloatingBottomBarReservedHeight
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .screenPadding(),
