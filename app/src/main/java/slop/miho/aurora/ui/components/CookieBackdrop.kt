@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.MutableCubic
 import kotlin.math.PI
+import kotlin.random.Random
 
 /**
  * The selection mark's backdrop: a circle at rest that morphs into the MD3 9-sided cookie
@@ -48,6 +49,9 @@ fun CookieBackdrop(selected: Boolean, color: Color, animated: Boolean) {
     // invisible, yet it would keep the display clocking frames for every row on the list.
     // Dropped once the shape has settled back, the angle's reset hides under the circle.
     val shaped by remember { derivedStateOf { progress > 0.001f } }
+    // A resting cookie — its row picked, the tunnel down — parks at its own angle: the
+    // same shape across every row would read as a grid, not a handful of picks.
+    val restingAngle = remember { Random.nextFloat() * 360f }
     val spinAngle: State<Float>? = if (animated && (selected || shaped)) {
         val spin = rememberInfiniteTransition(label = "cookie spin")
         spin.animateFloat(
@@ -70,7 +74,7 @@ fun CookieBackdrop(selected: Boolean, color: Color, animated: Boolean) {
             // Scaled by the morph progress so the rotation eases in with the shape instead of
             // snapping; on the resting circle any rotation would be invisible anyway. Read
             // here, in the layer, so the spin's frames never recompose the row.
-            .graphicsLayer { rotationZ = (spinAngle?.value ?: 0f) * progress }
+            .graphicsLayer { rotationZ = (spinAngle?.value ?: restingAngle) * progress }
             .drawBehind {
                 path.rewind()
                 var first = true
