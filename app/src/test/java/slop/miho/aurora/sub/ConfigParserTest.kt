@@ -304,4 +304,29 @@ class ConfigParserTest {
         assertEquals(2, profiles.size)
         assertTrue(profiles.all { it.server.isNotEmpty() })
     }
+
+    @Test
+    fun `the real panelsub payload parses and its members hide`() {
+        val body = javaClass.getResourceAsStream("/panelsub.json")!!
+            .readBytes().decodeToString()
+        val parsed = ConfigParser.parse(body)!!
+        val balancers = parsed.filter { it.type == ProfileType.BALANCER }
+        println("BALANCERS: " + balancers.map { "${it.remarks} -> ${it.balancerStrategy}, members=${it.balancerMemberKeys.size}" })
+        val servers = parsed.filter { it.type != ProfileType.BALANCER }
+        println("SERVERS: " + servers.size + " " + servers.map { it.remarks })
+        // The store stamps linkKeys the way the repository does; the screen hides members.
+        val stamped = servers.mapIndexed { i, p -> p.copy(linkKey = p.computeLinkKey(), order = i.toLong()) }
+        val balancerRows = balancers.mapIndexed { i, p -> p.copy(linkKey = p.computeLinkKey(), order = i.toLong()) }
+        val all = balancerRows + stamped
+        val memberKeys = all.asSequence().filter { it.type == ProfileType.BALANCER }
+            .flatMap { it.balancerMemberKeys.asSequence() }.toSet()
+        val visible = all.filter { it.type == ProfileType.BALANCER || it.linkKey !in memberKeys }
+        println("VISIBLE: " + visible.size + " " + visible.map { it.remarks })
+        // The third balancer (WL-1) is all-hysteria outbounds — a protocol this core
+        // does not speak — so parsing drops it whole; its members never stand anywhere.
+        assertEquals(2, balancers.size)
+        assertEquals(7, visible.filter { it.type != ProfileType.BALANCER }.size)
+        assertTrue(visible.none { it.remarks.startsWith("wl") })
+    }
+
 }

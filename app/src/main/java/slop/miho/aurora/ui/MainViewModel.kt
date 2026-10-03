@@ -286,6 +286,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         observeTunnelForStats()
         observeIdentityChips()
         viewModelScope.launch { _coreVersion.value = tunnelClient.coreVersion() }
+        reparseAfterUpgrade()
+    }
+
+    /**
+     * The parser grows — balancers, dialects, member hiding — while the store keeps
+     * whatever the last fetch wrote. So the first launch after an upgrade re-fetches
+     * every subscription once, silently: a fresh parse under the current rules, the
+     * failures landing on their cards the way any update's would. First run has nothing
+     * to re-fetch; the marker is still written, so only upgrades ever pay for this.
+     */
+    private fun reparseAfterUpgrade() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val prefs = app.getSharedPreferences("aurora_upgrade", android.content.Context.MODE_PRIVATE)
+            val versionCode = runCatching {
+                app.packageManager.getPackageInfo(app.packageName, 0).longVersionCode
+            }.getOrDefault(0L)
+            val lastSeen = prefs.getLong("version_code", 0L)
+            prefs.edit().putLong("version_code", versionCode).apply()
+            if (lastSeen == 0L || lastSeen >= versionCode) return@launch
+            repository.subscriptions().first().forEach { subscription ->
+                repository.updateSubscription(subscription.id)
+            }
+        }
     }
 
     /** Home's server card follows the selection and the selected subscription. */

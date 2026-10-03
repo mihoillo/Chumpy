@@ -1541,7 +1541,7 @@ private fun ServerRow(
                         )
 
                         profile.type == ProfileType.BALANCER -> Icon(
-                            painter = painterResource(R.drawable.ic_auto),
+                            painter = painterResource(R.drawable.ic_explore),
                             contentDescription = null,
                             modifier = Modifier.size(24.dp),
                             tint = iconColor,
