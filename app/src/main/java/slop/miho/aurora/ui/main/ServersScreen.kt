@@ -524,7 +524,7 @@ private fun DatabaseTile() {
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                painter = painterResource(R.drawable.ic_home_storage),
+                painter = painterResource(R.drawable.ic_database),
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
             )
@@ -594,7 +594,8 @@ private fun SubscriptionTitleRow(
 /**
  * The chooser's own face, the card the report card becomes while the list is open: the
  * same backing, carrying only the database tile at its full size, the call to action,
- * and the arrow that folds the chooser back.
+ * and the collapse button — the home-storage mark, the only place it appears: the
+ * drawer of subscriptions folded back into its storage.
  */
 @Composable
 private fun SubscriptionChooserFace(
@@ -618,12 +619,10 @@ private fun SubscriptionChooserFace(
             modifier = Modifier.weight(1f),
         )
         Icon(
-            painter = painterResource(R.drawable.ic_chevron_right),
+            painter = painterResource(R.drawable.ic_home_storage),
             contentDescription = stringResource(R.string.subscription_collapse),
             tint = supportingColor,
-            modifier = Modifier
-                .size(24.dp)
-                .graphicsLayer { rotationZ = 270f },
+            modifier = Modifier.size(24.dp),
         )
     }
 }
@@ -908,7 +907,7 @@ private fun SubscriptionRow(
                         animated = true,
                     )
                     Icon(
-                        painter = painterResource(R.drawable.ic_home_storage),
+                        painter = painterResource(R.drawable.ic_database),
                         contentDescription = null,
                         tint = iconColor,
                         modifier = Modifier.size(24.dp),
