@@ -58,6 +58,8 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import slop.miho.aurora.R
 import slop.miho.aurora.core.TunnelState
@@ -451,19 +453,29 @@ private fun MainPagerStrip(
                         onOpenServers = onOpenServers,
                         onOpenStats = onOpenStats,
                     )
-                    MainTab.SERVERS -> ServersScreen(
-                        subscriptions = subscriptions,
-                        selectedSubscription = selectedSubscription,
-                        state = servers,
-                        flagStyle = uiSettings.flagStyle,
-                        tunnelUp = tunnelStatus.state == TunnelState.UP,
-                        onUpdate = onUpdateSubscription,
-                        onPing = onPingServers,
-                        onSelectSubscription = onSelectSubscription,
-                        onAddSubscription = onAddSubscription,
-                        onDeleteSubscription = onDeleteSubscription,
-                        onSelect = onSelect,
-                    )
+                    MainTab.SERVERS -> {
+                        // The week rides the stats flow but only its own list is wanted
+                        // here: the flow itself ticks once a second, while the week
+                        // changes only on a flush — so only the page recomposes then.
+                        val week by statsFlow
+                            .map { it.week }
+                            .distinctUntilChanged()
+                            .collectAsStateWithLifecycle(initialValue = emptyList())
+                        ServersScreen(
+                            subscriptions = subscriptions,
+                            selectedSubscription = selectedSubscription,
+                            state = servers,
+                            week = week,
+                            flagStyle = uiSettings.flagStyle,
+                            tunnelUp = tunnelStatus.state == TunnelState.UP,
+                            onUpdate = onUpdateSubscription,
+                            onPing = onPingServers,
+                            onSelectSubscription = onSelectSubscription,
+                            onAddSubscription = onAddSubscription,
+                            onDeleteSubscription = onDeleteSubscription,
+                            onSelect = onSelect,
+                        )
+                    }
                     MainTab.STATS -> {
                         // Collected in the branch, not the shell's top: the flow ticks once
                         // a second and only ever recomposes this page.

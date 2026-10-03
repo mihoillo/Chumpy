@@ -82,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
 import slop.miho.aurora.R
+import slop.miho.aurora.data.DailyTraffic
 import slop.miho.aurora.data.FlagStyle
 import slop.miho.aurora.db.ProfileEntity
 import slop.miho.aurora.db.ProfileType
@@ -119,6 +120,7 @@ fun ServersScreen(
     subscriptions: List<SubscriptionEntity>,
     selectedSubscription: SubscriptionEntity?,
     state: ServersUiState,
+    week: List<DailyTraffic> = emptyList(),
     flagStyle: FlagStyle = FlagStyle.TWEMOJI,
     tunnelUp: Boolean = false,
     onUpdate: () -> Unit,
@@ -183,6 +185,7 @@ fun ServersScreen(
                     subscription = selectedSubscription,
                     isUpdating = state.isUpdating,
                     expanded = dropdownOpen,
+                    week = week,
                     onToggle = { dropdownOpen = !dropdownOpen },
                     onUpdate = onUpdate,
                 )
@@ -213,6 +216,7 @@ fun ServersScreen(
                             SubscriptionDropdown(
                                 subscriptions = subscriptions,
                                 selectedId = selectedSubscription?.id,
+                                week = week,
                                 addOpen = addOpen,
                                 addUrl = addUrl,
                                 onAddOpenChange = { addOpen = it },
@@ -322,6 +326,7 @@ private fun SubscriptionCard(
     subscription: SubscriptionEntity?,
     isUpdating: Boolean,
     expanded: Boolean,
+    week: List<DailyTraffic>,
     onToggle: () -> Unit,
     onUpdate: () -> Unit,
 ) {
@@ -407,6 +412,7 @@ private fun SubscriptionCard(
                         SubscriptionReportFace(
                             subscription = sub,
                             isUpdating = isUpdating,
+                            week = week,
                             contentColor = contentColor,
                             supportingColor = supportingColor,
                             onUpdate = onUpdate,
@@ -436,6 +442,7 @@ private fun SubscriptionCard(
 private fun SubscriptionReportFace(
     subscription: SubscriptionEntity,
     isUpdating: Boolean,
+    week: List<DailyTraffic>,
     contentColor: Color,
     supportingColor: Color,
     onUpdate: () -> Unit,
@@ -462,10 +469,11 @@ private fun SubscriptionReportFace(
                     contentColor = contentColor,
                     supportingColor = supportingColor,
                 )
-                // What the panel reports: the bars run to the column's end, the
-                // numbers wait under them, the traffic eaten under the days.
+                // What the panel reports: the bar runs to the column's end, the
+                // numbers wait under it.
                 SubscriptionInfo(
                     subscription = subscription,
+                    week = week,
                     supportingColor = supportingColor,
                     textInset = 32.dp,
                 )
@@ -724,6 +732,7 @@ private fun UpdateButton(
 private fun SubscriptionDropdown(
     subscriptions: List<SubscriptionEntity>,
     selectedId: String?,
+    week: List<DailyTraffic>,
     addOpen: Boolean,
     addUrl: String,
     onAddOpenChange: (Boolean) -> Unit,
@@ -749,6 +758,7 @@ private fun SubscriptionDropdown(
             SubscriptionRow(
                 subscription = subscription,
                 selected = subscription.id == selectedId,
+                week = week,
                 onClick = { onSelect(subscription.id) },
                 onLongClick = { onDeleteRequest(subscription) },
                 shape = RoundedCornerShape(
@@ -911,6 +921,7 @@ private fun AddSubscriptionRow(
 private fun SubscriptionRow(
     subscription: SubscriptionEntity,
     selected: Boolean,
+    week: List<DailyTraffic>,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     shape: Shape,
@@ -989,6 +1000,7 @@ private fun SubscriptionRow(
             supportingContent = {
                 SubscriptionRowInfo(
                     subscription = subscription,
+                    week = week,
                     supportingColor = supportingColor,
                 )
             },
@@ -1028,18 +1040,24 @@ private fun SubscriptionRow(
 }
 
 /**
- * What the panel reports about a subscription, on the card: the bars come first, right
- * after the header, running to the column's end — the quota's drain and the days' —
- * then the days' number, then the quota's own reading on one line below it: the traffic
- * eaten, a dot, the share left (the subscription list's rows keep their own tighter
- * trade). The eaten traffic is hiddify's "used / total"; panels that keep the quota to
- * themselves (total=0, the common unlimited case) still get their used bytes counted
- * out. [textInset] keeps the numbers clear of whatever anchors at the foot (the card's
- * chevron) without pulling the bars short.
+ * What the panel reports about a subscription, on the card: one bar right after the
+ * header, running to the column's end — whichever deadline lands first, the quota's
+ * or the calendar's, so the bar always reports the subscription's real cliff. The
+ * tunnel's own pace over the recorded week (see [averageDailyBytes]) says how many
+ * days the quota holds; days running out sooner, no quota, or no pace on record yet
+ * hand the slot to the calendar's stretch — paceless but with a quota, the quota's
+ * drain keeps it, the one reading always available. Below the bar: the days' number,
+ * then the quota's own reading on one line — the traffic eaten, a dot, the share
+ * left (the subscription list's rows keep their own tighter trade). The eaten
+ * traffic is hiddify's "used / total"; panels that keep the quota to themselves
+ * (total=0, the common unlimited case) still get their used bytes counted out.
+ * [textInset] keeps the numbers clear of whatever anchors at the foot (the card's
+ * chevron) without pulling the bar short.
  */
 @Composable
 private fun SubscriptionInfo(
     subscription: SubscriptionEntity,
+    week: List<DailyTraffic>,
     supportingColor: Color,
     textInset: Dp = 0.dp,
 ) {
@@ -1051,26 +1069,33 @@ private fun SubscriptionInfo(
     val consumed = consumedText(subscription)
     if (subscription.totalBytes <= 0 && days == null && consumed == null) return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (subscription.totalBytes > 0) {
-                val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
-                    subscription.totalBytes).coerceIn(0f, 1f)
-                UsageBar(
-                    progress = ratio,
-                    color = usageColor(ratio, colors),
-                    trackColor = supportingColor,
-                    modifier = Modifier.weight(1f),
+        // One bar, whichever runs dry first. The quota's runway comes from the week's
+        // pace; a paceless quota keeps its own drain in the slot (the one reading
+        // always computable), and the days' stretch takes it when the panel set no
+        // quota at all or the quota would outlive the calendar.
+        val bytesLeft = (subscription.totalBytes - used).coerceAtLeast(0L)
+        val avgDailyBytes = averageDailyBytes(week)
+        val calendarFirst = expire > 0 &&
+            (
+                subscription.totalBytes <= 0 ||
+                    (avgDailyBytes != null && daysLeft(secondsLeft) < bytesLeft / avgDailyBytes)
                 )
-            }
-            if (expire > 0) {
-                val dayFraction = (secondsLeft.toFloat() / (86_400f * 30f)).coerceIn(0f, 1f)
-                UsageBar(
-                    progress = if (secondsLeft <= 0) 1f else dayFraction,
-                    color = if (secondsLeft <= 0) colors.error else usageColor(dayFraction, colors),
-                    trackColor = supportingColor,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+        if (calendarFirst) {
+            val dayFraction = (secondsLeft.toFloat() / (86_400f * 30f)).coerceIn(0f, 1f)
+            UsageBar(
+                progress = if (secondsLeft <= 0) 1f else dayFraction,
+                color = if (secondsLeft <= 0) colors.error else usageColor(dayFraction, colors),
+                trackColor = supportingColor,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else if (subscription.totalBytes > 0) {
+            val ratio = (bytesLeft.toFloat() / subscription.totalBytes).coerceIn(0f, 1f)
+            UsageBar(
+                progress = ratio,
+                color = usageColor(ratio, colors),
+                trackColor = supportingColor,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
         Column(
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -1112,13 +1137,14 @@ private fun SubscriptionInfo(
 }
 
 /**
- * The subscription rows' own report, compact: the bars up top — the quota's on the
- * left when the panel reports one, the days' beside it — with the traffic eaten and
- * the days on a single line under them: traffic to the left, days to the right.
+ * The subscription rows' own report, compact: one bar up top — the same
+ * whichever-runs-dry-first pick the card makes — with the traffic eaten and the days
+ * on a single line under them: traffic to the left, days to the right.
  */
 @Composable
 private fun SubscriptionRowInfo(
     subscription: SubscriptionEntity,
+    week: List<DailyTraffic>,
     supportingColor: Color,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -1129,26 +1155,30 @@ private fun SubscriptionRowInfo(
     val consumed = consumedText(subscription)
     if (days == null && consumed == null) return
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (subscription.totalBytes > 0) {
-                val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
-                    subscription.totalBytes).coerceIn(0f, 1f)
-                UsageBar(
-                    progress = ratio,
-                    color = usageColor(ratio, colors),
-                    trackColor = supportingColor,
-                    modifier = Modifier.weight(1f),
+        // One bar, whichever runs dry first — the card's own rule, seen from a row.
+        val bytesLeft = (subscription.totalBytes - used).coerceAtLeast(0L)
+        val avgDailyBytes = averageDailyBytes(week)
+        val calendarFirst = expire > 0 &&
+            (
+                subscription.totalBytes <= 0 ||
+                    (avgDailyBytes != null && daysLeft(secondsLeft) < bytesLeft / avgDailyBytes)
                 )
-            }
-            if (expire > 0) {
-                val dayFraction = (secondsLeft.toFloat() / (86_400f * 30f)).coerceIn(0f, 1f)
-                UsageBar(
-                    progress = if (secondsLeft <= 0) 1f else dayFraction,
-                    color = if (secondsLeft <= 0) colors.error else usageColor(dayFraction, colors),
-                    trackColor = supportingColor,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+        if (calendarFirst) {
+            val dayFraction = (secondsLeft.toFloat() / (86_400f * 30f)).coerceIn(0f, 1f)
+            UsageBar(
+                progress = if (secondsLeft <= 0) 1f else dayFraction,
+                color = if (secondsLeft <= 0) colors.error else usageColor(dayFraction, colors),
+                trackColor = supportingColor,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else if (subscription.totalBytes > 0) {
+            val ratio = (bytesLeft.toFloat() / subscription.totalBytes).coerceIn(0f, 1f)
+            UsageBar(
+                progress = ratio,
+                color = usageColor(ratio, colors),
+                trackColor = supportingColor,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1225,6 +1255,18 @@ private fun consumedText(subscription: SubscriptionEntity): String? {
         },
     )
 }
+
+/** The tunnel's average daily burn over the week on record — the days the counters
+ *  actually moved, a still day says nothing about pace. Null until one such day
+ *  stands in the store: the quota's runway can't be projected without it. */
+private fun averageDailyBytes(week: List<DailyTraffic>): Float? {
+    val days = week.map { it.rx + it.tx }.filter { it > 0 }
+    if (days.isEmpty()) return null
+    return days.average().toFloat()
+}
+
+/** The days standing between now and the panel's expiry — negative once it has passed. */
+private fun daysLeft(secondsLeft: Long): Float = secondsLeft / 86_400f
 
 /** The traffic-light tiers hiddify reads off a remaining ratio: red under a quarter,
  *  amber under half, the primary otherwise. */
