@@ -1188,10 +1188,11 @@ private fun RoutingTile(
 }
 
 /**
- * The delay test URL's own card, the welcome card's field without the tile: the bare
- * field filling the card edge to edge — its own inner padding is the card's, so the
- * text sits at the same 16dp as everything else — and the description under it, no
- * name. Committed on every keystroke; Done commits the trim.
+ * The delay test URL's own card: the bare field — filling the card edge to edge, its own
+ * inner padding is the card's, so the text sits at the same 16dp as everything else —
+ * and the add-font button's narrow twin at the field's end, asleep: a pencil, no press,
+ * marking the row for a text field. The description rides under the field, no name.
+ * Committed on every keystroke; Done commits the trim.
  */
 @Composable
 private fun TestUrlRow(
@@ -1200,25 +1201,46 @@ private fun TestUrlRow(
 ) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth()) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onChange,
-            singleLine = true,
-            placeholder = { Text(stringResource(R.string.settings_test_url)) },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Uri,
-                imeAction = ImeAction.Done,
-            ),
-            keyboardActions = KeyboardActions(onDone = { onChange(value.trim()) }),
-            // No outline and no fill of its own: the card is the field's.
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color.Transparent,
-                unfocusedBorderColor = Color.Transparent,
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-            ),
+        Row(
             modifier = Modifier.fillMaxWidth(),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onChange,
+                singleLine = true,
+                placeholder = { Text(stringResource(R.string.settings_test_url)) },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Uri,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { onChange(value.trim()) }),
+                // No outline and no fill of its own: the card is the field's.
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                ),
+                modifier = Modifier.weight(1f),
+            )
+            Surface(
+                shape = CircleShape,
+                color = colors.secondaryContainer,
+                contentColor = colors.onSecondaryContainer,
+                modifier = Modifier
+                    .padding(end = 16.dp)
+                    .size(width = 36.dp, height = 48.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_edit),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+        }
         Text(
             text = stringResource(R.string.settings_test_url_hint),
             style = MaterialTheme.typography.bodyMedium,
