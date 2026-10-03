@@ -169,7 +169,10 @@ fun WelcomeScreen(
                 onValueChange = { url = it },
                 onSubmit = ::submit,
                 modifier = Modifier
-                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
+                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                    // A breath between the card and whatever sits under it — the navbar
+                    // or the keyboard alike.
+                    .padding(bottom = 8.dp),
             )
         }
     }
