@@ -1,3 +1,7 @@
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
@@ -30,6 +34,10 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = buildNumber
         versionName = "0.0.$buildNumber"
+        // The About page's build stamp: the day this build was assembled, baked in at
+        // the same moment. ROOT locale keeps it English, the app's only language.
+        val buildDate = LocalDate.now().format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ROOT))
+        buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
 
     // One APK per phone architecture: the Xray core's native library is the app's whole
@@ -69,6 +77,7 @@ android {
     buildFeatures {
         compose = true
         aidl = true
+        buildConfig = true
     }
 
     // The debug build runs on the phone in hand — its 32-bit split is a wasted copy of

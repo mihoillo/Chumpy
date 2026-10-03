@@ -144,7 +144,13 @@
     <string name="settings_background_refresh_count">Auto-updates %d subscriptions</string>
     <string name="settings_about_core">Xray core</string>
     <string name="settings_about_core_unknown">not running yet</string>
-    <string name="settings_about_hint">Aurora — a client for Xray-based subscriptions</string>
+    <string name="settings_about_version">Version</string>
+    <string name="settings_about_build_date">Build date</string>
+    <string name="settings_about_tagline">Xray based client with Material 3 Expressive</string>
+    <string name="settings_about_telegram">Telegram channel</string>
+    <string name="settings_about_telegram_handle">t.me/AuroraFragments</string>
+    <string name="settings_about_github">GitHub</string>
+    <string name="settings_about_github_handle">github.com/mihoillo/Aurora</string>
 
     <!-- Fonts -->
     <string name="fonts_system">System</string>

@@ -429,7 +429,10 @@ private fun MainPagerStrip(
                         onChangeConnection = onChangeConnection,
                         onToggleAutoUpdate = onToggleAutoUpdate,
                     )
-                    SettingsCategory.ABOUT -> AboutScreen(coreVersion = coreVersion)
+                    SettingsCategory.ABOUT -> AboutScreen(
+                        coreVersion = coreVersion,
+                        iconVariant = uiSettings.iconVariant,
+                    )
                 }
             }
         }
