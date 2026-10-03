@@ -60,7 +60,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -145,7 +144,6 @@ fun PerAppProxyScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val density = LocalDensity.current
     // The launcher's own list — labels and icons of every launchable app, re-queried on
     // every pull. Both loads are package-manager work: off the main thread, and the
     // pull's wave makes the wait legible — it also answers the page's own first load.
@@ -162,9 +160,6 @@ fun PerAppProxyScreen(
     val initialBypassed = remember { bypassed }
     val selected = remember(apps) { apps.filter { it.packageName in initialBypassed } }
     val rest = remember(apps) { apps.filter { it.packageName !in initialBypassed } }
-    // The master switch's own height, measured as laid out — the list rests clear of the
-    // block whatever the fonts and scale make of its two lines.
-    var toggleBlockHeight by remember { mutableStateOf(80.dp) }
 
     val surface = MaterialTheme.colorScheme.surface
     Box(modifier = modifier.fillMaxSize()) {
@@ -175,12 +170,12 @@ fun PerAppProxyScreen(
             onRefresh = { refreshes++ },
             modifier = Modifier.fillMaxSize(),
         ) { pullShift ->
-            // Rows travel under the toggle above and the floating bar below (fading out
-            // behind the gradients) and rest clear of both thanks to the content padding.
-            // The pull pushes the rows down through the top padding (see
+            // Rows travel under the status bar and the floating bar (fading out behind
+            // the gradients) and rest clear of both thanks to the content padding. The
+            // pull pushes the rows down through the top padding (see
             // WavyPullToRefreshBox).
             val topContentPadding = WindowInsets.statusBars.asPaddingValues()
-                .calculateTopPadding() + 24.dp + toggleBlockHeight + 24.dp
+                .calculateTopPadding() + 24.dp
             val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues()
                 .calculateBottomPadding() + FloatingBottomBarReservedHeight
             val outer = MaterialTheme.shapes.extraLarge
@@ -201,6 +196,16 @@ fun PerAppProxyScreen(
                     pullShiftedPadding(topContentPadding, bottomContentPadding, pullShift)
                 },
             ) {
+                // The master switch, the content's own first block: it scrolls with the
+                // list like every other card, riding under the status bar's fade.
+                item(key = "master switch") {
+                    PerAppToggleRow(
+                        enabled = enabled,
+                        count = bypassed.size,
+                        onChange = onToggleEnabled,
+                    )
+                }
+                item(key = "switch gap") { Spacer(modifier = Modifier.height(12.dp)) }
                 itemsIndexed(selected, key = { _, app -> app.packageName }) { index, app ->
                     AppRow(
                         app = app,
@@ -225,37 +230,21 @@ fun PerAppProxyScreen(
             }
         }
 
-        // The master switch rides over the list, and the rows dissolve behind the
-        // gradient under it instead of meeting a hard edge — the same fade the shell
-        // draws below the floating bar.
-        Column(
+        // Content scrolls under the status bar and fades out behind this gradient, the
+        // shell's own page fade.
+        Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .screenPadding()
-                .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp),
-        ) {
-            PerAppToggleRow(
-                enabled = enabled,
-                count = bypassed.size,
-                onChange = onToggleEnabled,
-                modifier = Modifier.onSizeChanged { size ->
-                    with(density) { toggleBlockHeight = size.height.toDp() }
+                .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp)
+                .drawBehind {
+                    drawRect(
+                        Brush.verticalGradient(
+                            listOf(surface.copy(alpha = 0.97f), surface.copy(alpha = 0f)),
+                        ),
+                    )
                 },
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(24.dp)
-                    .drawBehind {
-                        drawRect(
-                            Brush.verticalGradient(
-                                listOf(surface.copy(alpha = 0.97f), surface.copy(alpha = 0f)),
-                            ),
-                        )
-                    },
-            )
-        }
+        )
 
         // Content scrolls under the floating bar and fades out behind it.
         Box(
