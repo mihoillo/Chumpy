@@ -179,6 +179,7 @@ fun PerAppProxyScreen(
                     AppRow(
                         app = app,
                         bypassed = app.packageName in bypassed,
+                        active = enabled,
                         onToggle = { onToggle(app.packageName) },
                         shape = sectionShape(index, selected.lastIndex, outer, inner),
                     )
@@ -190,6 +191,7 @@ fun PerAppProxyScreen(
                     AppRow(
                         app = app,
                         bypassed = app.packageName in bypassed,
+                        active = enabled,
                         onToggle = { onToggle(app.packageName) },
                         shape = sectionShape(index, rest.lastIndex, outer, inner),
                     )
@@ -208,10 +210,9 @@ fun PerAppProxyScreen(
 }
 
 /**
- * The per-app proxy's master switch, the screen's own first block: the apps tile leading
- * on the left, the story under the title, the toggle tile at the end — the block mark
- * while the bypass list applies, the globe once the whole list stops mattering. The whole
- * row taps.
+ * The per-app proxy's master switch, the screen's own first block: the toggle tile
+ * leading on the left — the block mark while the bypass list applies, the globe once the
+ * whole list stops mattering — the title and its story beside it. The whole row taps.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -249,45 +250,9 @@ private fun PerAppToggleRow(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // The apps tile, leading: raised tonal container dipping its tone while the
-            // row is held down.
-            val resting = colors.secondaryContainer
-            val container by animateColorAsState(
-                targetValue = if (pressed) lerp(resting, colors.onSurface, 0.1f) else resting,
-                animationSpec = motion.defaultEffectsSpec(),
-                label = "per-app leading tile container",
-            )
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = container,
-                contentColor = colors.onSecondaryContainer,
-                modifier = Modifier.size(48.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_apps),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.per_app_title),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = colors.onSurface,
-                )
-                Text(
-                    text = if (count == 0) {
-                        stringResource(R.string.per_app_hint)
-                    } else {
-                        stringResource(R.string.per_app_count, count)
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurfaceVariant,
-                )
-            }
-            // The toggle tile: the accent while on, the crossfading mark in the middle.
+            // The toggle tile, leading: the accent while the bypass list applies, the
+            // crossfading mark in the middle — the block mark while on, the globe once
+            // the whole list stops mattering.
             val toggleResting = if (enabled) colors.primary else colors.secondaryContainer
             val toggleContainer by animateColorAsState(
                 targetValue = if (pressed) {
@@ -325,6 +290,22 @@ private fun PerAppToggleRow(
                     }
                 }
             }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.per_app_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = colors.onSurface,
+                )
+                Text(
+                    text = if (count == 0) {
+                        stringResource(R.string.per_app_hint)
+                    } else {
+                        stringResource(R.string.per_app_count, count)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -346,12 +327,14 @@ private fun sectionShape(
  * One app's row, the server row's twin: the app's own icon bare in the leading slot (no
  * backdrop — launcher icons carry their own shape), the name with the package under it.
  * A picked app wears the accent — it's on the blacklist, staying out of the tunnel — and
- * the tap trades the row between the two states.
+ * the tap trades the row between the two states. While the master switch is off the rows
+ * all go quiet: dimmed, untappable, the picks' block still sitting where it froze.
  */
 @Composable
 private fun AppRow(
     app: AppEntry,
     bypassed: Boolean,
+    active: Boolean,
     onToggle: () -> Unit,
     shape: Shape,
 ) {
@@ -359,21 +342,25 @@ private fun AppRow(
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
     val containerColor by animateColorAsState(
-        targetValue = (if (bypassed) colors.primaryContainer else colors.surfaceContainer)
+        targetValue = (if (bypassed && active) colors.primaryContainer else colors.surfaceContainer)
             .copy(alpha = LocalSurfaceOpacity.current),
         animationSpec = motion.defaultEffectsSpec(),
         label = "app row container",
     )
     val contentColor by animateColorAsState(
-        targetValue = if (bypassed) colors.onPrimaryContainer else colors.onSurface,
+        targetValue = when {
+            !active -> colors.onSurface.copy(alpha = 0.38f)
+            bypassed -> colors.onPrimaryContainer
+            else -> colors.onSurface
+        },
         animationSpec = motion.defaultEffectsSpec(),
         label = "app row content",
     )
     val supportingColor by animateColorAsState(
-        targetValue = if (bypassed) {
-            colors.onPrimaryContainer.copy(alpha = 0.78f)
-        } else {
-            colors.onSurfaceVariant
+        targetValue = when {
+            !active -> colors.onSurfaceVariant.copy(alpha = 0.38f)
+            bypassed -> colors.onPrimaryContainer.copy(alpha = 0.78f)
+            else -> colors.onSurfaceVariant
         },
         animationSpec = motion.defaultEffectsSpec(),
         label = "app row supporting",
@@ -383,6 +370,7 @@ private fun AppRow(
             poke()
             onToggle()
         },
+        enabled = active,
         shape = shape,
         color = containerColor,
         contentColor = contentColor,
