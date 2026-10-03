@@ -1293,15 +1293,14 @@ private fun PlainRow(
 }
 
 /**
- * The "About" page: the welcome's own hero turned upright — the app's icon big at the
- * top of the page, its name under it, the tagline under that — then the build's own
- * numbers, and the project's two homes. The core's version only exists once it has
+ * The "About" page: the welcome screen's own hero turned upright — the app's mark big
+ * at the top of the page, its name under it, the tagline under that — then the build's
+ * own numbers, and the project's two homes. The core's version only exists once it has
  * booted in its own process; before that, the row says so.
  */
 @Composable
 fun AboutScreen(
     coreVersion: String?,
-    iconVariant: IconVariant,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
@@ -1316,16 +1315,24 @@ fun AboutScreen(
             .screenPadding()
             .verticalScroll(scrollState)
             .padding(
-                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp,
+                // A breath more of sky above the hero than the other settings pages
+                // carry: the mark and the name open the app's own story, they get to
+                // stand clear of the top edge.
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 32.dp,
                 bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
                     FloatingBottomBarReservedHeight,
             ),
     ) {
         // The hero, the welcome screen's own text stack standing at the top of the page
-        // instead of hanging off its bottom: the icon where the mark sat, grown, its
-        // name in the greeting's own style, the one-liner under that.
+        // instead of hanging off its bottom: the mark beside the waving hand there, here
+        // grown to stand level with its own name below, the one-liner under that.
         Column(Modifier.fillMaxWidth()) {
-            AboutAppIcon(variant = iconVariant)
+            Icon(
+                painter = painterResource(R.drawable.ic_aurora_mark),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(96.dp),
+            )
             Spacer(Modifier.height(24.dp))
             Text(
                 text = stringResource(R.string.app_name),
@@ -1383,48 +1390,6 @@ fun AboutScreen(
                     url = "https://github.com/mihoillo/Aurora",
                 )
             },
-        )
-    }
-}
-
-/**
- * The app's icon, the About page's own size: the launcher's art — background and
- * foreground exactly what the launcher draws for the picked variant — in a circle far
- * bigger than the welcome screen's mark. The hairline keeps the white art from
- * dissolving into the page.
- */
-@Composable
-private fun AboutAppIcon(variant: IconVariant) {
-    val colors = MaterialTheme.colorScheme
-    val sky = Color(0xFF6FACED)
-    val (background, art) = when (variant) {
-        IconVariant.AURORA -> Color.White to sky
-        IconVariant.INVERTED -> sky to Color.White
-        IconVariant.THEMED -> colors.surface to colors.primary
-    }
-    Box(
-        modifier = Modifier
-            .size(96.dp)
-            .clip(CircleShape)
-            .background(background)
-            .border(1.dp, colors.outlineVariant, CircleShape),
-    ) {
-        Image(
-            painter = painterResource(
-                when (variant) {
-                    IconVariant.AURORA -> R.drawable.ic_launcher_foreground
-                    // White art: shown as-is for Inverted, tinted with the live primary
-                    // for Themed — the vector is the real launcher art, not a stand-in.
-                    IconVariant.INVERTED -> R.drawable.ic_launcher_fg_inverted
-                    IconVariant.THEMED -> R.drawable.ic_launcher_fg_inverted
-                },
-            ),
-            contentDescription = null,
-            colorFilter = if (variant == IconVariant.THEMED) ColorFilter.tint(art) else null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .scale(1.4f),
         )
     }
 }
