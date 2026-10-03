@@ -13,7 +13,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -230,7 +232,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun observeProfiles() {
         viewModelScope.launch {
             selectedSubscriptionId
-                .flatMapLatest { id -> repository.profilesOf(id) }
+                .flatMapLatest { id ->
+                    // The balancer's own members never stand in the screen's list: they
+                    // are its internals — the pick, not the picked. The rows stay in the
+                    // store untouched, where connect resolves them by linkKey; only the
+                    // showing of them is taken away.
+                    repository.profilesOf(id).map { it.hidingBalancerMembers() }
+                }
                 .combine(connection) { profiles, conn ->
                     val selected = profiles.firstOrNull { it.id == conn.selectedProfileId }
                     // A selection that no longer exists falls back to the list's head —
@@ -255,6 +263,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
         }
+    }
+
+    /**
+     * The list without the balancers' members: a member is the balancer's internal — the
+     * panel's pick-over-servers is meant to stand in the list alone, one entry to tap
+     * instead of the N it picks between. Members of no balancer (or of none that survived
+     * parsing) still stand on their own; balancers always do.
+     */
+    private fun List<ProfileEntity>.hidingBalancerMembers(): List<ProfileEntity> {
+        val memberKeys = asSequence()
+            .filter { it.type == ProfileType.BALANCER }
+            .flatMap { it.balancerMemberKeys.asSequence() }
+            .toSet()
+        if (memberKeys.isEmpty()) return this
+        return filter { it.type == ProfileType.BALANCER || it.linkKey !in memberKeys }
     }
 
     init {
@@ -299,16 +322,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun applyConfigAndConnect() {
         val profile = selectedProfile.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            // A balancer's members are resolved against the very list the selection
-            // came from: linkKeys from the column, rows from the subscription. A
-            // balancer whose members have all fallen away degrades to the whole
-            // subscription — still a pick, just a wider one.
+            // A balancer's members are resolved against the store, not the screen's
+            // list — the screen hides the members, the store keeps them: linkKeys from
+            // the column, rows from the subscription. A balancer whose members have all
+            // fallen away degrades to the whole subscription — still a pick, just a
+            // wider one.
             val members = if (profile.type == ProfileType.BALANCER) {
                 val keys = profile.balancerMemberKeys.toSet()
-                val resolved = _servers.value.profiles.filter {
+                val rows = repository.profilesOf(selectedSubscriptionId.value).first()
+                val resolved = rows.filter {
                     it.type != ProfileType.BALANCER && it.linkKey in keys
                 }
-                resolved.ifEmpty { _servers.value.profiles.filter { it.type != ProfileType.BALANCER } }
+                resolved.ifEmpty { rows.filter { it.type != ProfileType.BALANCER } }
             } else {
                 emptyList()
             }
