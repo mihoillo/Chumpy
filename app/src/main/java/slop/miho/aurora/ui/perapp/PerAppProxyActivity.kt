@@ -8,14 +8,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -26,29 +21,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -58,13 +48,13 @@ import kotlinx.coroutines.withContext
 import slop.miho.aurora.R
 import slop.miho.aurora.data.ConnectionStore
 import slop.miho.aurora.data.SettingsStore
-import slop.miho.aurora.ui.components.pressBounce
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.main.FloatingBottomBarReservedHeight
 import slop.miho.aurora.ui.main.PillDestination
 import slop.miho.aurora.ui.main.SubScreenBottomBar
 import slop.miho.aurora.ui.main.screenPadding
 import slop.miho.aurora.ui.theme.AuroraTheme
+import slop.miho.aurora.ui.wallpapers.LocalSurfaceOpacity
 
 /**
  * The per-app proxy settings, a deep-dive screen in the wallpapers' footsteps: every
@@ -143,20 +133,34 @@ fun PerAppProxyScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             )
+            val outer = MaterialTheme.shapes.extraLarge
+            val inner = MaterialTheme.shapes.extraSmall
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
+                // The servers list's segmented container: 2dp gaps between rows instead
+                // of dividers, the first and last rows carrying the group's outer
+                // corners, the rest the small inner ones.
+                verticalArrangement = Arrangement.spacedBy(2.dp),
                 contentPadding = PaddingValues(
                     bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
                         FloatingBottomBarReservedHeight,
                 ),
             ) {
-                items(apps, key = { it.packageName }) { app ->
+                itemsIndexed(apps, key = { _, app -> app.packageName }) { index, app ->
+                    val first = index == 0
+                    val last = index == apps.lastIndex
                     AppRow(
                         app = app,
                         bypassed = app.packageName in bypassed,
                         onToggle = { onToggle(app.packageName) },
+                        shape = RoundedCornerShape(
+                            topStart = if (first) outer.topStart else inner.topStart,
+                            topEnd = if (first) outer.topEnd else inner.topEnd,
+                            bottomStart = if (last) outer.bottomStart else inner.bottomStart,
+                            bottomEnd = if (last) outer.bottomEnd else inner.bottomEnd,
+                        ),
                     )
                 }
             }
@@ -173,91 +177,87 @@ fun PerAppProxyScreen(
 }
 
 /**
- * One app's row: the app's own icon, its name with its package under it, and the toggle
- * tile — the block mark, in the accent once the app is pulled out of the tunnel, plain
- * tonal while it still rides it. The whole row taps.
+ * One app's row, the server row's twin: the app's own icon bare in the leading slot (no
+ * backdrop — launcher icons carry their own shape), the name with the package under it.
+ * A picked app wears the accent — it's on the blacklist, staying out of the tunnel — and
+ * the tap trades the row between the two states.
  */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun AppRow(
     app: AppEntry,
     bypassed: Boolean,
     onToggle: () -> Unit,
+    shape: Shape,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    var taps by remember { mutableIntStateOf(0) }
-    val toggleLabel = stringResource(R.string.per_app_bypass, app.label)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = LocalIndication.current,
-                role = Role.Switch,
-            ) {
-                poke()
-                taps++
-                onToggle()
-            }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val containerColor by animateColorAsState(
+        targetValue = (if (bypassed) colors.primaryContainer else colors.surfaceContainer)
+            .copy(alpha = LocalSurfaceOpacity.current),
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "app row container",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (bypassed) colors.onPrimaryContainer else colors.onSurface,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "app row content",
+    )
+    val supportingColor by animateColorAsState(
+        targetValue = if (bypassed) {
+            colors.onPrimaryContainer.copy(alpha = 0.78f)
+        } else {
+            colors.onSurfaceVariant
+        },
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "app row supporting",
+    )
+    Surface(
+        onClick = {
+            poke()
+            onToggle()
+        },
+        shape = shape,
+        color = containerColor,
+        contentColor = contentColor,
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        // The app's icon at the tile's size, as-is — launcher icons already carry their
-        // own shape and padding.
-        Image(
-            bitmap = app.icon,
-            contentDescription = null,
-            modifier = Modifier.size(40.dp),
-        )
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = app.label,
-                style = MaterialTheme.typography.bodyLarge,
-                color = colors.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = app.packageName,
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        val resting = if (bypassed) colors.primary else colors.secondaryContainer
-        val container by animateColorAsState(
-            targetValue = if (pressed) lerp(resting, colors.onSurface, 0.1f) else resting,
-            animationSpec = motion.defaultEffectsSpec(),
-            label = "app toggle tile container",
-        )
-        val content by animateColorAsState(
-            targetValue = if (bypassed) colors.onPrimary else colors.onSecondaryContainer,
-            animationSpec = motion.defaultEffectsSpec(),
-            label = "app toggle tile content",
-        )
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = container,
-            contentColor = content,
-            modifier = Modifier
-                .size(40.dp)
-                .pressBounce(pressed, taps)
-                .semantics { contentDescription = toggleLabel },
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_block),
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
+        ListItem(
+            headlineContent = {
+                Text(
+                    text = app.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-            }
-        }
+            },
+            supportingContent = {
+                Text(
+                    text = app.packageName,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            leadingContent = {
+                // The app's own icon, bare: launcher icons already carry their shape
+                // and padding, so no tile behind it.
+                Image(
+                    bitmap = app.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                )
+            },
+            // No trailing mark: the picked row already wears the accent.
+            colors = ListItemDefaults.colors(
+                // The row's Surface already paints the container; painting it here again
+                // stacked the translucent color twice, leaving these rows denser than
+                // the rest of the app's.
+                containerColor = Color.Transparent,
+                headlineColor = contentColor,
+                supportingColor = supportingColor,
+            ),
+            tonalElevation = 0.dp,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

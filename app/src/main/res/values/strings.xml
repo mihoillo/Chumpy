@@ -132,7 +132,6 @@
     <string name="per_app_title">Per-app proxy</string>
     <string name="per_app_hint">Apps picked in this list ignore the tunnel and connect directly</string>
     <string name="per_app_count">%d apps ignore the tunnel</string>
-    <string name="per_app_bypass">%1$s ignores the tunnel</string>
     <string name="settings_subscriptions">Subscriptions</string>
     <string name="settings_auto_update_hint">Refreshes in the background on the panel\'s own schedule</string>
     <string name="settings_about_core">Xray core</string>
