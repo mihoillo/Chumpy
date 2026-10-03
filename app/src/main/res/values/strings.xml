@@ -28,7 +28,7 @@
     <string name="servers_total">Servers: %1$d</string>
     <string name="servers_online">Reachable: %1$d</string>
     <string name="servers_ping_ms">%1$d ms</string>
-    <string name="servers_offline">unreachable</string>
+    <string name="servers_offline">can\'t ping</string>
     <string name="servers_empty_title">No servers</string>
     <string name="servers_empty_hint">Pull down to measure them, or update the subscription.</string>
     <string name="servers_pinging">Measuring…</string>

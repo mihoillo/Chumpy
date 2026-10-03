@@ -3,7 +3,6 @@ package slop.miho.aurora.ui.main
 import androidx.core.graphics.ColorUtils
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -12,6 +11,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.SizeTransform
@@ -1214,23 +1214,30 @@ private fun ServerRow(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    // The last real ping: a number, "unreachable", or nothing at all yet.
-                    // It appears and goes with a fade, never a jump.
-                    AnimatedVisibility(
-                        visible = profile.testDelayMillis != null,
-                        enter = fadeIn(motion.defaultEffectsSpec()),
-                        exit = fadeOut(motion.defaultEffectsSpec()),
-                    ) {
-                        val ping = profile.testDelayMillis
-                        val text = when {
-                            ping == null || ping < 0 -> stringResource(R.string.servers_offline)
-                            else -> stringResource(R.string.servers_ping_ms, ping.toInt())
+                    // The last real ping: a number, "can't ping", or nothing at all yet.
+                    // A sweep's fresh answer takes the old one's seat with a hand-over:
+                    // the old fades out, the new flies in from the right — the rows trade
+                    // their numbers one by one as the sweep answers each of them.
+                    AnimatedContent(
+                        targetState = profile.testDelayMillis to profile.lastTestAt,
+                        transitionSpec = {
+                            (fadeIn(motion.defaultEffectsSpec()) +
+                                slideInHorizontally(motion.defaultSpatialSpec()) { it / 2 }) togetherWith
+                                fadeOut(motion.defaultEffectsSpec())
+                        },
+                        label = "ping",
+                    ) { (delay, _) ->
+                        if (delay != null) {
+                            val text = when {
+                                delay < 0 -> stringResource(R.string.servers_offline)
+                                else -> stringResource(R.string.servers_ping_ms, delay.toInt())
+                            }
+                            Text(
+                                text = "  ·  $text",
+                                color = extraColor,
+                                maxLines = 1,
+                            )
                         }
-                        Text(
-                            text = "  ·  $text",
-                            color = extraColor,
-                            maxLines = 1,
-                        )
                     }
                 }
             },
