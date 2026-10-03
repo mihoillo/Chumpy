@@ -112,6 +112,7 @@ fun ServersScreen(
     selectedSubscription: SubscriptionEntity?,
     state: ServersUiState,
     flagStyle: FlagStyle = FlagStyle.TWEMOJI,
+    tunnelUp: Boolean = false,
     onUpdate: () -> Unit,
     onPing: () -> Unit,
     onSelectSubscription: (String) -> Unit,
@@ -222,6 +223,7 @@ fun ServersScreen(
                                 profiles = state.profiles,
                                 selectedId = state.selectedProfileId,
                                 flagStyle = flagStyle,
+                                tunnelUp = tunnelUp,
                                 onSelect = onSelect,
                             )
                         }
@@ -1042,6 +1044,7 @@ private fun ServerGroup(
     profiles: List<ProfileEntity>,
     selectedId: String?,
     flagStyle: FlagStyle,
+    tunnelUp: Boolean,
     onSelect: (String) -> Unit,
 ) {
     if (profiles.isEmpty()) {
@@ -1055,6 +1058,7 @@ private fun ServerGroup(
                     profile = profile,
                     selected = profile.id == selectedId,
                     flagStyle = flagStyle,
+                    tunnelUp = tunnelUp,
                     onSelect = { onSelect(profile.id) },
                     shape = shape,
                 )
@@ -1122,6 +1126,7 @@ private fun ServerRow(
     profile: ProfileEntity,
     selected: Boolean,
     flagStyle: FlagStyle,
+    tunnelUp: Boolean,
     onSelect: () -> Unit,
     shape: Shape,
 ) {
@@ -1261,9 +1266,11 @@ private fun ServerRow(
             },
             leadingContent = {
                 // MD3 list leading icon: 24dp icon on a 40dp tonal container. Selection
-                // morphs the circle into the slowly spinning MD3 cookie — the pick's mark.
-                // A name's leading flag takes the slot (Twemoji or system per the style
-                // setting); names without one keep the globe.
+                // morphs the circle into the MD3 cookie — the pick's mark — and the
+                // cookie turns only while the tunnel is up: the spin is the connection's
+                // pulse, the shape alone carries the pick while it is down. A name's
+                // leading flag takes the slot (Twemoji or system per the style setting);
+                // names without one keep the globe.
                 Box(
                     modifier = Modifier.size(40.dp),
                     contentAlignment = Alignment.Center,
@@ -1271,7 +1278,7 @@ private fun ServerRow(
                     CookieBackdrop(
                         selected = selected,
                         color = iconContainerColor,
-                        animated = true,
+                        animated = tunnelUp,
                     )
                     when {
                         // The pride flag always rides the tile — the easter egg ignores
@@ -1295,18 +1302,8 @@ private fun ServerRow(
                     }
                 }
             },
-            trailingContent = if (selected) {
-                {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_check),
-                        contentDescription = stringResource(R.string.servers_selected),
-                        tint = supportingColor,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            } else {
-                null
-            },
+            // No trailing mark: the picked row already wears the accent and the cookie —
+            // a checkmark on top of them would say the same thing a third time.
             colors = ListItemDefaults.colors(
                 // The row's Surface already paints the container; painting it here again
                 // stacked the translucent color twice, leaving these rows denser than the

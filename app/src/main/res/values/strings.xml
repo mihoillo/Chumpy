@@ -24,7 +24,6 @@
     <string name="nav_back">Back</string>
 
     <!-- Servers -->
-    <string name="servers_selected">Selected</string>
     <string name="servers_total">Servers: %1$d</string>
     <string name="servers_online">Reachable: %1$d</string>
     <string name="servers_ping_ms">%1$d ms</string>

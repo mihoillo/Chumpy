@@ -397,6 +397,7 @@ private fun MainPagerStrip(
                         selectedSubscription = selectedSubscription,
                         state = servers,
                         flagStyle = uiSettings.flagStyle,
+                        tunnelUp = tunnelStatus.state == TunnelState.UP,
                         onUpdate = onUpdateSubscription,
                         onPing = onPingServers,
                         onSelectSubscription = onSelectSubscription,
