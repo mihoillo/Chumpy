@@ -485,8 +485,12 @@ private fun SubscriptionCompactFace(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DatabaseTile()
-        UpdateButton(isUpdating = isUpdating, onClick = onUpdate, width = 36.dp, height = 48.dp)
+        // The tile with the button tight against it — the pair reads as one control —
+        // and the title a full gap away.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DatabaseTile()
+            UpdateButton(isUpdating = isUpdating, onClick = onUpdate, width = 36.dp, height = 48.dp)
+        }
         SubscriptionTitleRow(
             subscription = subscription,
             contentColor = contentColor,
@@ -506,8 +510,8 @@ private fun SubscriptionCompactFace(
 }
 
 /**
- * The database tile on its square backing — the card's tile; the list's rows wear the
- * round one.
+ * The home-storage tile on its square backing — the card's tile; the list's rows wear
+ * the round one.
  */
 @Composable
 private fun DatabaseTile() {
@@ -520,7 +524,7 @@ private fun DatabaseTile() {
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                painter = painterResource(R.drawable.ic_database),
+                painter = painterResource(R.drawable.ic_home_storage),
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
             )
@@ -904,7 +908,7 @@ private fun SubscriptionRow(
                         animated = true,
                     )
                     Icon(
-                        painter = painterResource(R.drawable.ic_database),
+                        painter = painterResource(R.drawable.ic_home_storage),
                         contentDescription = null,
                         tint = iconColor,
                         modifier = Modifier.size(24.dp),
