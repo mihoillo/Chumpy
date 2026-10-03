@@ -61,7 +61,7 @@
     <string name="subscription_delete_confirm">Delete</string>
 
     <string name="happ_title">Happ spoof</string>
-    <string name="happ_hint">Present as the official Happ client when fetching subscriptions</string>
+    <string name="happ_active">Active</string>
     <string name="happ_app_version">App version</string>
     <string name="happ_os">OS</string>
     <string name="happ_os_version">OS version</string>

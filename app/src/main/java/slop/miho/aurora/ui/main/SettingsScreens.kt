@@ -33,10 +33,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -955,7 +957,11 @@ fun ConnectionScreen(
             .verticalScroll(scrollState)
             .padding(
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp,
-                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                // The keyboard counts as the edge while it is up: the delay test URL's
+                // field — and the fingerprint's own — stays above the keys, the column
+                // scrolling the focused one into view.
+                bottom = WindowInsets.navigationBars.union(WindowInsets.ime)
+                    .asPaddingValues().calculateBottomPadding() +
                     FloatingBottomBarReservedHeight,
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -1482,49 +1488,67 @@ private fun HappToggleRow(
                 style = MaterialTheme.typography.bodyLarge,
                 color = colors.onSurface,
             )
-            Text(
-                text = stringResource(R.string.happ_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.onSurfaceVariant,
-            )
-        }
-        Surface(
-            shape = CircleShape,
-            color = colors.secondaryContainer,
-            contentColor = colors.onSecondaryContainer,
-            modifier = Modifier
-                .size(width = 36.dp, height = 48.dp)
-                .pressBounce(regenPressed, regenTaps)
-                .combinedClickable(
-                    enabled = checked,
-                    interactionSource = regenSource,
-                    indication = LocalIndication.current,
-                    role = Role.Button,
-                ) {
-                    poke()
-                    regenTaps++
-                    onRegenerate()
-                }
-                .semantics { contentDescription = regenLabel }
-                .graphicsLayer { alpha = regenAlpha },
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_renew),
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
+            // The word the row answers with: what the fetches go out as right now.
+            Crossfade(
+                targetState = checked,
+                animationSpec = motion.defaultEffectsSpec(),
+                label = "happ status",
+            ) { active ->
+                Text(
+                    text = stringResource(
+                        if (active) R.string.happ_active else R.string.per_app_disabled,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant,
                 )
             }
         }
-        ToggleIconTile(icon = R.drawable.ic_device, checked = checked, pressed = pressed, taps = taps)
+        // The trailing pair: the regenerator tucked against the toggle, the two of
+        // them one cluster at the row's end — 8 between, the screen link's own
+        // tile-and-triangle distance.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = colors.secondaryContainer,
+                contentColor = colors.onSecondaryContainer,
+                modifier = Modifier
+                    .size(width = 36.dp, height = 48.dp)
+                    .pressBounce(regenPressed, regenTaps)
+                    .combinedClickable(
+                        enabled = checked,
+                        interactionSource = regenSource,
+                        indication = LocalIndication.current,
+                        role = Role.Button,
+                    ) {
+                        poke()
+                        regenTaps++
+                        onRegenerate()
+                    }
+                    .semantics { contentDescription = regenLabel }
+                    .graphicsLayer { alpha = regenAlpha },
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_renew),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            ToggleIconTile(icon = R.drawable.ic_device, checked = checked, pressed = pressed, taps = taps)
+        }
     }
 }
 
 /**
- * One fingerprint field on its own line: the borderless stadium of the delay test URL
- * filling its own card edge to edge, the field's name as the floating label, committed
- * on every keystroke with Done committing the trim. The rows only stand while the spoof
- * is on, so there is no sleeping state to draw — the fold carries the whole card.
+ * One fingerprint field on its own line: the delay test URL's own card in miniature —
+ * the bare field edge to edge, the sleeping pencil at its end marking the row for a
+ * text field, the field's name riding under it, where the delay test URL's hint rides.
+ * Committed on every keystroke; Done commits the trim. The rows only stand while the
+ * spoof is on, so there is no sleeping state to draw — the fold carries the whole card.
  */
 @Composable
 private fun HappFieldRow(
@@ -1532,25 +1556,63 @@ private fun HappFieldRow(
     value: String,
     onChange: (String) -> Unit,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        singleLine = true,
-        label = { Text(label, maxLines = 1) },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = {
-            val trimmedNow = value.trim()
-            if (value != trimmedNow) onChange(trimmedNow)
-        }),
-        // No outline and no fill of its own: the card is the field's.
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Color.Transparent,
-            unfocusedBorderColor = Color.Transparent,
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent,
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    )
+    val colors = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                // 80, not the field's own 56: the stadium gets its 16dp of air above
+                // and below to match the sides — the delay test URL's own arithmetic.
+                .heightIn(min = 80.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onChange,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = {
+                    val trimmedNow = value.trim()
+                    if (value != trimmedNow) onChange(trimmedNow)
+                }),
+                // No outline and no fill of its own: the card is the field's.
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                ),
+                modifier = Modifier.weight(1f),
+            )
+            // The pencil, asleep: a pencil, no press, marking the row for a text field.
+            Surface(
+                shape = CircleShape,
+                color = colors.secondaryContainer,
+                contentColor = colors.onSecondaryContainer,
+                modifier = Modifier
+                    .padding(end = 16.dp)
+                    .size(width = 36.dp, height = 48.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_edit),
+                        contentDescription = null,
+                        // The glyph turns inside the backing — the backing stays put.
+                        // A pencil resting at its writing angle, tip down.
+                        modifier = Modifier
+                            .size(24.dp)
+                            .graphicsLayer { rotationZ = -45f },
+                    )
+                }
+            }
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+        )
+    }
 }
 
 /** A plain text row: a title with a supporting line, no icon, no interaction. */
