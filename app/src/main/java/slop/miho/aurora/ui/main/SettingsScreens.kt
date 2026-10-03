@@ -64,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1370,7 +1371,9 @@ private fun IconVariantRow(
         }
         Row(
             modifier = Modifier.padding(start = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            // Tighter than the swatches' 12: the ring's wrapper already carries its own
+            // margin around every preview.
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             IconVariant.entries.forEach { variant ->
                 IconPreviewButton(
@@ -1385,10 +1388,13 @@ private fun IconVariantRow(
 
 /**
  * One variant's preview: a 48dp circle carrying the real icon — background color, art
- * color, exactly what the launcher will show. The art is the monochrome mask (an alpha
- * drawing), tinted per variant; the hairline outline keeps the white-on-white and
- * surface-on-surface variants from dissolving into the card. The selected preview's
- * hairline grows into the accent's own ring, the swatches' language.
+ * color, exactly what the launcher will show — riding centered in a wider wrapper that
+ * carries the pick's mark: the accent's ring, grown with a breath of clearance between
+ * it and the icon so the two never touch. The art is the monochrome mask (an alpha
+ * drawing), tinted per variant, drawn 1.4 times the launcher's own scale — the adaptive
+ * icon's safe margins swallow half the circle, and the mark would read as a crumb. The
+ * hairline outline keeps the white-on-white and surface-on-surface variants from
+ * dissolving into the card.
  */
 @Composable
 private fun IconPreviewButton(
@@ -1417,24 +1423,18 @@ private fun IconPreviewButton(
     val poke = rememberHapticPoke()
     // Bumped in the click handler: the pop keys off it, so it fires on every click.
     var taps by remember { mutableIntStateOf(0) }
-    // The pick's mark: the hairline grows into the accent's ring, the color riding along.
-    val ringColor by animateColorAsState(
-        targetValue = if (selected) colors.primary else colors.outlineVariant,
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "icon preview ring color",
-    )
+    // The pick's mark: the accent's ring, grown from nothing so it reads as arriving.
     val ringWidth by animateDpAsState(
-        targetValue = if (selected) 3.dp else 1.dp,
+        targetValue = if (selected) 3.dp else 0.dp,
         animationSpec = motion.defaultSpatialSpec(),
         label = "icon preview ring width",
     )
     Box(
         modifier = Modifier
-            .size(48.dp)
+            .size(60.dp)
             .pressBounce(pressed, taps)
             .clip(CircleShape)
-            .background(background)
-            .border(ringWidth, ringColor, CircleShape)
+            .border(ringWidth, colors.primary, CircleShape)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -1447,20 +1447,30 @@ private fun IconPreviewButton(
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        Image(
-            painter = painterResource(
-                when (variant) {
-                    IconVariant.AURORA -> R.drawable.ic_launcher_foreground
-                    // White art: shown as-is for Inverted, tinted with the live primary
-                    // for Themed — the vector is the real launcher art, not a stand-in.
-                    IconVariant.INVERTED -> R.drawable.ic_launcher_fg_inverted
-                    IconVariant.THEMED -> R.drawable.ic_launcher_fg_inverted
-                },
-            ),
-            contentDescription = null,
-            colorFilter = if (variant == IconVariant.THEMED) ColorFilter.tint(art) else null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize(),
-        )
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(background)
+                .border(1.dp, colors.outlineVariant, CircleShape),
+        ) {
+            Image(
+                painter = painterResource(
+                    when (variant) {
+                        IconVariant.AURORA -> R.drawable.ic_launcher_foreground
+                        // White art: shown as-is for Inverted, tinted with the live primary
+                        // for Themed — the vector is the real launcher art, not a stand-in.
+                        IconVariant.INVERTED -> R.drawable.ic_launcher_fg_inverted
+                        IconVariant.THEMED -> R.drawable.ic_launcher_fg_inverted
+                    },
+                ),
+                contentDescription = null,
+                colorFilter = if (variant == IconVariant.THEMED) ColorFilter.tint(art) else null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(1.4f),
+            )
+        }
     }
 }
