@@ -1354,7 +1354,7 @@ private fun TestUrlRow(
                 contentColor = colors.onSecondaryContainer,
                 modifier = Modifier
                     .padding(end = 16.dp)
-                    .size(width = 36.dp, height = 40.dp),
+                    .size(width = 36.dp, height = 48.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
@@ -1545,7 +1545,7 @@ private fun EditSpoofStringsRow(
                 taps++
                 onToggle()
             }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1600,7 +1600,7 @@ private fun HappRegenerateRow(
                 regenTaps++
                 onRegenerate()
             }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1657,7 +1657,7 @@ private fun HappFieldRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1697,7 +1697,7 @@ private fun HappFieldRow(
             color = colors.secondaryContainer,
             contentColor = colors.onSecondaryContainer,
             modifier = Modifier
-                .size(width = 36.dp, height = 40.dp),
+                .size(width = 36.dp, height = 48.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
