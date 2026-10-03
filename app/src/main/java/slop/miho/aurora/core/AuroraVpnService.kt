@@ -264,13 +264,15 @@ class AuroraVpnService : VpnService() {
         val status = XrayCore.currentStatus()
         val profile = CoreConfigFile.readProfileName(this)?.let(::stripFlag)
             ?: getString(R.string.notif_profile_unknown)
-        // The state reads as the title — "Connected" — and the line under it names the
-        // server (its flag emoji left behind) with how long the tunnel has carried it.
-        val title = when (status.state) {
+        // The app's name and the state it is in share the title — "Aurora • Connected" —
+        // and the line under it names the server (its flag emoji lifted off the same way
+        // the server list does) with how long the tunnel has carried it.
+        val state = when (status.state) {
             TunnelState.UP -> getString(R.string.notif_connected)
             TunnelState.CONNECTING -> getString(R.string.notif_connecting)
             else -> getString(R.string.notif_disconnected)
         }
+        val title = getString(R.string.app_name) + " " + getString(R.string.notif_separator) + " " + state
         val text = when (status.state) {
             TunnelState.UP -> profile + " " + getString(R.string.notif_separator) + " " +
                 formatUptime(System.currentTimeMillis() - XrayCore.upSince())
@@ -330,15 +332,15 @@ class AuroraVpnService : VpnService() {
     }
 
     /**
-     * The uptime clock beside the server: once a minute, while the tunnel is up, the
-     * notification re-tells its line — silently, [android.app.Notification.Builder.setOnlyAlertOnce]
+     * The uptime clock beside the server: every thirty seconds while the tunnel is up,
+     * the notification re-tells its line — silently, [android.app.Notification.Builder.setOnlyAlertOnce]
      * keeps it from announcing itself again.
      */
     private fun startUptimeTicker() {
         stopUptimeTicker()
         uptimeTicker = scope.launch {
             while (isActive) {
-                delay(60_000)
+                delay(30_000)
                 if (XrayCore.currentStatus().state != TunnelState.UP) break
                 getSystemService(NotificationManager::class.java)
                     ?.notify(NOTIFICATION_ID, buildNotification())

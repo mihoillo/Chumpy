@@ -1,6 +1,8 @@
 package slop.miho.aurora.core
 
 import android.content.Context
+import slop.miho.aurora.ui.components.splitLeadingFlag
+import slop.miho.aurora.ui.components.splitLeadingPrideFlag
 import java.io.File
 
 /**
@@ -48,9 +50,10 @@ object CoreConfigFile {
     }
 }
 
-/** The profile name without its country flag: panels decorate their server names with
- *  flag emoji, which reads as noise where the notification and the QS tile carry the
- *  name beside a state of its own. */
-internal fun stripFlag(name: String): String = buildString {
-    for (ch in name) if (ch.code !in 0x1F1E6..0x1F1FF) append(ch)
-}.trim()
+/** The profile name the way the server list shows it: the leading flag lifted off —
+ *  the pride emoji first, then the country's — the same pair of splits the rows do,
+ *  leaving the name that reads beside the row's flag. */
+internal fun stripFlag(name: String): String {
+    val afterPride = splitLeadingPrideFlag(name).second
+    return splitLeadingFlag(afterPride).second.trim()
+}
