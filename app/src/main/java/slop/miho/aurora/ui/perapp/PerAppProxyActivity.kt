@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
@@ -47,7 +48,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ColorMatrixColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
@@ -297,10 +301,10 @@ private fun PerAppToggleRow(
                     color = colors.onSurface,
                 )
                 Text(
-                    text = if (count == 0) {
-                        stringResource(R.string.per_app_hint)
-                    } else {
-                        stringResource(R.string.per_app_count, count)
+                    text = when {
+                        !enabled -> stringResource(R.string.per_app_disabled)
+                        count == 0 -> stringResource(R.string.per_app_hint)
+                        else -> stringResource(R.string.per_app_count, count)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.onSurfaceVariant,
@@ -393,11 +397,27 @@ private fun AppRow(
             },
             leadingContent = {
                 // The app's own icon, bare: launcher icons already carry their shape
-                // and padding, so no tile behind it.
+                // and padding, so no tile behind it. It drains to grayscale — the row's
+                // quiet state — while the master switch is off.
+                val saturation by animateFloatAsState(
+                    targetValue = if (active) 1f else 0f,
+                    animationSpec = motion.defaultEffectsSpec(),
+                    label = "app icon saturation",
+                )
+                val iconAlpha by animateFloatAsState(
+                    targetValue = if (active) 1f else 0.38f,
+                    animationSpec = motion.defaultEffectsSpec(),
+                    label = "app icon alpha",
+                )
                 Image(
                     bitmap = app.icon,
                     contentDescription = null,
-                    modifier = Modifier.size(40.dp),
+                    colorFilter = ColorMatrixColorFilter(
+                        ColorMatrix().apply { setToSaturation(saturation) },
+                    ),
+                    modifier = Modifier
+                        .size(40.dp)
+                        .alpha(iconAlpha),
                 )
             },
             // No trailing mark: the picked row already wears the accent.

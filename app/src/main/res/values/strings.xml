@@ -132,6 +132,7 @@
     <string name="per_app_title">Per-app proxy</string>
     <string name="per_app_hint">Don\'t route selected apps</string>
     <string name="per_app_count">Don\'t route %d apps</string>
+    <string name="per_app_disabled">Disabled</string>
     <string name="settings_subscriptions">Subscriptions</string>
     <string name="settings_auto_update_hint">Refreshes in the background on the panel\'s own schedule</string>
     <string name="settings_about_core">Xray core</string>

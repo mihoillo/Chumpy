@@ -10,6 +10,17 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Package visibility (Android 11+): without declaring what we look for, the
+         per-app proxy's launcher query only answers with a handful of system packages.
+         The MAIN/LAUNCHER intent filter is the app picker's own scope — every app the
+         launcher can start. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:name=".AuroraApp"
         android:allowBackup="false"

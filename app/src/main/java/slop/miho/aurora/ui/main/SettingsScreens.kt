@@ -858,10 +858,10 @@ fun ConnectionScreen(
             {
                 ScreenLinkRow(
                     title = stringResource(R.string.per_app_title),
-                    supporting = if (connection.bypassedApps.isEmpty()) {
-                        stringResource(R.string.per_app_hint)
-                    } else {
-                        stringResource(R.string.per_app_count, connection.bypassedApps.size)
+                    supporting = when {
+                        !connection.perAppEnabled -> stringResource(R.string.per_app_disabled)
+                        connection.bypassedApps.isEmpty() -> stringResource(R.string.per_app_hint)
+                        else -> stringResource(R.string.per_app_count, connection.bypassedApps.size)
                     },
                     icon = R.drawable.ic_apps,
                     target = slop.miho.aurora.ui.perapp.PerAppProxyActivity::class.java,
