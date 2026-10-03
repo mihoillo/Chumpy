@@ -510,11 +510,11 @@ private fun SubscriptionCompactFace(
 }
 
 /**
- * The home-storage tile on its square backing — the card's tile; the list's rows wear
- * the round one.
+ * The subscription tile on its square backing — the database everywhere the collection
+ * itself shows, the home-storage mark where the card folds into its collapse button.
  */
 @Composable
-private fun DatabaseTile() {
+private fun DatabaseTile(iconRes: Int = R.drawable.ic_database) {
     val colors = MaterialTheme.colorScheme
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -524,7 +524,7 @@ private fun DatabaseTile() {
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                painter = painterResource(R.drawable.ic_database),
+                painter = painterResource(iconRes),
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
             )
@@ -593,9 +593,9 @@ private fun SubscriptionTitleRow(
 
 /**
  * The chooser's own face, the card the report card becomes while the list is open: the
- * same backing, carrying only the database tile at its full size, the call to action,
- * and the collapse button — the home-storage mark, the only place it appears: the
- * drawer of subscriptions folded back into its storage.
+ * same backing, carrying only the home-storage tile — the collapse button the card turns
+ * into — at the tile's full size, the call to action, and the arrow that folds the
+ * chooser back.
  */
 @Composable
 private fun SubscriptionChooserFace(
@@ -609,7 +609,7 @@ private fun SubscriptionChooserFace(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DatabaseTile()
+        DatabaseTile(iconRes = R.drawable.ic_home_storage)
         Text(
             text = stringResource(R.string.subscription_choose),
             style = MaterialTheme.typography.bodyLarge,
@@ -619,10 +619,12 @@ private fun SubscriptionChooserFace(
             modifier = Modifier.weight(1f),
         )
         Icon(
-            painter = painterResource(R.drawable.ic_home_storage),
+            painter = painterResource(R.drawable.ic_chevron_right),
             contentDescription = stringResource(R.string.subscription_collapse),
             tint = supportingColor,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier
+                .size(24.dp)
+                .graphicsLayer { rotationZ = 270f },
         )
     }
 }
