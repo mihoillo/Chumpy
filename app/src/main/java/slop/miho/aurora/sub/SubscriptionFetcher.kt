@@ -20,10 +20,12 @@ class SubscriptionFetcher(private val tunnelUp: () -> Boolean) {
         const val TAG = "Aurora/SubFetch"
 
         /**
-         * A deliberately chatty client UA: panels key their response format off it, and the
-         * generic-link format is what both keywords produce.
+         * A deliberately chatty client UA: panels key their response format off it. The
+         * v2rayNG keyword buys the generic link list, the plain name the raw-config
+         * body — both parsers handle those; sing-box/clash keywords would be answered
+         * with Clash YAML or sing-box JSON, so they stay out.
          */
-        const val USER_AGENT = "Aurora/1.0 (Android) sing-box/1.10 v2rayNG/1.10"
+        const val USER_AGENT = "Aurora/1.0 (Android) v2rayNG/1.10"
 
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 30_000

@@ -20,8 +20,10 @@ object SubscriptionParser {
         // The raw-config dialect first: a config's own DNS block carries "https://"
         // addresses, which would otherwise read as a link list and swallow the body —
         // checked on the decoded text so base64-wrapped configs land here too.
-        val configs = ConfigParser.parse(text)
-        if (configs != null) return configs.distinctBy { it.computeLinkKey() }
+        ConfigParser.parse(text)?.let { return it.distinctBy { it.computeLinkKey() } }
+        // Clash YAML next — panels serve it to Clash-flavoured clients and to anyone
+        // whose UA happens to carry a keyword they recognise.
+        ClashYamlParser.parse(text)?.let { return it.distinctBy { it.computeLinkKey() } }
         val profiles = text.lines().mapNotNull { line ->
             LinkParsers.parse(line).also { profile ->
                 if (profile == null && line.isNotBlank()) Log.d(TAG, "Unrecognized line: ${line.take(80)}")
