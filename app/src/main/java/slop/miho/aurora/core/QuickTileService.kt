@@ -95,11 +95,13 @@ class QuickTileService : TileService() {
         val up = XrayCore.currentStatus().state == TunnelState.UP
         tile.label = getString(R.string.app_name)
         // The server the tile's tap answers with, told under the label wherever the
-        // platform carries a subtitle at all — the picked profile, "unknown server" when
-        // the name went missing, nothing when there is no config to connect.
+        // platform carries a subtitle at all — the picked profile's name without its flag
+        // emoji, "unknown server" when the name went missing, nothing when there is no
+        // config to connect.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             tile.subtitle = if (hasConfig) {
-                CoreConfigFile.readProfileName(this) ?: getString(R.string.notif_profile_unknown)
+                CoreConfigFile.readProfileName(this)?.let(::stripFlag)
+                    ?: getString(R.string.notif_profile_unknown)
             } else {
                 null
             }

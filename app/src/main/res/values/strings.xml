@@ -189,11 +189,16 @@
     <!-- Notifications + tunnel errors (shown by the :core process) -->
     <string name="notif_channel_vpn">VPN connection</string>
     <string name="notif_channel_vpn_desc">The ongoing connection status</string>
-    <string name="notif_connected">Connected · %1$s</string>
+    <string name="notif_connected">Connected</string>
     <string name="notif_connecting">Connecting…</string>
     <string name="notif_disconnected">Disconnected</string>
     <string name="notif_profile_unknown">unknown server</string>
     <string name="notif_action_disconnect">Disconnect</string>
+    <string name="notif_separator">•</string>
+    <string name="notif_uptime_seconds">%1$ds</string>
+    <string name="notif_uptime_minutes">%1$dm</string>
+    <string name="notif_uptime_hours">%1$dh %2$dm</string>
+    <string name="notif_uptime_days">%1$dd %2$dh</string>
     <string name="error_no_config">No server selected</string>
     <string name="error_vpn_not_authorized">VPN permission was not granted</string>
     <string name="error_tun_creation">Couldn\'t create the VPN interface. Is another VPN set to always-on?</string>

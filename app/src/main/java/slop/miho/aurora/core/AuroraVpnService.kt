@@ -13,6 +13,14 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.StrictMode
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import slop.miho.aurora.MainActivity
 import slop.miho.aurora.R
 import java.util.concurrent.ExecutorService
@@ -94,6 +102,10 @@ class AuroraVpnService : VpnService() {
 
     private var tunInterface: ParcelFileDescriptor? = null
 
+    /** The uptime ticker's home; cancelled with the service. */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var uptimeTicker: Job? = null
+
     /** All VPN setup/teardown runs here; concurrent commands are collapsed by the lock. */
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "vpn-worker") }
     private val starting = AtomicBoolean(false)
@@ -130,6 +142,8 @@ class AuroraVpnService : VpnService() {
     override fun onDestroy() {
         super.onDestroy()
         closeTun()
+        stopUptimeTicker()
+        scope.cancel()
         cancelNotification()
     }
 
@@ -158,10 +172,12 @@ class AuroraVpnService : VpnService() {
                 }
                 XrayCore.publish(TunnelStatus(TunnelState.UP))
                 ensureForeground()
+                startUptimeTicker()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to bring the tunnel up", e)
                 XrayCore.stopLoop()
                 closeTun()
+                stopUptimeTicker()
                 XrayCore.publish(TunnelStatus(TunnelState.DOWN, describe(e)))
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -173,6 +189,7 @@ class AuroraVpnService : VpnService() {
 
     private fun stopVpn() {
         XrayCore.publish(TunnelStatus(TunnelState.DISCONNECTING))
+        stopUptimeTicker()
         worker.execute {
             try {
                 XrayCore.stopLoop()
@@ -245,14 +262,19 @@ class AuroraVpnService : VpnService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val status = XrayCore.currentStatus()
-        val profile = CoreConfigFile.readProfileName(this)
-        val text = when (status.state) {
-            TunnelState.UP -> getString(
-                R.string.notif_connected,
-                profile ?: getString(R.string.notif_profile_unknown),
-            )
+        val profile = CoreConfigFile.readProfileName(this)?.let(::stripFlag)
+            ?: getString(R.string.notif_profile_unknown)
+        // The state reads as the title — "Connected" — and the line under it names the
+        // server (its flag emoji left behind) with how long the tunnel has carried it.
+        val title = when (status.state) {
+            TunnelState.UP -> getString(R.string.notif_connected)
             TunnelState.CONNECTING -> getString(R.string.notif_connecting)
             else -> getString(R.string.notif_disconnected)
+        }
+        val text = when (status.state) {
+            TunnelState.UP -> profile + " " + getString(R.string.notif_separator) + " " +
+                formatUptime(System.currentTimeMillis() - XrayCore.upSince())
+            else -> profile
         }
         // The notification's own off switch: the same disconnect path the app and the QS
         // tile take, without opening anything.
@@ -270,7 +292,7 @@ class AuroraVpnService : VpnService() {
         }
         builder
             .setSmallIcon(R.drawable.ic_tile_on)
-            .setContentTitle(getString(R.string.app_name))
+            .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(intent)
             .setOngoing(true)
@@ -285,6 +307,48 @@ class AuroraVpnService : VpnService() {
             )
         }
         return builder.build()
+    }
+
+    /** The tunnel's age the notification carries beside the server: whole units only,
+     *  growing into the next shape as it passes each mark. */
+    private fun formatUptime(durationMillis: Long): String {
+        val minutes = durationMillis / 60_000
+        return when {
+            minutes < 1 -> getString(R.string.notif_uptime_seconds, durationMillis / 1_000)
+            minutes < 60 -> getString(R.string.notif_uptime_minutes, minutes)
+            minutes < 24 * 60 -> getString(
+                R.string.notif_uptime_hours,
+                minutes / 60,
+                minutes % 60,
+            )
+            else -> getString(
+                R.string.notif_uptime_days,
+                minutes / (24 * 60),
+                minutes / 60 % 24,
+            )
+        }
+    }
+
+    /**
+     * The uptime clock beside the server: once a minute, while the tunnel is up, the
+     * notification re-tells its line — silently, [android.app.Notification.Builder.setOnlyAlertOnce]
+     * keeps it from announcing itself again.
+     */
+    private fun startUptimeTicker() {
+        stopUptimeTicker()
+        uptimeTicker = scope.launch {
+            while (isActive) {
+                delay(60_000)
+                if (XrayCore.currentStatus().state != TunnelState.UP) break
+                getSystemService(NotificationManager::class.java)
+                    ?.notify(NOTIFICATION_ID, buildNotification())
+            }
+        }
+    }
+
+    private fun stopUptimeTicker() {
+        uptimeTicker?.cancel()
+        uptimeTicker = null
     }
 
     private fun cancelNotification() {

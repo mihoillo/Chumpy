@@ -47,3 +47,10 @@ object CoreConfigFile {
         }
     }
 }
+
+/** The profile name without its country flag: panels decorate their server names with
+ *  flag emoji, which reads as noise where the notification and the QS tile carry the
+ *  name beside a state of its own. */
+internal fun stripFlag(name: String): String = buildString {
+    for (ch in name) if (ch.code !in 0x1F1E6..0x1F1FF) append(ch)
+}.trim()
