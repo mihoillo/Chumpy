@@ -60,8 +60,9 @@
     <string name="subscription_delete_text">\"%1$s\" and all of its servers will be removed from Aurora.</string>
     <string name="subscription_delete_confirm">Delete</string>
 
-    <string name="happ_title">Happ spoof</string>
-    <string name="happ_active">Active</string>
+    <string name="happ_title">Spoof as Happ</string>
+    <string name="happ_active">Enabled</string>
+    <string name="happ_edit">Edit spoof strings</string>
     <string name="happ_app_version">App version</string>
     <string name="happ_os">OS</string>
     <string name="happ_os_version">OS version</string>

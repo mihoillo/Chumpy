@@ -1022,31 +1022,45 @@ fun ConnectionScreen(
                 )
             },
         )
-        // The Happ spoof's own block, between the carrying and the measuring: one row
-        // per setting — the toggle over the fingerprint's fields, every one of them on
-        // its own line — folded away while the spoof is off, the background refresh's
-        // own fold kept inside the one block. The regenerator rides the header's right
-        // end, between the texts and the toggle: a new identity is a deliberate tap,
-        // awake only while the fingerprint rides.
+        // The Happ spoof's own block, between the carrying and the measuring. The header
+        // carries two rows: the toggle ("Spoof as Happ", Enabled/Disabled) and the
+        // strings' doorway beneath it — "Edit spoof strings" with the background
+        // refresh's own triangle — so a working spoof sits compact, two rows tall, and
+        // the fingerprint's seven fields ride folded behind the doorway, one row each,
+        // editable whatever the toggle says. Enabling the spoof closes the fold: the
+        // identity is set, the block goes quiet. The regenerator leads the fold's list,
+        // a fresh identity one deliberate tap above the strings it rewrites.
+        var happOpen by rememberSaveable { mutableStateOf(false) }
         FoldingGroup(
-            expanded = settings.happSpoof,
+            expanded = happOpen,
             header = {
-                HappToggleRow(
-                    checked = settings.happSpoof,
-                    onToggle = { enabled ->
-                        onChangeSettings { it.copy(happSpoof = enabled) }
-                    },
-                    onRegenerate = {
-                        onChangeSettings {
-                            it.copy(
-                                happUserId = slop.miho.aurora.sub.HappSpoof.randomUserId(),
-                                happHwid = slop.miho.aurora.sub.HappSpoof.randomHwid(),
-                            )
-                        }
-                    },
-                )
+                Column {
+                    HappToggleRow(
+                        checked = settings.happSpoof,
+                        onToggle = { enabled ->
+                            onChangeSettings { it.copy(happSpoof = enabled) }
+                            if (enabled) happOpen = false
+                        },
+                    )
+                    EditSpoofStringsRow(
+                        expanded = happOpen,
+                        onToggle = { happOpen = !happOpen },
+                    )
+                }
             },
             rows = listOf(
+                {
+                    HappRegenerateRow(
+                        onRegenerate = {
+                            onChangeSettings {
+                                it.copy(
+                                    happUserId = slop.miho.aurora.sub.HappSpoof.randomUserId(),
+                                    happHwid = slop.miho.aurora.sub.HappSpoof.randomHwid(),
+                                )
+                            }
+                        },
+                    )
+                },
                 {
                     HappFieldRow(
                         label = stringResource(R.string.happ_app_version),
@@ -1446,36 +1460,23 @@ private fun FoldingGroup(
 }
 
 /**
- * The block's header: a toggle row with the regenerator tucked into its right end,
- * between the texts and the toggle. The tap anywhere toggles the spoof — the rows under
- * the header fold and unfold with it; the regenerator is its own press, the delay test
- * URL's sleeping pencil's narrow twin only awake, bouncing with every tap that hands the
- * panel a fresh identity. It sleeps while the spoof is off — same place, same art, gone
- * quiet — because a new identity is only ever worth asking for while the fingerprint
- * rides.
+ * The block's header row, plain: the title over the status word, the toggle tile at
+ * the end. The tap anywhere toggles the spoof — the strings live under their own fold
+ * below, behind the edit row, so the toggle and the editing never get in each other's
+ * way.
  */
 @Composable
 private fun HappToggleRow(
     checked: Boolean,
     onToggle: (Boolean) -> Unit,
-    onRegenerate: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val regenSource = remember { MutableInteractionSource() }
-    val regenPressed by regenSource.collectIsPressedAsState()
     val poke = rememberHapticPoke()
-    // Bumped in the click handlers: the pop keys off them, so they fire on every click.
+    // Bumped in the click handler: the pop keys off it, so it fires on every click.
     var taps by remember { mutableIntStateOf(0) }
-    var regenTaps by remember { mutableIntStateOf(0) }
-    val regenAlpha by animateFloatAsState(
-        targetValue = if (checked) 1f else 0.45f,
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "happ regenerate alpha",
-    )
-    val regenLabel = stringResource(R.string.happ_regenerate)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1512,42 +1513,112 @@ private fun HappToggleRow(
                 )
             }
         }
-        // The trailing pair: the regenerator tucked against the toggle, the two of
-        // them one cluster at the row's end — 8 between, the screen link's own
-        // tile-and-triangle distance.
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = colors.secondaryContainer,
-                contentColor = colors.onSecondaryContainer,
-                modifier = Modifier
-                    .size(width = 36.dp, height = 48.dp)
-                    .pressBounce(regenPressed, regenTaps)
-                    .combinedClickable(
-                        enabled = checked,
-                        interactionSource = regenSource,
-                        indication = LocalIndication.current,
-                        role = Role.Button,
-                    ) {
-                        poke()
-                        regenTaps++
-                        onRegenerate()
-                    }
-                    .semantics { contentDescription = regenLabel }
-                    .graphicsLayer { alpha = regenAlpha },
+        ToggleIconTile(icon = R.drawable.ic_device, checked = checked, pressed = pressed, taps = taps)
+    }
+}
+
+/**
+ * The strings' doorway, the background refresh row's own twin only one line tall:
+ * "Edit spoof strings", and the triangle pointing down while the fold is closed,
+ * flipping over to point up as it opens. The tap unrolls the fingerprint's fields —
+ * and the regenerator above them — whatever the toggle says.
+ */
+@Composable
+private fun EditSpoofStringsRow(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val poke = rememberHapticPoke()
+    // Bumped in the click handler: the pop keys off it, so it fires on every click —
+    // the press state alone can go unnoticed on a quick tap.
+    var taps by remember { mutableIntStateOf(0) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_renew),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
+                poke()
+                taps++
+                onToggle()
             }
-            ToggleIconTile(icon = R.drawable.ic_device, checked = checked, pressed = pressed, taps = taps)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.happ_edit),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        // The triangle bounces alone when tapped.
+        Box(
+            modifier = Modifier.pressBounce(pressed, taps),
+        ) {
+            FlipTriangleTile(pressed = pressed, expanded = expanded)
+        }
+    }
+}
+
+/**
+ * The regenerator, the fold's first row: a fresh identity is a deliberate tap — the
+ * round tile the header's old cluster wore, now leading a row of its own over the
+ * strings it rewrites. Awake whatever the toggle says: new strings are worth picking
+ * before the spoof ever rides.
+ */
+@Composable
+private fun HappRegenerateRow(
+    onRegenerate: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val regenSource = remember { MutableInteractionSource() }
+    val regenPressed by regenSource.collectIsPressedAsState()
+    val poke = rememberHapticPoke()
+    // Bumped in the click handler: the pop keys off it, so it fires on every click.
+    var regenTaps by remember { mutableIntStateOf(0) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                interactionSource = regenSource,
+                indication = LocalIndication.current,
+                role = Role.Button,
+            ) {
+                poke()
+                regenTaps++
+                onRegenerate()
+            }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.happ_regenerate),
+            style = MaterialTheme.typography.bodyLarge,
+            color = colors.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        // The tile the header's trailing pair wore, trailing still: the round one,
+        // its renew mark centered.
+        Surface(
+            shape = CircleShape,
+            color = colors.secondaryContainer,
+            contentColor = colors.onSecondaryContainer,
+            modifier = Modifier
+                .size(width = 36.dp, height = 48.dp)
+                .pressBounce(regenPressed, regenTaps),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_renew),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
     }
 }
