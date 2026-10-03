@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
@@ -47,7 +48,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,7 +68,6 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -87,6 +86,7 @@ import slop.miho.aurora.ui.components.EmojiFlag
 import slop.miho.aurora.ui.components.ErrorCard
 import slop.miho.aurora.ui.components.InfoChip
 import slop.miho.aurora.ui.components.PrideFlagIcon
+import slop.miho.aurora.ui.components.SubmitFieldRow
 import slop.miho.aurora.ui.components.splitLeadingFlag
 import slop.miho.aurora.ui.components.splitLeadingPrideFlag
 import slop.miho.aurora.ui.components.rememberHapticDeniedKicks
@@ -125,8 +125,11 @@ fun ServersScreen(
     // from an unfolded card still has its list waiting behind it.
     var dropdownOpen by rememberSaveable { mutableStateOf(false) }
 
+    // The add row's own open face and its text, riding the same survival law.
+    var addOpen by rememberSaveable { mutableStateOf(false) }
+    var addUrl by rememberSaveable { mutableStateOf("") }
+
     // One dialog at a time.
-    var addOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<SubscriptionEntity?>(null) }
 
     // Rows sit under the floating bar while the list outgrows the screen.
@@ -208,11 +211,15 @@ fun ServersScreen(
                             SubscriptionDropdown(
                                 subscriptions = subscriptions,
                                 selectedId = selectedSubscription?.id,
+                                addOpen = addOpen,
+                                addUrl = addUrl,
+                                onAddOpenChange = { addOpen = it },
+                                onAddUrlChange = { addUrl = it },
+                                onAdd = { url, onDone -> onAddSubscription(url, null, onDone) },
                                 onSelect = { id ->
                                     dropdownOpen = false
                                     if (id != selectedSubscription?.id) onSelectSubscription(id)
                                 },
-                                onAdd = { addOpen = true },
                                 onDeleteRequest = { deleteTarget = it },
                             )
                         }
@@ -231,16 +238,6 @@ fun ServersScreen(
                 }
             }
         }
-    }
-
-    if (addOpen) {
-        AddSubscriptionDialog(
-            onConfirm = { url, name ->
-                addOpen = false
-                onAddSubscription(url, name) { }
-            },
-            onDismiss = { addOpen = false },
-        )
     }
 
     deleteTarget?.let { subscription ->
@@ -702,8 +699,12 @@ private fun UpdateButton(
 private fun SubscriptionDropdown(
     subscriptions: List<SubscriptionEntity>,
     selectedId: String?,
+    addOpen: Boolean,
+    addUrl: String,
+    onAddOpenChange: (Boolean) -> Unit,
+    onAddUrlChange: (String) -> Unit,
+    onAdd: (url: String, onDone: (String?) -> Unit) -> Unit,
     onSelect: (String) -> Unit,
-    onAdd: () -> Unit,
     onDeleteRequest: (SubscriptionEntity) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -734,7 +735,11 @@ private fun SubscriptionDropdown(
             )
         }
         AddSubscriptionRow(
-            onClick = onAdd,
+            open = addOpen,
+            url = addUrl,
+            onOpenChange = onAddOpenChange,
+            onUrlChange = onAddUrlChange,
+            onAdd = onAdd,
             shape = RoundedCornerShape(
                 topStart = if (subscriptions.isEmpty()) outer.topStart else inner.topStart,
                 topEnd = if (subscriptions.isEmpty()) outer.topEnd else inner.topEnd,
@@ -747,58 +752,140 @@ private fun SubscriptionDropdown(
 }
 
 /**
- * The add row, the list's standing invitation: the row's own anatomy — the [Surface]
- * подложка with the segmented shape, the square 40dp tile the card's database tile
- * wears in miniature — pinned to 72dp so the tile and the label sit dead center with
- * the same 16dp breathing room above and below, matching the report rows' height.
+ * The add row, the list's standing invitation — and, tapped, its own working face: the
+ * card's face swap laid sideways, the invitation riding out to the right while the
+ * welcome screen's field steps in from the left, the invitation's own tile staying at
+ * its post as the way back. Submitting folds the face back with the field cleared; a
+ * failure leaves it open, the URL kept for another try.
  */
 @Composable
 private fun AddSubscriptionRow(
-    onClick: () -> Unit,
+    open: Boolean,
+    url: String,
+    onOpenChange: (Boolean) -> Unit,
+    onUrlChange: (String) -> Unit,
+    onAdd: (url: String, onDone: (String?) -> Unit) -> Unit,
     shape: Shape,
     color: Color,
 ) {
     val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
     Surface(
-        onClick = {
-            poke()
-            onClick()
-        },
         shape = shape,
         color = color,
         contentColor = colors.onSurface,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 72.dp)
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = colors.secondaryContainer,
-                contentColor = colors.onSecondaryContainer,
-                modifier = Modifier.size(40.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_add),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
+        AnimatedContent(
+            targetState = open,
+            transitionSpec = {
+                // The card's own face swap laid sideways: opening, the invitation rides
+                // out to the right while the field steps in from the left; closing, the
+                // field retracts and the invitation comes back. The height rides along,
+                // unclipped while it goes.
+                val direction = if (targetState) 1 else -1
+                ContentTransform(
+                    targetContentEnter = slideInHorizontally(motion.defaultSpatialSpec()) {
+                        -direction * it / 2
+                    } + fadeIn(motion.defaultEffectsSpec()),
+                    initialContentExit = slideOutHorizontally(motion.defaultSpatialSpec()) {
+                        direction * it / 2
+                    } + fadeOut(motion.defaultEffectsSpec()),
+                    sizeTransform = SizeTransform(clip = false),
+                )
+            },
+            label = "add subscription row",
+        ) { expanded ->
+            if (expanded) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp)
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // The way back: the invitation's own tile at its own post, the plus
+                    // traded for the back arrow.
+                    Surface(
+                        onClick = {
+                            poke()
+                            onOpenChange(false)
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = colors.secondaryContainer,
+                        contentColor = colors.onSecondaryContainer,
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_arrow_back),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
+                    }
+                    SubmitFieldRow(
+                        value = url,
+                        onValueChange = onUrlChange,
+                        onSubmit = {
+                            onAdd(url.trim()) { error ->
+                                if (error == null) {
+                                    onUrlChange("")
+                                    onOpenChange(false)
+                                }
+                            }
+                        },
+                        autofocus = true,
+                        modifier = Modifier.weight(1f),
                     )
                 }
+            } else {
+                // The invitation's closed face: its own transparent Surface carries the
+                // click so the ripple keeps the row's segmented shape.
+                Surface(
+                    onClick = {
+                        poke()
+                        onOpenChange(true)
+                    },
+                    shape = shape,
+                    color = Color.Transparent,
+                    contentColor = colors.onSurface,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 72.dp)
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = colors.secondaryContainer,
+                            contentColor = colors.onSecondaryContainer,
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_add),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        }
+                        Text(
+                            text = stringResource(R.string.subscription_add),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = colors.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
-            Text(
-                text = stringResource(R.string.subscription_add),
-                style = MaterialTheme.typography.bodyLarge,
-                color = colors.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }
@@ -1467,57 +1554,6 @@ private fun protocolLabel(profile: ProfileEntity): String? = when (profile.type)
     slop.miho.aurora.db.ProfileType.SOCKS -> "socks"
     slop.miho.aurora.db.ProfileType.WIREGUARD -> "wireguard"
     slop.miho.aurora.db.ProfileType.HYSTERIA2 -> "hysteria2"
-}
-
-/**
- * The creation dialog: an MD3 AlertDialog with the URL and an optional name. "Add" answers
- * only once the URL field holds something.
- */
-@Composable
-private fun AddSubscriptionDialog(
-    onConfirm: (url: String, name: String?) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var url by remember { mutableStateOf("") }
-    var name by remember { mutableStateOf("") }
-    val clipboard = LocalClipboardManager.current
-    LaunchedEffect(Unit) {
-        // A subscription URL already on the clipboard is usually the one being added.
-        clipboard.getText()?.text?.trim()?.takeIf { it.startsWith("http") }?.let { url = it }
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.subscription_add)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = url,
-                    onValueChange = { url = it },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.subscription_url_field)) },
-                )
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.subscription_name_field)) },
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(url.trim(), name.trim().takeIf { it.isNotEmpty() }) },
-                enabled = url.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.subscription_add_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.subscription_cancel))
-            }
-        },
-    )
 }
 
 /**
