@@ -354,10 +354,11 @@ private fun AppsPage(
 
 /**
  * The networks page: the trusted networks' master switch, then the Wi-Fi names the OS
- * tells us — the one the device sits on and the saved ones — plus whatever was added by
- * hand. Android only shares names with apps that have location access; without the grant
- * the page still works, the hand-added networks and the permission's own card standing
- * in for the list.
+ * tells us — the one the device sits on first, then everything the radio's last scan
+ * saw, the saved networks among them — plus whatever was added by hand. Android only
+ * shares names with apps that have location access; without the grant the page still
+ * works, the hand-added networks and the permission's own card standing in for the
+ * list.
  */
 @Composable
 private fun NetworksPage(
@@ -868,7 +869,13 @@ private fun installedApps(context: Context): List<AppEntry> {
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
 }
 
-/** The Wi-Fi names the OS tells us: the one we sit on, then the saved ones. */
+/**
+ * The Wi-Fi names the OS tells us: the one we sit on, then everything the radio knows —
+ * the saved networks among them. With targetSdk 33+ Android stopped sharing the saved
+ * list itself (it names only the app's own), so the last scan stands in for it: the
+ * cached results name every network in range, saved ones included. Needs the location
+ * permission, or every name reads as unknown.
+ */
 private fun knownNetworks(context: Context): List<NetworkEntry> = try {
     val wifi = context.getSystemService(WifiManager::class.java) ?: return emptyList()
     @Suppress("DEPRECATION")
@@ -878,8 +885,16 @@ private fun knownNetworks(context: Context): List<NetworkEntry> = try {
     @Suppress("DEPRECATION")
     val saved = wifi.configuredNetworks.orEmpty()
         .mapNotNull { network -> network.SSID?.removeSurrounding("\"") }
-        .filter { ssid -> ssid.isNotEmpty() && ssid != "<unknown ssid>" }
-    (listOfNotNull(current) + saved).distinct().map { ssid ->
+    // The radio's own last scan — no startScan() needed (it's throttled to nothing
+    // anyway); the OS scans on its own and hands the cache to anyone with the location
+    // permission. Hidden networks broadcast no name and stay out.
+    val scanned = wifi.scanResults.orEmpty()
+        .map { it.SSID.orEmpty() }
+    val others = (saved + scanned)
+        .filter { ssid -> ssid.isNotEmpty() && ssid != "<unknown ssid>" && ssid != current }
+        .distinct()
+        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
+    (listOfNotNull(current) + others).map { ssid ->
         NetworkEntry(ssid = ssid, current = ssid == current)
     }
 } catch (e: Exception) {
