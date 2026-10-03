@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -67,7 +68,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -1387,8 +1387,8 @@ private fun IconVariantRow(
  * One variant's preview: a 48dp circle carrying the real icon — background color, art
  * color, exactly what the launcher will show. The art is the monochrome mask (an alpha
  * drawing), tinted per variant; the hairline outline keeps the white-on-white and
- * surface-on-surface variants from dissolving into the card. The selected preview wears
- * the check, the swatches' language.
+ * surface-on-surface variants from dissolving into the card. The selected preview's
+ * hairline grows into the accent's own ring, the swatches' language.
  */
 @Composable
 private fun IconPreviewButton(
@@ -1397,6 +1397,7 @@ private fun IconPreviewButton(
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
     val sky = Color(0xFF6FACED)
     val (background, art) = when (variant) {
         IconVariant.AURORA -> Color.White to sky
@@ -1416,13 +1417,24 @@ private fun IconPreviewButton(
     val poke = rememberHapticPoke()
     // Bumped in the click handler: the pop keys off it, so it fires on every click.
     var taps by remember { mutableIntStateOf(0) }
+    // The pick's mark: the hairline grows into the accent's ring, the color riding along.
+    val ringColor by animateColorAsState(
+        targetValue = if (selected) colors.primary else colors.outlineVariant,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "icon preview ring color",
+    )
+    val ringWidth by animateDpAsState(
+        targetValue = if (selected) 3.dp else 1.dp,
+        animationSpec = motion.defaultSpatialSpec(),
+        label = "icon preview ring width",
+    )
     Box(
         modifier = Modifier
             .size(48.dp)
             .pressBounce(pressed, taps)
             .clip(CircleShape)
             .background(background)
-            .border(1.dp, colors.outlineVariant, CircleShape)
+            .border(ringWidth, ringColor, CircleShape)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -1450,13 +1462,5 @@ private fun IconPreviewButton(
             contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize(),
         )
-        if (selected) {
-            Icon(
-                painter = painterResource(R.drawable.ic_check),
-                contentDescription = null,
-                tint = if (art.luminance() > 0.5f) Color.Black else Color.White,
-                modifier = Modifier.size(24.dp),
-            )
-        }
     }
 }

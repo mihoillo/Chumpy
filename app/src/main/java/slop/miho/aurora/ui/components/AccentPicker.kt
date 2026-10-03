@@ -1,6 +1,7 @@
 package slop.miho.aurora.ui.components
 
 import android.os.Build
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,7 +22,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.dynamicLightColorScheme
@@ -36,7 +36,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -172,8 +171,9 @@ fun SwatchDivider() {
 }
 
 /**
- * A round color swatch; the selected one carries a check in a contrasting tint. Pressing
- * squashes it like the square buttons, with the same light poke.
+ * A round color swatch; the selected one wears the accent's own ring, grown around its
+ * rim — no check over the color, the pick stays plain to see. Pressing squashes it like
+ * the square buttons, with the same light poke.
  */
 @Composable
 private fun Swatch(
@@ -189,12 +189,20 @@ private fun Swatch(
     // Bumped in the click handler: the pop keys off it, so it fires on every click — the
     // press state alone can go unnoticed on a quick tap.
     var taps by remember { mutableIntStateOf(0) }
+    // The pick's mark: the accent's ring, grown from nothing so it reads as arriving.
+    val motion = MaterialTheme.motionScheme
+    val ringWidth by animateDpAsState(
+        targetValue = if (selected) 3.dp else 0.dp,
+        animationSpec = motion.defaultSpatialSpec(),
+        label = "swatch ring width",
+    )
     Box(
         modifier = Modifier
             .size(48.dp)
             .pressBounce(pressed, taps)
             .clip(CircleShape)
             .background(color)
+            .border(ringWidth, MaterialTheme.colorScheme.primary, CircleShape)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -211,17 +219,7 @@ private fun Swatch(
                 onClick()
             }
             .semantics { contentDescription = label },
-        contentAlignment = Alignment.Center,
-    ) {
-        if (selected) {
-            Icon(
-                painter = painterResource(R.drawable.ic_check),
-                contentDescription = null,
-                tint = if (color.luminance() > 0.5f) Color.Black else Color.White,
-                modifier = Modifier.size(24.dp),
-            )
-        }
-    }
+    )
 }
 
 /** The outline circle standing in for a wallpaper seed that isn't there (yet). */
