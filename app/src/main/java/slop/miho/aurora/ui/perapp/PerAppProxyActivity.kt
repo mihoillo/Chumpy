@@ -354,11 +354,10 @@ private fun AppsPage(
 
 /**
  * The networks page: the trusted networks' master switch, then the Wi-Fi names the OS
- * tells us — the one the device sits on first, then everything the radio's last scan
- * saw, the saved networks among them — plus whatever was added by hand. Android only
- * shares names with apps that have location access; without the grant the page still
- * works, the hand-added networks and the permission's own card standing in for the
- * list.
+ * tells us — the one the device sits on, plus whatever was added by hand; Android
+ * stopped sharing the saved list itself back at 10, so those two are the whole set.
+ * Names need location access; without the grant the page still works, the hand-added
+ * networks and the permission's own card standing in for the list.
  */
 @Composable
 private fun NetworksPage(
@@ -434,8 +433,6 @@ private fun NetworksPage(
                 }
                 item(key = "permission gap") { Spacer(modifier = Modifier.height(12.dp)) }
             }
-            item(key = "add network") { AddNetworkRow(onClick = { pendingAdd = true }) }
-            item(key = "add gap") { Spacer(modifier = Modifier.height(12.dp)) }
             itemsIndexed(selected, key = { _, entry -> entry.ssid }) { index, entry ->
                 SelectableRow(
                     headline = entry.ssid,
@@ -445,11 +442,7 @@ private fun NetworksPage(
                     onToggle = { onToggle(entry.ssid) },
                     shape = sectionShape(index, selected.lastIndex, outer, inner),
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_wifi),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
+                    NetworkTile(bypassed = entry.ssid in trusted, active = enabled)
                 }
             }
             if (selected.isNotEmpty() && rest.isNotEmpty()) {
@@ -464,13 +457,15 @@ private fun NetworksPage(
                     onToggle = { onToggle(entry.ssid) },
                     shape = sectionShape(index, rest.lastIndex, outer, inner),
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_wifi),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
+                    NetworkTile(bypassed = entry.ssid in trusted, active = enabled)
                 }
             }
+            // The hand-add sits at the very end: everything pickable first, the way in
+            // below it all.
+            if (!locationGranted || selected.isNotEmpty() || rest.isNotEmpty()) {
+                item(key = "add gap") { Spacer(modifier = Modifier.height(12.dp)) }
+            }
+            item(key = "add network") { AddNetworkRow(onClick = { pendingAdd = true }) }
         }
     }
 
@@ -769,7 +764,53 @@ private fun PermissionCard(onGrant: () -> Unit) {
     }
 }
 
-/** The hand-add row: the network's name typed in, trusted on confirm. */
+/**
+ * The network's own tile, the server row's leading square: the mark on a 40dp tonal
+ * container — the accent while trusted, the secondary otherwise, dimmed with the rest
+ * while the master switch is off.
+ */
+@Composable
+private fun NetworkTile(bypassed: Boolean, active: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val container by animateColorAsState(
+        targetValue = when {
+            !active -> colors.secondaryContainer.copy(alpha = 0.38f)
+            bypassed -> colors.primary
+            else -> colors.secondaryContainer
+        },
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "network tile container",
+    )
+    val content by animateColorAsState(
+        targetValue = when {
+            !active -> colors.onSecondaryContainer.copy(alpha = 0.38f)
+            bypassed -> colors.onPrimary
+            else -> colors.onSecondaryContainer
+        },
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "network tile content",
+    )
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = container,
+        contentColor = content,
+        modifier = Modifier.size(40.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(R.drawable.ic_wifi),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The hand-add row, the list's last block: the plus on the network tile's own square,
+ * the network's name typed in on confirm — trusted straight away.
+ */
 @Composable
 private fun AddNetworkRow(onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
@@ -789,12 +830,20 @@ private fun AddNetworkRow(onClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_add),
-                contentDescription = null,
-                tint = colors.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-            )
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = colors.secondaryContainer,
+                contentColor = colors.onSecondaryContainer,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_add),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
             Text(
                 text = stringResource(R.string.trusted_add),
                 style = MaterialTheme.typography.bodyLarge,
@@ -870,33 +919,20 @@ private fun installedApps(context: Context): List<AppEntry> {
 }
 
 /**
- * The Wi-Fi names the OS tells us: the one we sit on, then everything the radio knows —
- * the saved networks among them. With targetSdk 33+ Android stopped sharing the saved
- * list itself (it names only the app's own), so the last scan stands in for it: the
- * cached results name every network in range, saved ones included. Needs the location
- * permission, or every name reads as unknown.
+ * The Wi-Fi the device sits on, by name — the only network the OS names for a modern
+ * app: the saved list went away with Android 10 (getConfiguredNetworks answers any
+ * targetSdk 29+ app with an empty list, forever), and the scan names whatever happens
+ * to be in range, saved or not. The current network plus the hand-added ones are the
+ * whole pickable set. Needs the location permission, or the name reads as unknown.
  */
 private fun knownNetworks(context: Context): List<NetworkEntry> = try {
-    val wifi = context.getSystemService(WifiManager::class.java) ?: return emptyList()
     @Suppress("DEPRECATION")
-    val current = wifi.connectionInfo.ssid
+    val current = context.getSystemService(WifiManager::class.java)
+        ?.connectionInfo
+        ?.ssid
         ?.removeSurrounding("\"")
         ?.takeIf { ssid -> ssid.isNotEmpty() && ssid != "<unknown ssid>" }
-    @Suppress("DEPRECATION")
-    val saved = wifi.configuredNetworks.orEmpty()
-        .mapNotNull { network -> network.SSID?.removeSurrounding("\"") }
-    // The radio's own last scan — no startScan() needed (it's throttled to nothing
-    // anyway); the OS scans on its own and hands the cache to anyone with the location
-    // permission. Hidden networks broadcast no name and stay out.
-    val scanned = wifi.scanResults.orEmpty()
-        .map { it.SSID.orEmpty() }
-    val others = (saved + scanned)
-        .filter { ssid -> ssid.isNotEmpty() && ssid != "<unknown ssid>" && ssid != current }
-        .distinct()
-        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
-    (listOfNotNull(current) + others).map { ssid ->
-        NetworkEntry(ssid = ssid, current = ssid == current)
-    }
+    listOfNotNull(current).map { ssid -> NetworkEntry(ssid = ssid, current = true) }
 } catch (e: Exception) {
     // A missing permission or an OS that won't share reads as no networks at all.
     emptyList()
