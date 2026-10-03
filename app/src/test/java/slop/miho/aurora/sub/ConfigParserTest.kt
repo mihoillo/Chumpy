@@ -314,10 +314,9 @@ class ConfigParserTest {
         println("BALANCERS: " + balancers.map { "${it.remarks} -> ${it.balancerStrategy}, members=${it.balancerMemberKeys.size}" })
         val servers = parsed.filter { it.type != ProfileType.BALANCER }
         println("SERVERS: " + servers.size + " " + servers.map { it.remarks })
-        // The store stamps linkKeys the way the repository does; the screen hides members.
-        val stamped = servers.mapIndexed { i, p -> p.copy(linkKey = p.computeLinkKey(), order = i.toLong()) }
-        val balancerRows = balancers.mapIndexed { i, p -> p.copy(linkKey = p.computeLinkKey(), order = i.toLong()) }
-        val all = balancerRows + stamped
+        // The store stamps linkKeys the way the repository does — one pass, the parse's
+        // own order kept — and the screen hides members.
+        val all = parsed.mapIndexed { i, p -> p.copy(linkKey = p.computeLinkKey(), order = i.toLong()) }
         val memberKeys = all.asSequence().filter { it.type == ProfileType.BALANCER }
             .flatMap { it.balancerMemberKeys.asSequence() }.toSet()
         val visible = all.filter { it.type == ProfileType.BALANCER || it.linkKey !in memberKeys }
@@ -327,6 +326,14 @@ class ConfigParserTest {
         assertEquals(2, balancers.size)
         assertEquals(7, visible.filter { it.type != ProfileType.BALANCER }.size)
         assertTrue(visible.none { it.remarks.startsWith("wl") })
+        // The list runs in the panel's own order: the seven singles as the configs
+        // come, then the balancers where their configs stand (WL-2, WL-3) — not the
+        // balancers leading.
+        assertEquals(
+            listOf("🇪🇪WL-2", "🇫🇮 WL-3"),
+            visible.takeLast(2).map { it.remarks },
+        )
+        assertTrue(visible.first().remarks.contains("Эстония"))
     }
 
 }

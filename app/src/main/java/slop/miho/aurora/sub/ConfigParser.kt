@@ -76,30 +76,29 @@ object ConfigParser {
             )
         }
 
-        val singles = bundles
-            .filter { it.entries.size == 1 }
-            .map { bundle ->
-                // One proxy per config: the panel's own page for that server, its
-                // "remarks" the name the user picked for it.
+        // The list runs in the panel's own order — the configs as they come, one entry
+        // each: a single config hands its named server over right where it stands, an
+        // aggregator's balancers stand where the config stands with its members riding
+        // behind them (hidden in the servers list, kept in the store). A server the
+        // panel names twice — once alone, once inside an aggregator — keeps its first
+        // place and its first name.
+        val seen = HashSet<String>()
+        val seenBalancers = HashSet<String>()
+        val profiles = ArrayList<ProfileEntity>()
+        for (bundle in bundles) {
+            if (bundle.entries.size == 1) {
                 val (tag, profile) = bundle.entries.first()
-                profile.copy(remarks = bundle.prefix.ifEmpty { tag })
+                val named = profile.copy(remarks = bundle.prefix.ifEmpty { tag })
+                if (seen.add(named.computeLinkKey())) profiles.add(named)
+            } else if (bundle.entries.size > 1) {
+                for (balancer in balancersOf(bundle)) {
+                    if (seenBalancers.add(balancer.computeLinkKey())) profiles.add(balancer)
+                }
+                for ((_, profile) in bundle.entries) {
+                    if (seen.add(profile.computeLinkKey())) profiles.add(profile)
+                }
             }
-        val aggregators = bundles.filter { it.entries.size > 1 }
-
-        // Aggregators only add servers the individual configs never named; their own
-        // tags carry the name there.
-        val seen = singles.mapTo(HashSet()) { it.computeLinkKey() }
-        val fromGroups = aggregators
-            .flatMap { it.entries }
-            .map { it.second }
-            .filter { seen.add(it.computeLinkKey()) }
-
-        val servers = (singles + fromGroups).distinctBy { it.computeLinkKey() }
-
-        // The balancers lead the list: a balancer is the panel's own pick-over-servers,
-        // so it stands above them — one entry to tap instead of N to choose between.
-        val balancers = bundles.flatMap(::balancersOf).distinctBy { it.computeLinkKey() }
-        val profiles = balancers + servers
+        }
         return if (profiles.isEmpty()) null else profiles
     }
 

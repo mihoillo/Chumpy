@@ -1030,11 +1030,12 @@ private fun SubscriptionRow(
 /**
  * What the panel reports about a subscription, on the card: the bars come first, right
  * after the header, running to the column's end — the quota's drain and the days' —
- * then their numbers on one line, the traffic eaten under them. The eaten traffic is
- * hiddify's "used / total"; panels that keep the quota to themselves (total=0, the
- * common unlimited case) still get their used bytes counted out. [textInset] keeps the
- * numbers clear of whatever anchors at the foot (the card's chevron) without pulling
- * the bars short.
+ * then the quota's own numbers on one line (the share left, the traffic eaten — the
+ * subscription list's rows keep their own tighter trade), the days under them. The
+ * eaten traffic is hiddify's "used / total"; panels that keep the quota to themselves
+ * (total=0, the common unlimited case) still get their used bytes counted out.
+ * [textInset] keeps the numbers clear of whatever anchors at the foot (the card's
+ * chevron) without pulling the bars short.
  */
 @Composable
 private fun SubscriptionInfo(
@@ -1075,6 +1076,8 @@ private fun SubscriptionInfo(
             verticalArrangement = Arrangement.spacedBy(2.dp),
             modifier = Modifier.padding(end = textInset),
         ) {
+            // The quota's own report on one line: the share left and the share eaten,
+            // side by side — one reading, not a number here and its arithmetic under it.
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (subscription.totalBytes > 0) {
                     val ratio = (((subscription.totalBytes - used).coerceAtLeast(0L)).toFloat() /
@@ -1088,20 +1091,23 @@ private fun SubscriptionInfo(
                         modifier = Modifier.weight(1f),
                     )
                 }
-                days?.let {
+                consumed?.let {
                     Text(
                         text = it,
                         style = MaterialTheme.typography.bodyMedium,
                         color = supportingColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                        modifier = if (subscription.totalBytes > 0) {
+                            Modifier.weight(1f)
+                        } else {
+                            Modifier.fillMaxWidth()
+                        },
                     )
                 }
             }
-            // The traffic eaten over the limit, tight under the days' number — the line
-            // reads as one report, not two.
-            consumed?.let {
+            // The days read under the quota's line, on their own — time is the other axis.
+            days?.let {
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,

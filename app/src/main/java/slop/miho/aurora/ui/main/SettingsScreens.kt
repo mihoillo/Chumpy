@@ -110,6 +110,9 @@ import slop.miho.aurora.ui.components.RainbowFlag
 import slop.miho.aurora.ui.components.pressBounce
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.fonts.FontPickerRow
+import slop.miho.aurora.ui.theme.backdropScheme
+import slop.miho.aurora.ui.wallpapers.LocalBackdropDark
+import slop.miho.aurora.ui.wallpapers.LocalHasWallpaper
 import slop.miho.aurora.ui.wallpapers.ReportBarCoverage
 import slop.miho.aurora.ui.wallpapers.WallpaperActivity
 import slop.miho.aurora.ui.wallpapers.withSurfaceOpacity
@@ -1674,6 +1677,32 @@ fun AboutScreen(
     }
     val contentReachesBar by rememberContentUnderBar(scrollState)
     ReportBarCoverage(contentUnderBar, underlaid = contentReachesBar)
+    // The hero lies bare on the wallpaper, and the wallpaper owes it nothing: the mark,
+    // the name, the tagline recolor by the dimmed picture's own light — too dark behind
+    // and the text turns light, too bright and it turns dark, the backdrop scheme's own
+    // roles either way, the swap riding the house's color clock. With no picture the
+    // theme carries them, as it always has.
+    val heroScheme = if (LocalHasWallpaper.current) {
+        backdropScheme(darkTheme = LocalBackdropDark.current)
+    } else {
+        MaterialTheme.colorScheme
+    }
+    val motion = MaterialTheme.motionScheme
+    val markColor by animateColorAsState(
+        targetValue = heroScheme.primary,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "about mark color",
+    )
+    val nameColor by animateColorAsState(
+        targetValue = heroScheme.onSurface,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "about name color",
+    )
+    val taglineColor by animateColorAsState(
+        targetValue = heroScheme.onSurfaceVariant,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "about tagline color",
+    )
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -1695,19 +1724,20 @@ fun AboutScreen(
             Icon(
                 painter = painterResource(R.drawable.ic_aurora_mark),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = markColor,
                 modifier = Modifier.size(96.dp),
             )
             Spacer(Modifier.height(24.dp))
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.displayMedium,
+                color = nameColor,
             )
             Spacer(Modifier.height(12.dp))
             Text(
                 text = stringResource(R.string.settings_about_tagline),
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = taglineColor,
             )
         }
 
