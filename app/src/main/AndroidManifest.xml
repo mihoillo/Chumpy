@@ -87,6 +87,10 @@
             android:name=".ui.wallpapers.WallpaperActivity"
             android:exported="false"
             android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".ui.perapp.PerAppProxyActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
 
         <!--
             Everything that has to outlive the UI lives in ":core": this VpnService with

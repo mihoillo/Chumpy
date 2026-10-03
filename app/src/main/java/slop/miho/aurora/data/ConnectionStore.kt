@@ -20,6 +20,8 @@ data class ConnectionSettings(
     val routingMode: RoutingMode = RoutingMode.GLOBAL,
     /** The URL real delay measurements fetch through the tested outbound. */
     val delayTestUrl: String = XrayConfigBuilder.DEFAULT_TEST_URL,
+    /** Packages the tunnel leaves alone — the per-app bypass list, v2rayNG's arrangement. */
+    val bypassedApps: Set<String> = emptySet(),
 )
 
 object ConnectionStore {
@@ -42,6 +44,13 @@ object ConnectionStore {
         state.value = updated
     }
 
+    /**
+     * The settings straight off disk. The VPN service reads the bypass list from the
+     * :core process, whose in-memory copy would go stale the moment the UI process
+     * writes a new one.
+     */
+    fun current(context: Context): ConnectionSettings = read(context)
+
     private fun read(context: Context): ConnectionSettings {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         return ConnectionSettings(
@@ -52,6 +61,7 @@ object ConnectionStore {
                 ?: RoutingMode.GLOBAL,
             delayTestUrl = prefs.getString(KEY_TEST_URL, null)?.takeIf { it.isNotBlank() }
                 ?: XrayConfigBuilder.DEFAULT_TEST_URL,
+            bypassedApps = prefs.getStringSet(KEY_BYPASS_APPS, null)?.toSet() ?: emptySet(),
         )
     }
 
@@ -62,6 +72,11 @@ object ConnectionStore {
                 if (sub != null) editor.putString(KEY_SUB, sub) else editor.remove(KEY_SUB)
                 val profile = settings.selectedProfileId
                 if (profile != null) editor.putString(KEY_PROFILE, profile) else editor.remove(KEY_PROFILE)
+                if (settings.bypassedApps.isEmpty()) {
+                    editor.remove(KEY_BYPASS_APPS)
+                } else {
+                    editor.putStringSet(KEY_BYPASS_APPS, settings.bypassedApps)
+                }
             }
             .putString(KEY_ROUTING, settings.routingMode.name)
             .putString(KEY_TEST_URL, settings.delayTestUrl)
@@ -72,4 +87,5 @@ object ConnectionStore {
     private const val KEY_PROFILE = "selected_profile"
     private const val KEY_ROUTING = "routing_mode"
     private const val KEY_TEST_URL = "delay_test_url"
+    private const val KEY_BYPASS_APPS = "bypassed_apps"
 }

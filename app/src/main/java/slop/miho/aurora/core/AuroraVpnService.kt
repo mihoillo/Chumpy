@@ -15,6 +15,7 @@ import android.os.StrictMode
 import android.util.Log
 import slop.miho.aurora.MainActivity
 import slop.miho.aurora.R
+import slop.miho.aurora.data.ConnectionStore
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -205,6 +206,15 @@ class AuroraVpnService : VpnService() {
             builder.addDisallowedApplication(packageName)
         } catch (e: PackageManager.NameNotFoundException) {
             Log.wtf(TAG, "Own package not found", e)
+        }
+        // The per-app bypass: packages the user pulled out of the tunnel. Read straight
+        // off disk — this process's cached copy goes stale the moment the UI writes.
+        ConnectionStore.current(this).bypassedApps.forEach { pkg ->
+            try {
+                builder.addDisallowedApplication(pkg)
+            } catch (e: PackageManager.NameNotFoundException) {
+                Log.w(TAG, "Bypassed app not found: $pkg")
+            }
         }
         return builder.establish()
     }

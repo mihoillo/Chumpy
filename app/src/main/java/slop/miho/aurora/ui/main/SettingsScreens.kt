@@ -808,15 +808,17 @@ private fun TriangleTile(pressed: Boolean) {
 }
 
 /**
- * The "Connection" settings page. One screen, three sections: how traffic is routed
- * (everything through the tunnel, or the Russian sites and addresses spared), the URL the
- * real ping measurements fetch through every server, and per-subscription background
- * refresh. Same grouped-list language as the interface page.
+ * The "Connection" settings page. One screen, four blocks: how traffic is routed — the
+ * mode's tile, the country's flag on it like the fonts' tiles carry their own glyphs —
+ * the per-app bypass list's doorway, the URL the real ping measurements fetch through
+ * every server, and per-subscription background refresh. Same grouped-list language as
+ * the interface page.
  */
 @Composable
 fun ConnectionScreen(
     connection: slop.miho.aurora.data.ConnectionSettings,
     subscriptions: List<slop.miho.aurora.db.SubscriptionEntity>,
+    flagStyle: slop.miho.aurora.data.FlagStyle,
     onChangeConnection: ((slop.miho.aurora.data.ConnectionSettings) -> slop.miho.aurora.data.ConnectionSettings) -> Unit,
     onToggleAutoUpdate: (String, Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -841,21 +843,9 @@ fun ConnectionScreen(
     ) {
         SettingsGroup(
             {
-                IconChoiceRow(
-                    title = stringResource(R.string.settings_routing),
-                    options = listOf(
-                        IconChoice(
-                            R.drawable.ic_public,
-                            R.string.settings_routing_global,
-                            slop.miho.aurora.xray.RoutingMode.GLOBAL,
-                        ),
-                        IconChoice(
-                            R.drawable.ic_public_off,
-                            R.string.settings_routing_ru,
-                            slop.miho.aurora.xray.RoutingMode.RU_BYPASS,
-                        ),
-                    ),
+                RoutingRow(
                     selected = connection.routingMode,
+                    flagStyle = flagStyle,
                     onSelect = { mode ->
                         onChangeConnection { it.copy(routingMode = mode) }
                     },
@@ -864,14 +854,15 @@ fun ConnectionScreen(
         )
         SettingsGroup(
             {
-                // The supporting line under the choice retells the selected mode's story.
-                val hint = when (connection.routingMode) {
-                    slop.miho.aurora.xray.RoutingMode.GLOBAL -> stringResource(R.string.settings_routing_global_hint)
-                    slop.miho.aurora.xray.RoutingMode.RU_BYPASS -> stringResource(R.string.settings_routing_ru_hint)
-                }
-                PlainRow(
-                    title = stringResource(R.string.settings_routing),
-                    supporting = hint,
+                ScreenLinkRow(
+                    title = stringResource(R.string.per_app_title),
+                    supporting = if (connection.bypassedApps.isEmpty()) {
+                        stringResource(R.string.per_app_hint)
+                    } else {
+                        stringResource(R.string.per_app_count, connection.bypassedApps.size)
+                    },
+                    icon = R.drawable.ic_apps,
+                    target = slop.miho.aurora.ui.perapp.PerAppProxyActivity::class.java,
                 )
             },
         )
@@ -900,6 +891,126 @@ fun ConnectionScreen(
                 }.toTypedArray(),
             )
         }
+    }
+}
+
+/**
+ * The routing mode, picked right in its row the way the font is: the title with the
+ * selected mode's story under it, one square tile per mode at the row's end — the globe
+ * for the whole-world mode, the bypassed country's flag for its own. The flag follows
+ * the flag style setting like the servers' flags do; the plain-globe style spells the
+ * country out in its two letters instead.
+ */
+@Composable
+private fun RoutingRow(
+    selected: slop.miho.aurora.xray.RoutingMode,
+    flagStyle: slop.miho.aurora.data.FlagStyle,
+    onSelect: (slop.miho.aurora.xray.RoutingMode) -> Unit,
+) {
+    val hint = when (selected) {
+        slop.miho.aurora.xray.RoutingMode.GLOBAL -> stringResource(R.string.settings_routing_global_hint)
+        slop.miho.aurora.xray.RoutingMode.RU_BYPASS -> stringResource(R.string.settings_routing_ru_hint)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.settings_routing),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = hint,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RoutingTile(
+                label = stringResource(R.string.settings_routing_global),
+                selected = selected == slop.miho.aurora.xray.RoutingMode.GLOBAL,
+                onClick = { onSelect(slop.miho.aurora.xray.RoutingMode.GLOBAL) },
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_public),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            RoutingTile(
+                label = stringResource(R.string.settings_routing_ru),
+                selected = selected == slop.miho.aurora.xray.RoutingMode.RU_BYPASS,
+                onClick = { onSelect(slop.miho.aurora.xray.RoutingMode.RU_BYPASS) },
+            ) {
+                when (flagStyle) {
+                    slop.miho.aurora.data.FlagStyle.TWEMOJI -> CountryFlag(code = "RU", twemoji = true)
+                    slop.miho.aurora.data.FlagStyle.SYSTEM -> CountryFlag(code = "RU", twemoji = false)
+                    slop.miho.aurora.data.FlagStyle.GLOBE ->
+                        Text(text = "RU", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A routing mode's square tile, the font tile's twin: raised tonal container, the accent
+ * container while selected, the press squash and the click pop, and the mode's mark in
+ * the middle — read out for screen readers, never shown.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun RoutingTile(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val poke = rememberHapticPoke()
+    var taps by remember { mutableIntStateOf(0) }
+    val resting = if (selected) colors.primary else colors.secondaryContainer
+    val container by animateColorAsState(
+        targetValue = if (pressed) lerp(resting, colors.onSurface, 0.1f) else resting,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "routing tile container",
+    )
+    val tileContent by animateColorAsState(
+        targetValue = if (selected) colors.onPrimary else colors.onSecondaryContainer,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "routing tile content",
+    )
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = container,
+        contentColor = tileContent,
+        modifier = Modifier
+            .size(48.dp)
+            .pressBounce(pressed, taps)
+            .clip(RoundedCornerShape(16.dp))
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                role = Role.Button,
+            ) {
+                poke()
+                taps++
+                onClick()
+            }
+            .semantics { contentDescription = label },
+    ) {
+        Box(contentAlignment = Alignment.Center) { content() }
     }
 }
 

@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -125,7 +126,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         SettingsStore.update(app, transform)
     }
 
-    /** Connection preferences: selection, routing mode, test URL. */
+    /** Connection preferences: selection, routing mode, test URL, per-app bypass. */
     val connection: StateFlow<ConnectionSettings> = ConnectionStore.settings(app)
 
     fun updateConnection(transform: (ConnectionSettings) -> ConnectionSettings) {
@@ -139,6 +140,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     val tunnelStatus: StateFlow<TunnelStatus> = tunnelClient.status
+
+    init {
+        // The app filter lives on the TUN interface, not in the config: a change to it
+        // asks for a full restart — the interface comes back with the new allowlist. The
+        // store itself is watched, so changes made outside updateConnection (the
+        // per-app screen writes its own) ride the same path.
+        var previous = connection.value
+        viewModelScope.launch {
+            connection.drop(1).collect { current ->
+                if (previous.bypassedApps != current.bypassedApps &&
+                    tunnelStatus.value.state == TunnelState.UP
+                ) {
+                    tunnelClient.disconnect()
+                    applyConfigAndConnect()
+                }
+                previous = current
+            }
+        }
+    }
 
     /** The Xray core version string, for the about screen. */
     private val _coreVersion = MutableStateFlow<String?>(null)

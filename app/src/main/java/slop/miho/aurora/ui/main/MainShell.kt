@@ -425,6 +425,7 @@ private fun MainPagerStrip(
                     SettingsCategory.CONNECTION -> ConnectionScreen(
                         connection = connection,
                         subscriptions = subscriptions,
+                        flagStyle = uiSettings.flagStyle,
                         onChangeConnection = onChangeConnection,
                         onToggleAutoUpdate = onToggleAutoUpdate,
                     )
