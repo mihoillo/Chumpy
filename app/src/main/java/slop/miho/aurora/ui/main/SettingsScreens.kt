@@ -38,8 +38,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -82,7 +88,6 @@ import slop.miho.aurora.data.UiSettings
 import slop.miho.aurora.ui.components.AccentRow
 import slop.miho.aurora.ui.components.CountryFlag
 import slop.miho.aurora.ui.components.RainbowFlag
-import slop.miho.aurora.ui.components.SubmitFieldRow
 import slop.miho.aurora.ui.components.pressBounce
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.fonts.FontPickerRow
@@ -1183,11 +1188,10 @@ private fun RoutingTile(
 }
 
 /**
- * The delay test URL's own card, the welcome submit card's anatomy on the group's
- * backdrop: the bare field with the paste/arrow tile, the description under the field —
- * aligned with the field's text, the card's own padding plus the field's inner one —
- * and no name: the ghost and the description carry it. Committed on every keystroke;
- * the arrow commits the trim.
+ * The delay test URL's own card, the welcome card's field without the tile: the bare
+ * field filling the card edge to edge — its own inner padding is the card's, so the
+ * text sits at the same 16dp as everything else — and the description under it, no
+ * name. Committed on every keystroke; Done commits the trim.
  */
 @Composable
 private fun TestUrlRow(
@@ -1196,18 +1200,30 @@ private fun TestUrlRow(
 ) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth()) {
-        SubmitFieldRow(
+        OutlinedTextField(
             value = value,
             onValueChange = onChange,
-            onSubmit = { onChange(value.trim()) },
-            placeholderRes = R.string.settings_test_url,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            singleLine = true,
+            placeholder = { Text(stringResource(R.string.settings_test_url)) },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Uri,
+                imeAction = ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(onDone = { onChange(value.trim()) }),
+            // No outline and no fill of its own: the card is the field's.
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color.Transparent,
+                unfocusedBorderColor = Color.Transparent,
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+            ),
+            modifier = Modifier.fillMaxWidth(),
         )
         Text(
             text = stringResource(R.string.settings_test_url_hint),
             style = MaterialTheme.typography.bodyMedium,
             color = colors.onSurfaceVariant,
-            modifier = Modifier.padding(start = 32.dp, end = 16.dp, bottom = 12.dp),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         )
     }
 }

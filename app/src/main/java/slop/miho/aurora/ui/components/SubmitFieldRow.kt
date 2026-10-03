@@ -59,8 +59,6 @@ fun SubmitFieldRow(
     autofocus: Boolean = false,
     /** Folds the row back — draws the cross beside the submit tile when set. */
     onClose: (() -> Unit)? = null,
-    /** The ghost in the empty field; the welcome's URL name by default. */
-    placeholderRes: Int? = R.string.subscription_url_field,
 ) {
     val clipboard = LocalClipboardManager.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -96,7 +94,7 @@ fun SubmitFieldRow(
             singleLine = true,
             // The name rides as a placeholder — it holds the empty field's center and
             // steps aside for the text, instead of floating above it.
-            placeholder = placeholderRes?.let { res -> { Text(stringResource(res)) } },
+            placeholder = { Text(stringResource(R.string.subscription_url_field)) },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Uri,
                 imeAction = ImeAction.Done,
