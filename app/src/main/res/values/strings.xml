@@ -148,6 +148,8 @@
     <string name="trusted_current">Current network</string>
     <string name="settings_subscriptions">Subscriptions</string>
     <string name="settings_auto_update_hint">Refreshes in the background on the panel\'s own schedule</string>
+    <string name="settings_background_refresh">Background refresh</string>
+    <string name="settings_background_refresh_count">Auto-updates %d subscriptions</string>
     <string name="settings_about_core">Xray core</string>
     <string name="settings_about_core_unknown">not running yet</string>
     <string name="settings_about_hint">Aurora — a client for Xray-based subscriptions</string>

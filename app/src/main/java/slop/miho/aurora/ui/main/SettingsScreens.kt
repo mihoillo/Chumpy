@@ -1,13 +1,21 @@
 package slop.miho.aurora.ui.main
 
 import android.content.Intent
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -46,13 +54,16 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
@@ -815,11 +826,103 @@ private fun TriangleTile(pressed: Boolean) {
 }
 
 /**
+ * The background refresh's doorway, the screen-link row's twin: the count under the
+ * title, the clock on the square tile, and the triangle — the per-app row's own —
+ * pointing down while the fold is closed, flipping over to point up as it opens.
+ */
+@Composable
+private fun BackgroundRefreshRow(
+    supporting: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val poke = rememberHapticPoke()
+    // Bumped in the click handler: the pop keys off it, so it fires on every click —
+    // the press state alone can go unnoticed on a quick tap.
+    var taps by remember { mutableIntStateOf(0) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+            ) {
+                poke()
+                taps++
+                onToggle()
+            }
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.settings_background_refresh),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // The pair bounces as one widget when tapped.
+        Box(
+            modifier = Modifier.pressBounce(pressed, taps),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LinkIconTile(icon = R.drawable.ic_clock, pressed = pressed)
+                FlipTriangleTile(pressed = pressed, expanded = expanded)
+            }
+        }
+    }
+}
+
+/**
+ * The triangle tile flipping its point: down while the fold is closed, up while it is
+ * open — the trip runs through the per-app row's own right-pointing pose, 180 degrees
+ * on a spring a touch looser than the scheme's own, so the point swings just past its
+ * mark and settles.
+ */
+@Composable
+private fun FlipTriangleTile(pressed: Boolean, expanded: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val resting = colors.secondaryContainer
+    val container by animateColorAsState(
+        targetValue = if (pressed) lerp(resting, colors.onSurface, 0.1f) else resting,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "flip triangle container",
+    )
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) -90f else 90f,
+        animationSpec = spring(
+            dampingRatio = 0.65f,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "flip triangle rotation",
+    )
+    Surface(
+        shape = TriangleTilePolygon.toShape(),
+        color = container,
+        modifier = Modifier
+            .size(48.dp)
+            .graphicsLayer { rotationZ = rotation },
+    ) {}
+}
+
+/**
  * The "Connection" settings page. One screen, four blocks: how traffic is routed — the
  * mode's tile, the country's flag on it like the fonts' tiles carry their own glyphs —
  * the per-app bypass list's doorway, the URL the real ping measurements fetch through
- * every server, and per-subscription background refresh. Same grouped-list language as
- * the interface page.
+ * every server, and the background refresh's fold holding the per-subscription
+ * switches. Same grouped-list language as the interface page.
  */
 @Composable
 fun ConnectionScreen(
@@ -901,21 +1004,62 @@ fun ConnectionScreen(
             },
         )
         if (subscriptions.isNotEmpty()) {
+            // The panel's own schedule, one row per subscription behind a fold: the
+            // doorway counts how many refresh, the dropdown below holds the switches.
+            // The servers list's own trade — opening, the switches rise in under the
+            // row; closing, they fold back up — drawn unclipped, the height riding
+            // along.
+            var refreshOpen by rememberSaveable { mutableStateOf(false) }
+            val autoCount = subscriptions.count { it.autoUpdate }
             SettingsGroup(
-                *subscriptions.map { subscription ->
-                    @Composable {
-                        ToggleRow(
-                            title = subscription.name.ifEmpty { subscription.url },
-                            supporting = stringResource(R.string.settings_auto_update_hint),
-                            icon = R.drawable.ic_clock,
-                            checked = subscription.autoUpdate,
-                            onChange = { enabled ->
-                                onToggleAutoUpdate(subscription.id, enabled)
-                            },
-                        )
-                    }
-                }.toTypedArray(),
+                {
+                    BackgroundRefreshRow(
+                        supporting = when {
+                            autoCount == 0 -> stringResource(R.string.per_app_disabled)
+                            else -> stringResource(
+                                R.string.settings_background_refresh_count,
+                                autoCount,
+                            )
+                        },
+                        expanded = refreshOpen,
+                        onToggle = { refreshOpen = !refreshOpen },
+                    )
+                },
             )
+            val motion = MaterialTheme.motionScheme
+            AnimatedContent(
+                targetState = refreshOpen,
+                transitionSpec = {
+                    ContentTransform(
+                        targetContentEnter = fadeIn(motion.defaultEffectsSpec()) +
+                            slideInVertically(motion.defaultSpatialSpec()) { it / 8 },
+                        initialContentExit = fadeOut(motion.defaultEffectsSpec()) +
+                            slideOutVertically(motion.defaultSpatialSpec()) {
+                                if (targetState) it / 8 else -it / 8
+                            },
+                        sizeTransform = SizeTransform(clip = false),
+                    )
+                },
+                label = "background refresh fold",
+            ) { open ->
+                if (open) {
+                    SettingsGroup(
+                        *subscriptions.map { subscription ->
+                            @Composable {
+                                ToggleRow(
+                                    title = subscription.name.ifEmpty { subscription.url },
+                                    supporting = stringResource(R.string.settings_auto_update_hint),
+                                    icon = R.drawable.ic_clock,
+                                    checked = subscription.autoUpdate,
+                                    onChange = { enabled ->
+                                        onToggleAutoUpdate(subscription.id, enabled)
+                                    },
+                                )
+                            }
+                        }.toTypedArray(),
+                    )
+                }
+            }
         }
     }
 }
