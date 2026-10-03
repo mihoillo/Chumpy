@@ -897,11 +897,12 @@ fun ConnectionScreen(
 }
 
 /**
- * The routing mode, picked right in its row the way the font is. The regions run as one
- * horizontally scrolling strip of tiles — each the region's own flag (the plain-globe
- * style spells it out in its two letters instead), the whole-world mode's globe tile
- * closing the list. The selected mode's story runs under the strip: a region tells which
- * one stays out of the tunnel, the whole-world mode routes everything.
+ * The routing mode, picked right in its row the way the font is, titleless as the fonts'
+ * crowded form. The modes run as one horizontally scrolling strip of tiles: the
+ * whole-world mode's block tile first, then the regions — each its own flag (the
+ * plain-globe style spells it out in its two letters instead). The selected mode's story
+ * runs under the strip: a region tells which one stays out of the tunnel, the
+ * whole-world mode routes everything.
  */
 @Composable
 private fun RoutingRow(
@@ -913,12 +914,6 @@ private fun RoutingRow(
         stringResource(R.string.settings_routing_dont_route, stringResource(name))
     } ?: stringResource(R.string.settings_routing_global_hint)
     Column(Modifier.fillMaxWidth()) {
-        Text(
-            text = stringResource(R.string.settings_routing),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
-        )
         // The scroll runs the card's full width with the padding inside the scrolled
         // content, as in the font picker: the tiles slide under the card's rounding
         // instead of stopping short of it.
@@ -926,7 +921,7 @@ private fun RoutingRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -941,7 +936,7 @@ private fun RoutingRow(
                     ) {
                         if (region == null) {
                             Icon(
-                                painter = painterResource(R.drawable.ic_public),
+                                painter = painterResource(R.drawable.ic_block),
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
                             )

@@ -16,6 +16,7 @@ import slop.miho.aurora.db.ProfileEntity
  * the panels' own (hiddify's ir/cn/ru/af/id/tr/br, v2rayNG's Russia and Iran presets).
  */
 enum class RoutingMode(val region: String?) {
+    GLOBAL(null),
     BYPASS_RU("ru"),
     BYPASS_CN("cn"),
     BYPASS_IR("ir"),
@@ -23,7 +24,6 @@ enum class RoutingMode(val region: String?) {
     BYPASS_ID("id"),
     BYPASS_TR("tr"),
     BYPASS_BR("br"),
-    GLOBAL(null),
 }
 
 /**

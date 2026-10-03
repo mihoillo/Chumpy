@@ -117,7 +117,6 @@
     <string name="settings_small_screen_forced_off">Small screen layout forced off. Long-tap to switch</string>
 
     <!-- Connection settings -->
-    <string name="settings_routing">Routing</string>
     <string name="settings_routing_global">Global</string>
     <string name="settings_routing_global_hint">Route everything</string>
     <string name="settings_routing_dont_route">Don\'t route %s</string>
