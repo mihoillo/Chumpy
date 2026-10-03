@@ -58,14 +58,9 @@
     <string name="subscription_delete_confirm">Delete</string>
 
     <!-- Welcome (first run) -->
-    <string name="welcome_title">Welcome to Aurora</string>
+    <string name="welcome_title">Hello, stranger!</string>
     <string name="welcome_subtitle">Add a subscription to get started.</string>
-    <string name="welcome_add">Add subscription</string>
     <string name="welcome_add_failed">Couldn\'t add the subscription: %1$s</string>
-    <string name="welcome_import_link">Paste a link instead</string>
-    <string name="import_link_title">Import a server</string>
-    <string name="import_paste_field">Server link or WireGuard config</string>
-    <string name="import_confirm">Import</string>
     <string name="import_failed">Couldn\'t import: %1$s</string>
     <string name="import_nothing_new">Nothing new to import</string>
 
