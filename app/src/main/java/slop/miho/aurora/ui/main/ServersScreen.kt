@@ -1192,6 +1192,14 @@ private fun ServerRow(
         iconContainerState.value
     }
     val poke = rememberHapticPoke()
+    // The sweep's answers land one by one, and each hand-over on the row's ping chip —
+    // the old number out, the new one flying in — taps the same crisp poke the row's
+    // selection does; the first reading a row composes with is its own, not a change.
+    var measured by remember(profile.id) { mutableStateOf(false) }
+    LaunchedEffect(profile.id, profile.testDelayMillis, profile.lastTestAt) {
+        if (measured) poke()
+        measured = true
+    }
 
     Surface(
         onClick = {
