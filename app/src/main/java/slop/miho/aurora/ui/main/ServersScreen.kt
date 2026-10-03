@@ -6,15 +6,19 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -36,6 +40,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.CircleShape
@@ -101,12 +106,13 @@ import slop.miho.aurora.ui.wallpapers.ReportBarCoverage
 
 /**
  * The servers screen: one subscription card up top (the database tile with the reload
- * button under it; the card's tap unfolds the subscription list below while the servers
- * fade away, and the card itself turns into the chooser's call to action), then that
- * subscription's servers as one segmented list. Pull-to-refresh measures every server
- * through the core — the list is always reachable, tunnel or not, since picking a server
- * never needs one. The rows draw the flag a name begins with (per [flagStyle]); the name
- * itself is shown without it.
+ * button under it; the card's tap unrolls the subscription list below it with the same
+ * fold the settings pages use, pushing the servers down — they stay in place, drawn dim
+ * and taken out of touch while the chooser stands, and a tap anywhere over them folds
+ * it back up), then that subscription's servers as one segmented list. Pull-to-refresh
+ * measures every server through the core — the list is always reachable, tunnel or
+ * not, since picking a server never needs one. The rows draw the flag a name begins
+ * with (per [flagStyle]); the name itself is shown without it.
  */
 @Composable
 fun ServersScreen(
@@ -182,34 +188,28 @@ fun ServersScreen(
                 )
             }
 
-            // The chooser and the servers trade the space under the card as one piece:
-            // opening, the servers drop out of view downward — the same leave the report
-            // card takes — while the subscription list rises in; closing, the list folds
-            // back up under the card and the servers climb back up after it. The height
-            // rides along, drawn unclipped — no rows vanishing into a cropped slab — and
-            // since the slot never sits empty, the card keeps its one 8dp step to the
-            // chips.
+            // The chooser unrolls under the card and the servers stay: the Happ fold's
+            // own ride, opening to push the list down and closing to let it climb back
+            // — one piece, never leaving the slot empty. While the chooser stands open
+            // the servers are out of play: drawn dim, taken out of touch, and any tap
+            // on them folds the chooser back up — the dim itself is the button.
             item {
                 val motion = MaterialTheme.motionScheme
-                AnimatedContent(
-                    targetState = dropdownOpen,
-                    transitionSpec = {
-                        // The servers only ever leave downward and return from below;
-                        // the list rises in and folds back up.
-                        ContentTransform(
-                            targetContentEnter = fadeIn(motion.defaultEffectsSpec()) +
-                                slideInVertically(motion.defaultSpatialSpec()) { it / 8 },
-                            initialContentExit = fadeOut(motion.defaultEffectsSpec()) +
-                                slideOutVertically(motion.defaultSpatialSpec()) {
-                                    if (targetState) it / 8 else -it / 8
-                                },
-                            sizeTransform = SizeTransform(clip = false),
-                        )
-                    },
-                    label = "servers trade",
-                ) { open ->
-                    if (open) {
-                        Column(Modifier.padding(top = 8.dp)) {
+                val dimmed by animateFloatAsState(
+                    targetValue = if (dropdownOpen) 0.45f else 1f,
+                    animationSpec = motion.defaultEffectsSpec(),
+                    label = "servers dim",
+                )
+                val poke = rememberHapticPoke()
+                Column(Modifier.fillMaxWidth()) {
+                    AnimatedVisibility(
+                        visible = dropdownOpen,
+                        enter = expandVertically(motion.defaultSpatialSpec()) +
+                            fadeIn(motion.defaultEffectsSpec()),
+                        exit = shrinkVertically(motion.defaultSpatialSpec()) +
+                            fadeOut(motion.defaultEffectsSpec()),
+                    ) {
+                        Column(Modifier.padding(bottom = 8.dp)) {
                             SubscriptionDropdown(
                                 subscriptions = subscriptions,
                                 selectedId = selectedSubscription?.id,
@@ -225,8 +225,14 @@ fun ServersScreen(
                                 onDeleteRequest = { deleteTarget = it },
                             )
                         }
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    }
+                    Box {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer { alpha = dimmed },
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             ServersHeader(state = state)
                             ServerGroup(
                                 profiles = state.profiles,
@@ -234,6 +240,21 @@ fun ServersScreen(
                                 flagStyle = flagStyle,
                                 tunnelUp = tunnelUp,
                                 onSelect = onSelect,
+                            )
+                        }
+                        // The catcher over the out-of-play list: no ripple, no press —
+                        // a tap anywhere over the dim is the fold's own close.
+                        if (dropdownOpen) {
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) {
+                                        poke()
+                                        dropdownOpen = false
+                                    },
                             )
                         }
                     }
