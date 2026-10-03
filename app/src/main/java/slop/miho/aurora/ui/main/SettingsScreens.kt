@@ -41,6 +41,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
@@ -81,6 +82,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.annotation.DrawableRes
 import androidx.graphics.shapes.CornerRounding
@@ -1000,33 +1004,20 @@ fun ConnectionScreen(
                 )
             },
         )
-        // The Happ spoof's own block, between the carrying and the measuring: the
-        // fingerprint every fetch goes out with — the toggle over the fields that
-        // spell it. Off, the fields stay put but sleep — uneditable, dimmed, waiting —
-        // and the identity they hold is kept, so the panel sees the same "device" the
-        // moment the spoof comes back.
-        SettingsGroup(
-            {
-                ToggleRow(
-                    title = stringResource(R.string.happ_title),
-                    supporting = stringResource(R.string.happ_hint),
-                    icon = R.drawable.ic_device,
+        // The Happ spoof's own block, between the carrying and the measuring: one row
+        // per setting — the toggle over the fingerprint's fields, every one of them on
+        // its own line — folded away while the spoof is off, the background refresh's
+        // own fold kept inside the one block. The regenerator rides the header's right
+        // end, between the texts and the toggle: a new identity is a deliberate tap,
+        // awake only while the fingerprint rides.
+        HappGroup(
+            expanded = settings.happSpoof,
+            header = {
+                HappToggleRow(
                     checked = settings.happSpoof,
-                    onChange = { enabled ->
+                    onToggle = { enabled ->
                         onChangeSettings { it.copy(happSpoof = enabled) }
                     },
-                )
-            },
-            {
-                HappFields(
-                    settings = settings,
-                    enabled = settings.happSpoof,
-                    onChangeSettings = onChangeSettings,
-                )
-            },
-            {
-                HappRegenerateRow(
-                    enabled = settings.happSpoof,
                     onRegenerate = {
                         onChangeSettings {
                             it.copy(
@@ -1037,6 +1028,57 @@ fun ConnectionScreen(
                     },
                 )
             },
+            fields = listOf(
+                {
+                    HappFieldRow(
+                        label = stringResource(R.string.happ_app_version),
+                        value = settings.happAppVersion,
+                        onChange = { value -> onChangeSettings { it.copy(happAppVersion = value) } },
+                    )
+                },
+                {
+                    HappFieldRow(
+                        label = stringResource(R.string.happ_locale),
+                        value = settings.happLocale,
+                        onChange = { value -> onChangeSettings { it.copy(happLocale = value) } },
+                    )
+                },
+                {
+                    HappFieldRow(
+                        label = stringResource(R.string.happ_os),
+                        value = settings.happOs,
+                        onChange = { value -> onChangeSettings { it.copy(happOs = value) } },
+                    )
+                },
+                {
+                    HappFieldRow(
+                        label = stringResource(R.string.happ_os_version),
+                        value = settings.happOsVersion,
+                        onChange = { value -> onChangeSettings { it.copy(happOsVersion = value) } },
+                    )
+                },
+                {
+                    HappFieldRow(
+                        label = stringResource(R.string.happ_device_model),
+                        value = settings.happDeviceModel,
+                        onChange = { value -> onChangeSettings { it.copy(happDeviceModel = value) } },
+                    )
+                },
+                {
+                    HappFieldRow(
+                        label = stringResource(R.string.happ_user_id),
+                        value = settings.happUserId,
+                        onChange = { value -> onChangeSettings { it.copy(happUserId = value) } },
+                    )
+                },
+                {
+                    HappFieldRow(
+                        label = stringResource(R.string.happ_hwid),
+                        value = settings.happHwid,
+                        onChange = { value -> onChangeSettings { it.copy(happHwid = value) } },
+                    )
+                },
+            ),
         )
         SettingsGroup(
             {
@@ -1308,162 +1350,163 @@ private fun TestUrlRow(
 }
 
 /**
- * The fingerprint's own fields, the delay test URL's card language grown to a form: the
- * bare fields filling the card edge to edge, the short ones paired two across so the
- * block keeps its height, the device model — the only long one — on its own line. Each
- * field carries its name as the floating label the borderless field has; committed on
- * every keystroke, Done commits the trim.
- *
- * Off, the block is asleep — the same fields at the same places, only dimmed and
- * uneditable — so nothing moves and nothing is lost when the spoof blinks out.
+ * The Happ spoof's own block: [SettingsGroup]'s body with one fold built in — the header
+ * stands, the field rows under it unroll and roll back up — because the whole thing is
+ * one card, not a doorway group with a second one hanging under it. The seam the fold
+ * rides on is the header's own bottom corners: the card's outer ones while the rows are
+ * folded, the inner seam once they stand under it, animating with the fold itself.
  */
 @Composable
-private fun HappFields(
-    settings: slop.miho.aurora.data.UiSettings,
-    enabled: Boolean,
-    onChangeSettings: ((slop.miho.aurora.data.UiSettings) -> slop.miho.aurora.data.UiSettings) -> Unit,
+private fun HappGroup(
+    expanded: Boolean,
+    header: @Composable () -> Unit,
+    fields: List<@Composable () -> Unit>,
 ) {
+    val outer = MaterialTheme.shapes.extraLarge
+    val inner = MaterialTheme.shapes.extraSmall
+    val motion = MaterialTheme.motionScheme
+    val density = LocalDensity.current
+    // The corner radii come out of the theme's shapes as px against this density, back
+    // into Dp — the fold animates that Dp, and a shape rebuilt around a new Dp is a new
+    // shape, so the outline follows the animation frame by frame. (Dp corners ignore
+    // the shape size they are handed, which is all the theme's shapes are made of.)
+    fun CornerSize.dp(): Dp = with(density) { toPx(Size(1f, 1f), this).toDp() }
+    val outerTop = outer.topStart.dp()
+    val outerBottom = outer.bottomStart.dp()
+    val innerBottom = inner.bottomStart.dp()
+    // The seam the fold rides on is the header's own bottom corners: the card's outer
+    // ones while the rows are folded, the inner seam once they stand under it.
+    val headerBottom by animateDpAsState(
+        targetValue = if (expanded) innerBottom else outerBottom,
+        animationSpec = motion.defaultSpatialSpec(),
+        label = "happ header bottom corner",
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .clip(outer),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HappField(
-                label = stringResource(R.string.happ_app_version),
-                value = settings.happAppVersion,
-                enabled = enabled,
-                onValueChange = { value -> onChangeSettings { it.copy(happAppVersion = value) } },
-                modifier = Modifier.weight(1f),
-            )
-            HappField(
-                label = stringResource(R.string.happ_locale),
-                value = settings.happLocale,
-                enabled = enabled,
-                onValueChange = { value -> onChangeSettings { it.copy(happLocale = value) } },
-                modifier = Modifier.weight(1f),
-            )
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainer.withSurfaceOpacity(),
+            shape = RoundedCornerShape(
+                topStart = outerTop,
+                topEnd = outerTop,
+                bottomStart = headerBottom,
+                bottomEnd = headerBottom,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            header()
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HappField(
-                label = stringResource(R.string.happ_os),
-                value = settings.happOs,
-                enabled = enabled,
-                onValueChange = { value -> onChangeSettings { it.copy(happOs = value) } },
-                modifier = Modifier.weight(1f),
-            )
-            HappField(
-                label = stringResource(R.string.happ_os_version),
-                value = settings.happOsVersion,
-                enabled = enabled,
-                onValueChange = { value -> onChangeSettings { it.copy(happOsVersion = value) } },
-                modifier = Modifier.weight(1f),
-            )
-        }
-        HappField(
-            label = stringResource(R.string.happ_device_model),
-            value = settings.happDeviceModel,
-            enabled = enabled,
-            onValueChange = { value -> onChangeSettings { it.copy(happDeviceModel = value) } },
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HappField(
-                label = stringResource(R.string.happ_user_id),
-                value = settings.happUserId,
-                enabled = enabled,
-                onValueChange = { value -> onChangeSettings { it.copy(happUserId = value) } },
-                modifier = Modifier.weight(1f),
-            )
-            HappField(
-                label = stringResource(R.string.happ_hwid),
-                value = settings.happHwid,
-                enabled = enabled,
-                onValueChange = { value -> onChangeSettings { it.copy(happHwid = value) } },
-                modifier = Modifier.weight(1f),
-            )
+        // The fold itself: the rows unroll down from the header and roll back up under
+        // it, the fade riding strong on top — the background refresh's own trade.
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(motion.defaultSpatialSpec()) +
+                fadeIn(motion.defaultEffectsSpec()),
+            exit = shrinkVertically(motion.defaultSpatialSpec()) +
+                fadeOut(motion.defaultEffectsSpec()),
+        ) {
+            Column(
+                Modifier.padding(top = 2.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                fields.forEachIndexed { index, field ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer.withSurfaceOpacity(),
+                        shape = RoundedCornerShape(
+                            topStart = inner.topStart,
+                            topEnd = inner.topEnd,
+                            bottomStart = if (index == fields.lastIndex) outer.bottomStart else inner.bottomStart,
+                            bottomEnd = if (index == fields.lastIndex) outer.bottomEnd else inner.bottomEnd,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        field()
+                    }
+                }
+            }
         }
     }
 }
 
-/** One fingerprint field: the borderless stadium of the delay test URL, with its name. */
-@Composable
-private fun HappField(
-    label: String,
-    value: String,
-    enabled: Boolean,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        singleLine = true,
-        enabled = enabled,
-        label = { Text(label, maxLines = 1) },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = {
-            val trimmedNow = value.trim()
-            if (value != trimmedNow) onValueChange(trimmedNow)
-        }),
-        // No outline and no fill of its own: the card is the field's — asleep or awake.
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Color.Transparent,
-            unfocusedBorderColor = Color.Transparent,
-            disabledBorderColor = Color.Transparent,
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent,
-            disabledContainerColor = Color.Transparent,
-        ),
-        modifier = modifier,
-    )
-}
-
 /**
- * The identity's own deliberate act: a new user id and HWID, generated and kept. The
- * row sleeps with the rest of the block when the spoof is off — same tile, same words,
- * gone quiet — because a panel binds the account to that pair, and handing it a fresh
- * one is a choice, not a side effect.
+ * The block's header: a toggle row with the regenerator tucked into its right end,
+ * between the texts and the toggle. The tap anywhere toggles the spoof — the rows under
+ * the header fold and unfold with it; the regenerator is its own press, the delay test
+ * URL's sleeping pencil's narrow twin only awake, bouncing with every tap that hands the
+ * panel a fresh identity. It sleeps while the spoof is off — same place, same art, gone
+ * quiet — because a new identity is only ever worth asking for while the fingerprint
+ * rides.
  */
 @Composable
-private fun HappRegenerateRow(
-    enabled: Boolean,
+private fun HappToggleRow(
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit,
     onRegenerate: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    val regenSource = remember { MutableInteractionSource() }
+    val regenPressed by regenSource.collectIsPressedAsState()
     val poke = rememberHapticPoke()
+    // Bumped in the click handlers: the pop keys off them, so they fire on every click.
     var taps by remember { mutableIntStateOf(0) }
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (enabled) 1f else 0.45f,
+    var regenTaps by remember { mutableIntStateOf(0) }
+    val regenAlpha by animateFloatAsState(
+        targetValue = if (checked) 1f else 0.45f,
         animationSpec = motion.defaultEffectsSpec(),
         label = "happ regenerate alpha",
     )
+    val regenLabel = stringResource(R.string.happ_regenerate)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                enabled = enabled,
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
-                role = Role.Button,
             ) {
                 poke()
                 taps++
-                onRegenerate()
+                onToggle(!checked)
             }
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .graphicsLayer { alpha = contentAlpha },
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.happ_title),
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.onSurface,
+            )
+            Text(
+                text = stringResource(R.string.happ_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurfaceVariant,
+            )
+        }
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = CircleShape,
             color = colors.secondaryContainer,
             contentColor = colors.onSecondaryContainer,
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier
+                .size(width = 36.dp, height = 48.dp)
+                .pressBounce(regenPressed, regenTaps)
+                .combinedClickable(
+                    enabled = checked,
+                    interactionSource = regenSource,
+                    indication = LocalIndication.current,
+                    role = Role.Button,
+                ) {
+                    poke()
+                    regenTaps++
+                    onRegenerate()
+                }
+                .semantics { contentDescription = regenLabel }
+                .graphicsLayer { alpha = regenAlpha },
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -1473,18 +1516,41 @@ private fun HappRegenerateRow(
                 )
             }
         }
-        Column {
-            Text(
-                text = stringResource(R.string.happ_regenerate),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(
-                text = stringResource(R.string.happ_regenerate_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.onSurfaceVariant,
-            )
-        }
+        ToggleIconTile(icon = R.drawable.ic_device, checked = checked, pressed = pressed, taps = taps)
     }
+}
+
+/**
+ * One fingerprint field on its own line: the borderless stadium of the delay test URL
+ * filling its own card edge to edge, the field's name as the floating label, committed
+ * on every keystroke with Done committing the trim. The rows only stand while the spoof
+ * is on, so there is no sleeping state to draw — the fold carries the whole card.
+ */
+@Composable
+private fun HappFieldRow(
+    label: String,
+    value: String,
+    onChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        singleLine = true,
+        label = { Text(label, maxLines = 1) },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = {
+            val trimmedNow = value.trim()
+            if (value != trimmedNow) onChange(trimmedNow)
+        }),
+        // No outline and no fill of its own: the card is the field's.
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = Color.Transparent,
+            unfocusedBorderColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 /** A plain text row: a title with a supporting line, no icon, no interaction. */

@@ -70,7 +70,6 @@
     <string name="happ_user_id">User ID</string>
     <string name="happ_hwid">HWID</string>
     <string name="happ_regenerate">Regenerate identity</string>
-    <string name="happ_regenerate_hint">A new user id and HWID — the identity the panel sees</string>
 
     <!-- Welcome (first run) -->
     <string name="welcome_title">Hello, stranger!</string>
