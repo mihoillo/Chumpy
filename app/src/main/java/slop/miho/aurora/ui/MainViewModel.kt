@@ -83,15 +83,17 @@ data class TrafficSample(
 /** One 15-second window of connectivity probes: how many were sent, how many never completed. */
 data class LossBucket(val atMillis: Long, val sent: Int, val lost: Int)
 
-/** The stats screen's live history, kept in memory only: the counters are sampled once a
- *  second and folded into 15-second buckets, the probes run every fifteen and land in the
- *  same buckets, and both trim to the graph window. Disconnecting freezes the history in
- *  place instead of clearing — the graphs stay on screen, and [frozenAtMillis] records
- *  when the data stopped moving. */
+/** The stats screen's live history, kept in memory only: the core's outbound counters are
+ *  read once a second — every read answers the bytes since the previous one, the core
+ *  resets its counters on each read — and folded into 15-second buckets, the probes run
+ *  every fifteen and land in the same buckets, and both trim to the graph window.
+ *  Disconnecting freezes the history in place instead of clearing — the graphs stay on
+ *  screen, and [frozenAtMillis] records when the data stopped moving. */
 data class StatsUiState(
     val samples: List<TrafficSample> = emptyList(),
     val buckets: List<LossBucket> = emptyList(),
-    /** The latest core counters — the frozen connection's total transfer. */
+    /** The session's accumulated transfer, folded here from the per-query deltas (the
+     *  core resets its counters on every read) — the frozen connection's total. */
     val rxTotal: Long = 0,
     val txTotal: Long = 0,
     /** When the graphs froze — the moment the tunnel went down; null while connected. */
@@ -485,9 +487,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // The stats session's bookkeeping.
     private var sessionStartMillis = 0L
 
-    /** The day-bucket baselines: what has already been flushed out of the live counters. */
-    private var lastFlushedRx = 0L
-    private var lastFlushedTx = 0L
     private var lastFlushAtMillis = 0L
 
     /**
@@ -547,85 +546,87 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * The traffic feed: samples the core's counters once a second and folds the rates into
-     * 15-second buckets — the graph's points are the averages, so they stay rare while the
-     * sampling underneath keeps its cadence, and the in-progress bucket keeps updating
-     * live until it settles. The day's bucket flushes at most once a minute; the exit
-     * flush in the finally block catches the session's tail — cancellation runs it too.
+     * The traffic feed: asks the core for its counters once a second and folds the bytes
+     * into 15-second buckets. Every query answers the bytes since the *previous* one —
+     * the core resets its counters on each read, the Xray way — so the rates are deltas
+     * over their own intervals and the session's totals grow here, one delta at a time;
+     * a reload that swaps the core underneath goes by unnoticed, both cores count from
+     * zero. The graph's points are the bucket averages (bytes over time, a background
+     * stride's longer interval weighed in), so they stay rare while the sampling
+     * underneath keeps its cadence, and the in-progress bucket keeps updating live until
+     * it settles. The day's bucket flushes at most once a minute; the exit flush in the
+     * finally block catches the session's tail — cancellation runs it too.
      */
     private fun startTrafficLoop() {
         trafficJob?.cancel()
         trafficJob = viewModelScope.launch(Dispatchers.IO) {
             var lastAtMillis = 0L
-            var lastRx = 0L
-            var lastTx = 0L
+            var sessionRx = 0L
+            var sessionTx = 0L
+            var sinceFlushRx = 0L
+            var sinceFlushTx = 0L
             var bucketStart = 0L
-            var bucketCount = 0
-            var bucketDownSum = 0L
-            var bucketUpSum = 0L
+            var bucketMillis = 0L
+            var bucketDownBytes = 0L
+            var bucketUpBytes = 0L
             try {
                 kotlinx.coroutines.delay(STATS_START_DELAY_MILLIS)
                 while (isActive && tunnelStatus.value.state == TunnelState.UP) {
                     val traffic = tunnelClient.trafficBytes()
                     val now = System.currentTimeMillis()
-                    if (traffic != null) {
-                        val (rx, tx) = traffic[0] to traffic[1]
-                        if (lastAtMillis != 0L && rx >= lastRx && tx >= lastTx) {
-                            val seconds = (now - lastAtMillis).coerceAtLeast(1L) / 1000.0
-                            val downBps = ((rx - lastRx) / seconds).toLong()
-                            val upBps = ((tx - lastTx) / seconds).toLong()
-                            val currentBucket = (now / TRAFFIC_BUCKET_MILLIS) * TRAFFIC_BUCKET_MILLIS
-                            if (currentBucket != bucketStart) {
-                                bucketStart = currentBucket
-                                bucketCount = 0
-                                bucketDownSum = 0L
-                                bucketUpSum = 0L
-                            }
-                            bucketCount++
-                            bucketDownSum += downBps
-                            bucketUpSum += upBps
-                            val bucketDown = bucketDownSum / bucketCount
-                            val bucketUp = bucketUpSum / bucketCount
-                            _stats.update { state ->
-                                val samples = state.samples.toMutableList()
-                                val index = samples.indexOfLast { it.atMillis == bucketStart }
-                                val point = TrafficSample(
-                                    atMillis = bucketStart,
-                                    rxTotal = rx,
-                                    txTotal = tx,
-                                    downBps = bucketDown,
-                                    upBps = bucketUp,
-                                )
-                                if (index >= 0) samples[index] = point else samples.add(point)
-                                state.copy(
-                                    samples = trimWindow(samples),
-                                    rxTotal = rx,
-                                    txTotal = tx,
-                                )
-                            }
-                        } else if (rx < lastRx || tx < lastTx) {
-                            // The counters went backwards: the core reconnected under us and
-                            // the counters restarted. Re-baseline without a point — the gap
-                            // would otherwise read as a giant spike or a negative rate.
+                    if (traffic != null && lastAtMillis != 0L) {
+                        val down = traffic[0]
+                        val up = traffic[1]
+                        val elapsed = (now - lastAtMillis).coerceAtLeast(1L)
+                        sessionRx += down
+                        sessionTx += up
+                        sinceFlushRx += down
+                        sinceFlushTx += up
+                        val currentBucket = (now / TRAFFIC_BUCKET_MILLIS) * TRAFFIC_BUCKET_MILLIS
+                        if (currentBucket != bucketStart) {
+                            bucketStart = currentBucket
+                            bucketMillis = 0L
+                            bucketDownBytes = 0L
+                            bucketUpBytes = 0L
                         }
-                        lastAtMillis = now
-                        lastRx = rx
-                        lastTx = tx
+                        bucketMillis += elapsed
+                        bucketDownBytes += down
+                        bucketUpBytes += up
+                        val bucketDown = bucketDownBytes * 1_000 / bucketMillis
+                        val bucketUp = bucketUpBytes * 1_000 / bucketMillis
+                        _stats.update { state ->
+                            val samples = state.samples.toMutableList()
+                            val index = samples.indexOfLast { it.atMillis == bucketStart }
+                            val point = TrafficSample(
+                                atMillis = bucketStart,
+                                rxTotal = sessionRx,
+                                txTotal = sessionTx,
+                                downBps = bucketDown,
+                                upBps = bucketUp,
+                            )
+                            if (index >= 0) samples[index] = point else samples.add(point)
+                            state.copy(
+                                samples = trimWindow(samples),
+                                rxTotal = sessionRx,
+                                txTotal = sessionTx,
+                            )
+                        }
                         if (now - lastFlushAtMillis >= DAILY_FLUSH_MILLIS) {
-                            flushDailyTraffic(rx - lastFlushedRx, tx - lastFlushedTx)
-                            lastFlushedRx = rx
-                            lastFlushedTx = tx
+                            flushDailyTraffic(sinceFlushRx, sinceFlushTx)
+                            sinceFlushRx = 0L
+                            sinceFlushTx = 0L
                             lastFlushAtMillis = now
                         }
                     }
+                    // A null answer means the call never reached the core — its counters
+                    // kept counting, nothing is lost by moving the clock on.
+                    lastAtMillis = now
                     pacedDelay(
                         if (appInForeground) TRAFFIC_SAMPLE_MILLIS else BACKGROUND_SAMPLE_MILLIS,
                     )
                 }
             } finally {
-                if (lastAtMillis != 0L) {
-                    flushDailyTraffic(lastRx - lastFlushedRx, lastTx - lastFlushedTx)
-                }
+                flushDailyTraffic(sinceFlushRx, sinceFlushTx)
             }
         }
     }

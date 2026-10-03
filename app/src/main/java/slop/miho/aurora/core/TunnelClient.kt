@@ -77,7 +77,8 @@ class TunnelClient(private val context: Context) {
         }
     }
 
-    /** The tunnel's {rx, tx} byte counters since it came up, or null while not bound. */
+    /** The tunnel's {rx, tx} byte counters — bytes since the caller's previous query
+     *  (the core resets them on every read) — or null while not bound. */
     fun trafficBytes(): LongArray? {
         val remote = service ?: return null
         return try {

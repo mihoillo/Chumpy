@@ -228,8 +228,10 @@ object XrayCore {
     }
 
     /**
-     * The proxy outbound's {rx, tx} bytes since the core came up, from the core's own
-     * stats counters ("tag,direction,value;" rows). Zeros while down.
+     * The proxy outbound's {rx, tx} bytes since the *previous* query — the core resets its
+     * counters on every read (the Xray way; v2rayNG divides the answer by the seconds
+     * since its last query for its speed notification) — so callers fold deltas, they do
+     * not watch a total grow. Zeros while down.
      */
     fun trafficBytes(): LongArray {
         if (!isRunning) return longArrayOf(0L, 0L)
