@@ -754,9 +754,9 @@ private fun SubscriptionDropdown(
 /**
  * The add row, the list's standing invitation — and, tapped, its own working face: the
  * card's face swap laid sideways, the invitation riding out to the right while the
- * welcome screen's field steps in from the left, the invitation's own tile staying at
- * its post as the way back. Submitting folds the face back with the field cleared; a
- * failure leaves it open, the URL kept for another try.
+ * welcome screen's field steps in from the left, the field's own cross — the compact
+ * card's tight pair — as the way back. Submitting folds the face back with the field
+ * cleared; a failure leaves it open, the URL kept for another try.
  */
 @Composable
 private fun AddSubscriptionRow(
@@ -806,26 +806,6 @@ private fun AddSubscriptionRow(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // The way back: the invitation's own tile at its own post, the plus
-                    // traded for the back arrow.
-                    Surface(
-                        onClick = {
-                            poke()
-                            onOpenChange(false)
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        color = colors.secondaryContainer,
-                        contentColor = colors.onSecondaryContainer,
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_arrow_back),
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                            )
-                        }
-                    }
                     SubmitFieldRow(
                         value = url,
                         onValueChange = onUrlChange,
@@ -838,6 +818,7 @@ private fun AddSubscriptionRow(
                             }
                         },
                         autofocus = true,
+                        onClose = { onOpenChange(false) },
                         modifier = Modifier.weight(1f),
                     )
                 }
