@@ -1354,7 +1354,7 @@ private fun TestUrlRow(
                 contentColor = colors.onSecondaryContainer,
                 modifier = Modifier
                     .padding(end = 16.dp)
-                    .size(width = 36.dp, height = 48.dp),
+                    .size(width = 36.dp, height = 40.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
@@ -1566,20 +1566,28 @@ private fun EditSpoofStringsRow(
 
 /**
  * The regenerator, the fold's first row: a fresh identity is a deliberate tap — the
- * round tile the header's old cluster wore, now leading a row of its own over the
- * strings it rewrites. Awake whatever the toggle says: new strings are worth picking
- * before the spoof ever rides.
+ * toggle's own square tile, now trailing a row of its own over the strings it
+ * rewrites. Awake whatever the toggle says: new strings are worth picking before the
+ * spoof ever rides.
  */
 @Composable
 private fun HappRegenerateRow(
     onRegenerate: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
     val regenSource = remember { MutableInteractionSource() }
     val regenPressed by regenSource.collectIsPressedAsState()
     val poke = rememberHapticPoke()
     // Bumped in the click handler: the pop keys off it, so it fires on every click.
     var regenTaps by remember { mutableIntStateOf(0) }
+    // The toggle tile's own resting tone and pressed dip.
+    val resting = colors.secondaryContainer
+    val container by animateColorAsState(
+        targetValue = if (regenPressed) lerp(resting, colors.onSurface, 0.1f) else resting,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "regen tile container",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1602,14 +1610,14 @@ private fun HappRegenerateRow(
             color = colors.onSurface,
             modifier = Modifier.weight(1f),
         )
-        // The tile the header's trailing pair wore, trailing still: the round one,
-        // its renew mark centered.
+        // The tile the header's trailing pair wore, trailing still: the toggle's own
+        // square, its renew mark centered.
         Surface(
-            shape = CircleShape,
-            color = colors.secondaryContainer,
+            shape = RoundedCornerShape(16.dp),
+            color = container,
             contentColor = colors.onSecondaryContainer,
             modifier = Modifier
-                .size(width = 36.dp, height = 48.dp)
+                .size(48.dp)
                 .pressBounce(regenPressed, regenTaps),
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -1689,7 +1697,7 @@ private fun HappFieldRow(
             color = colors.secondaryContainer,
             contentColor = colors.onSecondaryContainer,
             modifier = Modifier
-                .size(width = 36.dp, height = 48.dp),
+                .size(width = 36.dp, height = 40.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
