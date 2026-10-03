@@ -16,6 +16,7 @@ object CoreConfigFile {
     private const val DIR = "core"
     private const val CONFIG = "config.json"
     private const val PROFILE = "profile.txt"
+    private const val SUBSCRIPTION = "subscription.txt"
 
     private fun dir(context: Context): File = File(context.filesDir, DIR).also { it.mkdirs() }
 
@@ -31,12 +32,20 @@ object CoreConfigFile {
         return if (file.isFile) file.readText().trim().takeIf { it.isNotEmpty() } else null
     }
 
+    /** The connected profile's subscription name — the hop the notification tells
+     *  before the region. Null for manual profiles: no subscription to name. */
+    fun readSubscriptionName(context: Context): String? {
+        val file = File(dir(context), SUBSCRIPTION)
+        return if (file.isFile) file.readText().trim().takeIf { it.isNotEmpty() } else null
+    }
+
     fun has(context: Context): Boolean = File(dir(context), CONFIG).isFile
 
-    fun write(context: Context, configJson: String, profileName: String?) {
+    fun write(context: Context, configJson: String, profileName: String?, subscriptionName: String?) {
         val directory = dir(context)
         writeAtomic(File(directory, CONFIG), configJson)
         writeAtomic(File(directory, PROFILE), profileName.orEmpty())
+        writeAtomic(File(directory, SUBSCRIPTION), subscriptionName.orEmpty())
     }
 
     private fun writeAtomic(target: File, content: String) {

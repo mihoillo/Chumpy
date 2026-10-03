@@ -273,7 +273,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val profile = selectedProfile.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
             val config = XrayConfigBuilder.buildFull(profile, connection.value.routingMode)
-            CoreConfigFile.write(app, config, profile.remarks.ifEmpty { profile.server })
+            CoreConfigFile.write(
+                app,
+                config,
+                profile.remarks.ifEmpty { profile.server },
+                selectedSubscription.value?.name,
+            )
             tunnelClient.connect()
         }
     }
