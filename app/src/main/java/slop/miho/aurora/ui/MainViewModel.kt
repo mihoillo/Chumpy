@@ -149,9 +149,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         var previous = connection.value
         viewModelScope.launch {
             connection.drop(1).collect { current ->
-                if (previous.bypassedApps != current.bypassedApps &&
-                    tunnelStatus.value.state == TunnelState.UP
-                ) {
+                val bypassChanged = previous.bypassedApps != current.bypassedApps ||
+                    previous.perAppEnabled != current.perAppEnabled
+                if (bypassChanged && tunnelStatus.value.state == TunnelState.UP) {
                     tunnelClient.disconnect()
                     applyConfigAndConnect()
                 }

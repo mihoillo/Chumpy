@@ -22,6 +22,8 @@ data class ConnectionSettings(
     val delayTestUrl: String = XrayConfigBuilder.DEFAULT_TEST_URL,
     /** Packages the tunnel leaves alone — the per-app bypass list, v2rayNG's arrangement. */
     val bypassedApps: Set<String> = emptySet(),
+    /** The per-app proxy's own master switch: off, and the whole list stops applying. */
+    val perAppEnabled: Boolean = true,
 )
 
 object ConnectionStore {
@@ -67,6 +69,7 @@ object ConnectionStore {
             delayTestUrl = prefs.getString(KEY_TEST_URL, null)?.takeIf { it.isNotBlank() }
                 ?: XrayConfigBuilder.DEFAULT_TEST_URL,
             bypassedApps = prefs.getStringSet(KEY_BYPASS_APPS, null)?.toSet() ?: emptySet(),
+            perAppEnabled = prefs.getBoolean(KEY_PER_APP, true),
         )
     }
 
@@ -85,6 +88,7 @@ object ConnectionStore {
             }
             .putString(KEY_ROUTING, settings.routingMode.name)
             .putString(KEY_TEST_URL, settings.delayTestUrl)
+            .putBoolean(KEY_PER_APP, settings.perAppEnabled)
             .apply()
     }
 
@@ -93,4 +97,5 @@ object ConnectionStore {
     private const val KEY_ROUTING = "routing_mode"
     private const val KEY_TEST_URL = "delay_test_url"
     private const val KEY_BYPASS_APPS = "bypassed_apps"
+    private const val KEY_PER_APP = "per_app_enabled"
 }

@@ -6,23 +6,34 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -30,14 +41,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,6 +64,7 @@ import kotlinx.coroutines.withContext
 import slop.miho.aurora.R
 import slop.miho.aurora.data.ConnectionStore
 import slop.miho.aurora.data.SettingsStore
+import slop.miho.aurora.ui.components.pressBounce
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.main.FloatingBottomBarReservedHeight
 import slop.miho.aurora.ui.main.PillDestination
@@ -72,7 +89,13 @@ class PerAppProxyActivity : ComponentActivity() {
             AuroraTheme(settings = ui) {
                 Surface(color = MaterialTheme.colorScheme.surface) {
                     PerAppProxyScreen(
+                        enabled = connection.perAppEnabled,
                         bypassed = connection.bypassedApps,
+                        onToggleEnabled = { enabled ->
+                            ConnectionStore.update(this) { settings ->
+                                settings.copy(perAppEnabled = enabled)
+                            }
+                        },
                         onToggle = { pkg ->
                             ConnectionStore.update(this) { settings ->
                                 settings.copy(
@@ -104,7 +127,9 @@ private data class AppEntry(
 
 @Composable
 fun PerAppProxyScreen(
+    enabled: Boolean,
     bypassed: Set<String>,
+    onToggleEnabled: (Boolean) -> Unit,
     onToggle: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -115,6 +140,12 @@ fun PerAppProxyScreen(
     val apps by produceState(initialValue = emptyList<AppEntry>()) {
         value = withContext(Dispatchers.IO) { installedApps(context) }
     }
+    // The picked apps' block rides on top, frozen as the page opened: a toggle repaints
+    // the row where it sits rather than re-sorting the blocks under the finger — the
+    // order only settles again on the next visit.
+    val initialBypassed = remember { bypassed }
+    val selected = remember(apps) { apps.filter { it.packageName in initialBypassed } }
+    val rest = remember(apps) { apps.filter { it.packageName !in initialBypassed } }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -123,15 +154,10 @@ fun PerAppProxyScreen(
                 .screenPadding()
                 .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp),
         ) {
-            Text(
-                text = if (bypassed.isEmpty()) {
-                    stringResource(R.string.per_app_hint)
-                } else {
-                    stringResource(R.string.per_app_count, bypassed.size)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            PerAppToggleRow(
+                enabled = enabled,
+                count = bypassed.size,
+                onChange = onToggleEnabled,
             )
             val outer = MaterialTheme.shapes.extraLarge
             val inner = MaterialTheme.shapes.extraSmall
@@ -140,27 +166,32 @@ fun PerAppProxyScreen(
                     .fillMaxWidth()
                     .weight(1f),
                 // The servers list's segmented container: 2dp gaps between rows instead
-                // of dividers, the first and last rows carrying the group's outer
-                // corners, the rest the small inner ones.
+                // of dividers, each block carrying the group's outer corners on its
+                // first and last rows, the small inner ones on the rest.
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 contentPadding = PaddingValues(
+                    top = 16.dp,
                     bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
                         FloatingBottomBarReservedHeight,
                 ),
             ) {
-                itemsIndexed(apps, key = { _, app -> app.packageName }) { index, app ->
-                    val first = index == 0
-                    val last = index == apps.lastIndex
+                itemsIndexed(selected, key = { _, app -> app.packageName }) { index, app ->
                     AppRow(
                         app = app,
                         bypassed = app.packageName in bypassed,
                         onToggle = { onToggle(app.packageName) },
-                        shape = RoundedCornerShape(
-                            topStart = if (first) outer.topStart else inner.topStart,
-                            topEnd = if (first) outer.topEnd else inner.topEnd,
-                            bottomStart = if (last) outer.bottomStart else inner.bottomStart,
-                            bottomEnd = if (last) outer.bottomEnd else inner.bottomEnd,
-                        ),
+                        shape = sectionShape(index, selected.lastIndex, outer, inner),
+                    )
+                }
+                if (selected.isNotEmpty() && rest.isNotEmpty()) {
+                    item(key = "block gap") { Spacer(modifier = Modifier.height(12.dp)) }
+                }
+                itemsIndexed(rest, key = { _, app -> app.packageName }) { index, app ->
+                    AppRow(
+                        app = app,
+                        bypassed = app.packageName in bypassed,
+                        onToggle = { onToggle(app.packageName) },
+                        shape = sectionShape(index, rest.lastIndex, outer, inner),
                     )
                 }
             }
@@ -175,6 +206,141 @@ fun PerAppProxyScreen(
         )
     }
 }
+
+/**
+ * The per-app proxy's master switch, the screen's own first block: the apps tile leading
+ * on the left, the story under the title, the toggle tile at the end — the block mark
+ * while the bypass list applies, the globe once the whole list stops mattering. The whole
+ * row taps.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun PerAppToggleRow(
+    enabled: Boolean,
+    count: Int,
+    onChange: (Boolean) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val poke = rememberHapticPoke()
+    // Bumped in the click handler: the tile's pop keys off it, so it fires on every
+    // click — the press state alone can go unnoticed on a quick tap.
+    var taps by remember { mutableIntStateOf(0) }
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
+        contentColor = colors.onSurface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = LocalIndication.current,
+                ) {
+                    poke()
+                    taps++
+                    onChange(!enabled)
+                }
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // The apps tile, leading: raised tonal container dipping its tone while the
+            // row is held down.
+            val resting = colors.secondaryContainer
+            val container by animateColorAsState(
+                targetValue = if (pressed) lerp(resting, colors.onSurface, 0.1f) else resting,
+                animationSpec = motion.defaultEffectsSpec(),
+                label = "per-app leading tile container",
+            )
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = container,
+                contentColor = colors.onSecondaryContainer,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_apps),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.per_app_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = colors.onSurface,
+                )
+                Text(
+                    text = if (count == 0) {
+                        stringResource(R.string.per_app_hint)
+                    } else {
+                        stringResource(R.string.per_app_count, count)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant,
+                )
+            }
+            // The toggle tile: the accent while on, the crossfading mark in the middle.
+            val toggleResting = if (enabled) colors.primary else colors.secondaryContainer
+            val toggleContainer by animateColorAsState(
+                targetValue = if (pressed) {
+                    lerp(toggleResting, colors.onSurface, 0.1f)
+                } else {
+                    toggleResting
+                },
+                animationSpec = motion.defaultEffectsSpec(),
+                label = "per-app toggle tile container",
+            )
+            val toggleContent by animateColorAsState(
+                targetValue = if (enabled) colors.onPrimary else colors.onSecondaryContainer,
+                animationSpec = motion.defaultEffectsSpec(),
+                label = "per-app toggle tile content",
+            )
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = toggleContainer,
+                contentColor = toggleContent,
+                modifier = Modifier
+                    .size(48.dp)
+                    .pressBounce(pressed, taps),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Crossfade(
+                        targetState = if (enabled) R.drawable.ic_block else R.drawable.ic_public,
+                        animationSpec = motion.defaultEffectsSpec(),
+                        label = "per-app toggle tile icon",
+                    ) { icon ->
+                        Icon(
+                            painter = painterResource(icon),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One block's row corners: the outer ones at the block's own ends, the inner between. */
+private fun sectionShape(
+    index: Int,
+    lastIndex: Int,
+    outer: CornerBasedShape,
+    inner: CornerBasedShape,
+): Shape = RoundedCornerShape(
+    topStart = if (index == 0) outer.topStart else inner.topStart,
+    topEnd = if (index == 0) outer.topEnd else inner.topEnd,
+    bottomStart = if (index == lastIndex) outer.bottomStart else inner.bottomStart,
+    bottomEnd = if (index == lastIndex) outer.bottomEnd else inner.bottomEnd,
+)
 
 /**
  * One app's row, the server row's twin: the app's own icon bare in the leading slot (no

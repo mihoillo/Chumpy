@@ -207,13 +207,17 @@ class AuroraVpnService : VpnService() {
         } catch (e: PackageManager.NameNotFoundException) {
             Log.wtf(TAG, "Own package not found", e)
         }
-        // The per-app bypass: packages the user pulled out of the tunnel. Read straight
-        // off disk — this process's cached copy goes stale the moment the UI writes.
-        ConnectionStore.current(this).bypassedApps.forEach { pkg ->
-            try {
-                builder.addDisallowedApplication(pkg)
-            } catch (e: PackageManager.NameNotFoundException) {
-                Log.w(TAG, "Bypassed app not found: $pkg")
+        // The per-app bypass: packages the user pulled out of the tunnel, the list's own
+        // master switch permitting. Read straight off disk — this process's cached copy
+        // goes stale the moment the UI writes.
+        val connection = ConnectionStore.current(this)
+        if (connection.perAppEnabled) {
+            connection.bypassedApps.forEach { pkg ->
+                try {
+                    builder.addDisallowedApplication(pkg)
+                } catch (e: PackageManager.NameNotFoundException) {
+                    Log.w(TAG, "Bypassed app not found: $pkg")
+                }
             }
         }
         return builder.establish()
