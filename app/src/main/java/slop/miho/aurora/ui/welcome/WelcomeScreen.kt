@@ -20,11 +20,12 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -109,15 +110,19 @@ fun WelcomeScreen(
         }
     }
 
-    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
+    // No insets from the Scaffold: the card carries its own bottom law — navbar, or the
+    // keyboard over it, never both stacked — and nothing else pads the bottom.
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 // Landscape cutouts on the sides stay clear, as on Home.
                 .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                .padding(horizontal = if (isSmallScreen()) 16.dp else 32.dp)
-                .imePadding(),
+                .padding(horizontal = if (isSmallScreen()) 16.dp else 32.dp),
         ) {
             Box(Modifier.weight(1f)) {
                 Column(
@@ -152,16 +157,19 @@ fun WelcomeScreen(
                 }
             }
 
+            // The greeting keeps its distance from the card below.
+            Spacer(Modifier.height(24.dp))
+
             // The one button, the toggle row's own shape: the field standing in for the
             // title, the tile for the switch — paste while empty, the arrow to go once
-            // it holds something.
+            // it holds something. The bottom inset is the navbar or the keyboard, never
+            // both: open, the card rides straight on the keys.
             WelcomeSubmitRow(
                 value = url,
                 onValueChange = { url = it },
                 onSubmit = ::submit,
                 modifier = Modifier
-                    .navigationBarsPadding()
-                    .padding(bottom = 32.dp),
+                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
             )
         }
     }
@@ -201,7 +209,9 @@ private fun WelcomeSubmitRow(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = true,
-                label = { Text(stringResource(R.string.subscription_url_field)) },
+                // The name rides as a placeholder — it holds the empty field's center
+                // and steps aside for the text, instead of floating above it.
+                placeholder = { Text(stringResource(R.string.subscription_url_field)) },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Uri,
                     imeAction = ImeAction.Done,
