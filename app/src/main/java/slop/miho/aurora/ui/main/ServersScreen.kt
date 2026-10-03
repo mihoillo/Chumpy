@@ -465,9 +465,10 @@ private fun SubscriptionReportFace(
 }
 
 /**
- * The report face with nothing but the name to show: the tile and its refresh button
- * side by side, the name — with its stamp — centered in what remains, and the chevron
- * inline at the end, the way the chooser's face carries it.
+ * The report face with nothing but the name to show: the tile with its refresh button
+ * standing beside it at the tile's height, the name centered in what remains — the last
+ * update's stamp waiting under it on its own line — and the chevron inline at the end,
+ * the way the chooser's face carries it.
  */
 @Composable
 private fun SubscriptionCompactFace(
@@ -485,12 +486,13 @@ private fun SubscriptionCompactFace(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         DatabaseTile()
-        UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
+        UpdateButton(isUpdating = isUpdating, onClick = onUpdate, width = 36.dp, height = 48.dp)
         SubscriptionTitleRow(
             subscription = subscription,
             contentColor = contentColor,
             supportingColor = supportingColor,
             modifier = Modifier.weight(1f),
+            stampBelow = true,
         )
         Icon(
             painter = painterResource(R.drawable.ic_chevron_right),
@@ -527,8 +529,9 @@ private fun DatabaseTile() {
 }
 
 /**
- * The subscription's name — the last update's stamp riding at its level, flush against
- * the right edge.
+ * The subscription's name with the last update's stamp — riding at its level, flush
+ * against the right edge, or waiting under it on its own line ([stampBelow], the
+ * compact face's way).
  */
 @Composable
 private fun SubscriptionTitleRow(
@@ -536,7 +539,30 @@ private fun SubscriptionTitleRow(
     contentColor: Color,
     supportingColor: Color,
     modifier: Modifier = Modifier,
+    stampBelow: Boolean = false,
 ) {
+    val stamp = subscription?.let { updatedText(it) }
+    if (stampBelow) {
+        Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = subscription?.name?.takeIf { it.isNotBlank() }
+                    ?: stringResource(R.string.subscription_none),
+                style = MaterialTheme.typography.bodyLarge,
+                color = contentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            stamp?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = supportingColor,
+                    maxLines = 1,
+                )
+            }
+        }
+        return
+    }
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = subscription?.name?.takeIf { it.isNotBlank() }
@@ -600,11 +626,17 @@ private fun SubscriptionChooserFace(
 
 /**
  * The update button: the font picker's import button turned on its side — the same
- * stadium, the same press bounce, as wide as the tile above it but shorter — the
- * round-trip arrows spinning slowly while the fetch runs.
+ * stadium, the same press bounce. It measures itself against the tile it belongs to:
+ * as wide as the tile but shorter while stacked under it, as tall but narrower while
+ * riding beside it — the round-trip arrows spinning slowly while the fetch runs.
  */
 @Composable
-private fun UpdateButton(isUpdating: Boolean, onClick: () -> Unit) {
+private fun UpdateButton(
+    isUpdating: Boolean,
+    onClick: () -> Unit,
+    width: Dp = 48.dp,
+    height: Dp = 36.dp,
+) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
@@ -639,7 +671,7 @@ private fun UpdateButton(isUpdating: Boolean, onClick: () -> Unit) {
         color = container,
         contentColor = colors.onSecondaryContainer,
         modifier = Modifier
-            .size(width = 48.dp, height = 36.dp)
+            .size(width = width, height = height)
             .pressBounce(pressed, taps),
     ) {
         Box(contentAlignment = Alignment.Center) {
