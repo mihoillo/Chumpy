@@ -46,6 +46,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
@@ -74,6 +75,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -1544,11 +1546,12 @@ private fun HappToggleRow(
 }
 
 /**
- * One fingerprint field on its own line: the delay test URL's own card in miniature —
- * the bare field edge to edge, the sleeping pencil at its end marking the row for a
- * text field, the field's name riding under it, where the delay test URL's hint rides.
- * Committed on every keystroke; Done commits the trim. The rows only stand while the
- * spoof is on, so there is no sleeping state to draw — the fold carries the whole card.
+ * One fingerprint field on its own line: a plain row's own two lines — the value where
+ * the title goes and the field's name where the supporting goes — only the title line
+ * is the editable one, a bare text field with no stadium and no air of its own, so
+ * seven of them in a stack read as rows, not as a form. The pencil keeps its place at
+ * the end, asleep, marking the row for a text field. Committed on every keystroke;
+ * Done commits the trim.
  */
 @Composable
 private fun HappFieldRow(
@@ -1557,61 +1560,60 @@ private fun HappFieldRow(
     onChange: (String) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                // 80, not the field's own 56: the stadium gets its 16dp of air above
-                // and below to match the sides — the delay test URL's own arithmetic.
-                .heightIn(min = 80.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onChange,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = {
-                    val trimmedNow = value.trim()
-                    if (value != trimmedNow) onChange(trimmedNow)
-                }),
-                // No outline and no fill of its own: the card is the field's.
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                ),
-                modifier = Modifier.weight(1f),
-            )
-            // The pencil, asleep: a pencil, no press, marking the row for a text field.
-            Surface(
-                shape = CircleShape,
-                color = colors.secondaryContainer,
-                contentColor = colors.onSecondaryContainer,
-                modifier = Modifier
-                    .padding(end = 16.dp)
-                    .size(width = 36.dp, height = 48.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_edit),
-                        contentDescription = null,
-                        // The glyph turns inside the backing — the backing stays put.
-                        // A pencil resting at its writing angle, tip down.
-                        modifier = Modifier
-                            .size(24.dp)
-                            .graphicsLayer { rotationZ = -45f },
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
+            cursorBrush = SolidColor(colors.primary),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = {
+                val trimmedNow = value.trim()
+                if (value != trimmedNow) onChange(trimmedNow)
+            }),
+            decorationBox = { field ->
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    field()
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.onSurfaceVariant,
+                        maxLines = 1,
                     )
                 }
+            },
+            modifier = Modifier.weight(1f),
+        )
+        // The pencil, asleep: a pencil, no press, marking the row for a text field.
+        Surface(
+            shape = CircleShape,
+            color = colors.secondaryContainer,
+            contentColor = colors.onSecondaryContainer,
+            modifier = Modifier
+                .size(width = 36.dp, height = 48.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_edit),
+                    contentDescription = null,
+                    // The glyph turns inside the backing — the backing stays put.
+                    // A pencil resting at its writing angle, tip down.
+                    modifier = Modifier
+                        .size(24.dp)
+                        .graphicsLayer { rotationZ = -45f },
+                )
             }
         }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.onSurfaceVariant,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-        )
     }
 }
 
