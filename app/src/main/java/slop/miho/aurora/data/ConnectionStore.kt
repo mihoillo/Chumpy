@@ -24,6 +24,10 @@ data class ConnectionSettings(
     val bypassedApps: Set<String> = emptySet(),
     /** The per-app proxy's own master switch: off, and the whole list stops applying. */
     val perAppEnabled: Boolean = true,
+    /** Wi-Fi names the tunnel stands down on — the trusted networks. */
+    val trustedWifiSsids: Set<String> = emptySet(),
+    /** The trusted networks' own master switch, mirroring the per-app one. */
+    val trustedWifiEnabled: Boolean = true,
 )
 
 object ConnectionStore {
@@ -70,6 +74,8 @@ object ConnectionStore {
                 ?: XrayConfigBuilder.DEFAULT_TEST_URL,
             bypassedApps = prefs.getStringSet(KEY_BYPASS_APPS, null)?.toSet() ?: emptySet(),
             perAppEnabled = prefs.getBoolean(KEY_PER_APP, true),
+            trustedWifiSsids = prefs.getStringSet(KEY_TRUSTED_WIFI, null)?.toSet() ?: emptySet(),
+            trustedWifiEnabled = prefs.getBoolean(KEY_TRUSTED_WIFI_ENABLED, true),
         )
     }
 
@@ -85,10 +91,16 @@ object ConnectionStore {
                 } else {
                     editor.putStringSet(KEY_BYPASS_APPS, settings.bypassedApps)
                 }
+                if (settings.trustedWifiSsids.isEmpty()) {
+                    editor.remove(KEY_TRUSTED_WIFI)
+                } else {
+                    editor.putStringSet(KEY_TRUSTED_WIFI, settings.trustedWifiSsids)
+                }
             }
             .putString(KEY_ROUTING, settings.routingMode.name)
             .putString(KEY_TEST_URL, settings.delayTestUrl)
             .putBoolean(KEY_PER_APP, settings.perAppEnabled)
+            .putBoolean(KEY_TRUSTED_WIFI_ENABLED, settings.trustedWifiEnabled)
             .apply()
     }
 
@@ -98,4 +110,6 @@ object ConnectionStore {
     private const val KEY_TEST_URL = "delay_test_url"
     private const val KEY_BYPASS_APPS = "bypassed_apps"
     private const val KEY_PER_APP = "per_app_enabled"
+    private const val KEY_TRUSTED_WIFI = "trusted_wifi_ssids"
+    private const val KEY_TRUSTED_WIFI_ENABLED = "trusted_wifi_enabled"
 }

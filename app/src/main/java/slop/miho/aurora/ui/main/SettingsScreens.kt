@@ -708,6 +708,9 @@ private fun ScreenLinkRow(
     supporting: String,
     icon: Int,
     target: Class<*>,
+    // A place to dress the launch intent — the trusted networks row opens the per-app
+    // screen on its own page, not the apps' one.
+    configureIntent: (Intent.() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -725,7 +728,9 @@ private fun ScreenLinkRow(
             ) {
                 poke()
                 taps++
-                context.startActivity(Intent(context, target))
+                val intent = Intent(context, target)
+                configureIntent?.invoke(intent)
+                context.startActivity(intent)
             }
             .padding(horizontal = 16.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -843,8 +848,9 @@ fun ConnectionScreen(
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Routing and the per-app bypass share one block: both decide what the tunnel
-        // carries — whole countries by their sites and addresses, single apps by name.
+        // Routing, the per-app bypass and the trusted networks share one block: all three
+        // decide what the tunnel carries — whole countries by their sites and addresses,
+        // single apps by name, whole Wi-Fis by trust.
         SettingsGroup(
             {
                 RoutingRow(
@@ -865,6 +871,24 @@ fun ConnectionScreen(
                     },
                     icon = R.drawable.ic_apps,
                     target = slop.miho.aurora.ui.perapp.PerAppProxyActivity::class.java,
+                )
+            },
+            {
+                ScreenLinkRow(
+                    title = stringResource(R.string.trusted_title),
+                    supporting = when {
+                        !connection.trustedWifiEnabled -> stringResource(R.string.per_app_disabled)
+                        connection.trustedWifiSsids.isEmpty() -> stringResource(R.string.trusted_hint)
+                        else -> stringResource(R.string.trusted_count, connection.trustedWifiSsids.size)
+                    },
+                    icon = R.drawable.ic_wifi,
+                    target = slop.miho.aurora.ui.perapp.PerAppProxyActivity::class.java,
+                    configureIntent = {
+                        putExtra(
+                            slop.miho.aurora.ui.perapp.PerAppProxyActivity.EXTRA_PAGE,
+                            slop.miho.aurora.ui.perapp.PerAppProxyActivity.PAGE_NETWORKS,
+                        )
+                    },
                 )
             },
         )

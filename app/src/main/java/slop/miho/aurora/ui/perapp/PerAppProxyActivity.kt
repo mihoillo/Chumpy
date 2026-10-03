@@ -1,16 +1,21 @@
 package slop.miho.aurora.ui.perapp
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.wifi.WifiManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -30,16 +35,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,12 +68,13 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
@@ -83,33 +94,64 @@ import slop.miho.aurora.ui.theme.AuroraTheme
 import slop.miho.aurora.ui.wallpapers.LocalSurfaceOpacity
 
 /**
- * The per-app proxy settings, a deep-dive screen in the wallpapers' footsteps: every
- * launchable app in one list, each row a toggle — picked apps ignore the tunnel and
- * connect directly (v2rayNG's bypass arrangement). The system back gesture and the bar's
- * back button both simply finish this activity.
+ * The per-app proxy and the trusted networks, two pages of one deep-dive screen in the
+ * wallpapers' footsteps. The apps page is the bypass list — picked apps ignore the tunnel
+ * and connect directly (v2rayNG's arrangement); the networks page is the same story for
+ * Wi-Fi names — on a trusted one the tunnel stands down entirely, traffic going direct.
+ * The bar carries both pages as pills, a quick switch apart; the system back gesture and
+ * the bar's back button both simply finish this activity.
  */
 class PerAppProxyActivity : ComponentActivity() {
+    companion object {
+        /** Which page the screen opens on: [PAGE_APPS] or [PAGE_NETWORKS]. */
+        const val EXTRA_PAGE = "page"
+        const val PAGE_APPS = "apps"
+        const val PAGE_NETWORKS = "networks"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        val startPage = if (intent.getStringExtra(EXTRA_PAGE) == PAGE_NETWORKS) {
+            PerAppPage.NETWORKS
+        } else {
+            PerAppPage.APPS
+        }
         setContent {
             val ui by SettingsStore.settings(this).collectAsStateWithLifecycle()
             val connection by ConnectionStore.settings(this).collectAsStateWithLifecycle()
             AuroraTheme(settings = ui) {
                 Surface(color = MaterialTheme.colorScheme.surface) {
                     PerAppProxyScreen(
-                        enabled = connection.perAppEnabled,
-                        bypassed = connection.bypassedApps,
-                        onToggleEnabled = { enabled ->
+                        initialPage = startPage,
+                        appsEnabled = connection.perAppEnabled,
+                        bypassedApps = connection.bypassedApps,
+                        trustedWifiEnabled = connection.trustedWifiEnabled,
+                        trustedWifiSsids = connection.trustedWifiSsids,
+                        onToggleAppsEnabled = { enabled ->
                             ConnectionStore.update(this) { settings ->
                                 settings.copy(perAppEnabled = enabled)
                             }
                         },
-                        onToggle = { pkg ->
+                        onToggleApp = { pkg ->
                             ConnectionStore.update(this) { settings ->
                                 settings.copy(
                                     bypassedApps = settings.bypassedApps.let {
                                         if (pkg in it) it - pkg else it + pkg
+                                    },
+                                )
+                            }
+                        },
+                        onToggleTrustedWifiEnabled = { enabled ->
+                            ConnectionStore.update(this) { settings ->
+                                settings.copy(trustedWifiEnabled = enabled)
+                            }
+                        },
+                        onToggleTrustedWifi = { ssid ->
+                            ConnectionStore.update(this) { settings ->
+                                settings.copy(
+                                    trustedWifiSsids = settings.trustedWifiSsids.let {
+                                        if (ssid in it) it - ssid else it + ssid
                                     },
                                 )
                             }
@@ -122,9 +164,10 @@ class PerAppProxyActivity : ComponentActivity() {
     }
 }
 
-/** The bar's single destination: this screen's own pill. */
-private enum class PerAppDestination(override val icon: Int, override val label: Int) : PillDestination {
+/** The bar's destinations: the apps page and the networks page, one quick switch apart. */
+private enum class PerAppPage(override val icon: Int, override val label: Int) : PillDestination {
     APPS(R.drawable.ic_apps, R.string.per_app_title),
+    NETWORKS(R.drawable.ic_wifi, R.string.trusted_title),
 }
 
 /** One launchable app, icon included, loaded off the main thread. */
@@ -134,100 +177,42 @@ private data class AppEntry(
     val icon: ImageBitmap,
 )
 
+/** One Wi-Fi network by name; [current] marks the one the device sits on. */
+private data class NetworkEntry(
+    val ssid: String,
+    val current: Boolean,
+)
+
 @Composable
-fun PerAppProxyScreen(
-    enabled: Boolean,
-    bypassed: Set<String>,
-    onToggleEnabled: (Boolean) -> Unit,
-    onToggle: (String) -> Unit,
+private fun PerAppProxyScreen(
+    initialPage: PerAppPage,
+    appsEnabled: Boolean,
+    bypassedApps: Set<String>,
+    trustedWifiEnabled: Boolean,
+    trustedWifiSsids: Set<String>,
+    onToggleAppsEnabled: (Boolean) -> Unit,
+    onToggleApp: (String) -> Unit,
+    onToggleTrustedWifiEnabled: (Boolean) -> Unit,
+    onToggleTrustedWifi: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    // The launcher's own list — labels and icons of every launchable app, re-queried on
-    // every pull. Both loads are package-manager work: off the main thread, and the
-    // pull's wave makes the wait legible — it also answers the page's own first load.
-    var refreshes by remember { mutableIntStateOf(0) }
-    var loading by remember { mutableStateOf(true) }
-    val apps by produceState(initialValue = emptyList<AppEntry>(), refreshes) {
-        loading = true
-        value = withContext(Dispatchers.IO) { installedApps(context) }
-        loading = false
-    }
-    // The picked apps' block rides on top, frozen as the page opened: a toggle repaints
-    // the row where it sits rather than re-sorting the blocks under the finger — the
-    // order only settles again on the next visit.
-    val initialBypassed = remember { bypassed }
-    val selected = remember(apps) { apps.filter { it.packageName in initialBypassed } }
-    val rest = remember(apps) { apps.filter { it.packageName !in initialBypassed } }
-
+    var page by remember { mutableStateOf(initialPage) }
     val surface = MaterialTheme.colorScheme.surface
     Box(modifier = modifier.fillMaxSize()) {
-        // The wave grows with the pull while the list re-queries; the first load rides
-        // the same wave, so the wait is never a blank page.
-        WavyPullToRefreshBox(
-            isRefreshing = loading,
-            onRefresh = { refreshes++ },
-            modifier = Modifier.fillMaxSize(),
-        ) { pullShift ->
-            // Rows travel under the status bar and the floating bar (fading out behind
-            // the gradients) and rest clear of both thanks to the content padding. The
-            // pull pushes the rows down through the top padding (see
-            // WavyPullToRefreshBox).
-            val topContentPadding = WindowInsets.statusBars.asPaddingValues()
-                .calculateTopPadding() + 24.dp
-            val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues()
-                .calculateBottomPadding() + FloatingBottomBarReservedHeight
-            val outer = MaterialTheme.shapes.extraLarge
-            val inner = MaterialTheme.shapes.extraSmall
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .screenPadding(),
-                // The servers list's segmented container: 2dp gaps between rows instead
-                // of dividers, each block carrying the group's outer corners on its
-                // first and last rows, the small inner ones on the rest.
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-                contentPadding = remember(
-                    topContentPadding,
-                    bottomContentPadding,
-                    pullShift,
-                ) {
-                    pullShiftedPadding(topContentPadding, bottomContentPadding, pullShift)
-                },
-            ) {
-                // The master switch, the content's own first block: it scrolls with the
-                // list like every other card, riding under the status bar's fade.
-                item(key = "master switch") {
-                    PerAppToggleRow(
-                        enabled = enabled,
-                        count = bypassed.size,
-                        onChange = onToggleEnabled,
-                    )
-                }
-                item(key = "switch gap") { Spacer(modifier = Modifier.height(12.dp)) }
-                itemsIndexed(selected, key = { _, app -> app.packageName }) { index, app ->
-                    AppRow(
-                        app = app,
-                        bypassed = app.packageName in bypassed,
-                        active = enabled,
-                        onToggle = { onToggle(app.packageName) },
-                        shape = sectionShape(index, selected.lastIndex, outer, inner),
-                    )
-                }
-                if (selected.isNotEmpty() && rest.isNotEmpty()) {
-                    item(key = "block gap") { Spacer(modifier = Modifier.height(12.dp)) }
-                }
-                itemsIndexed(rest, key = { _, app -> app.packageName }) { index, app ->
-                    AppRow(
-                        app = app,
-                        bypassed = app.packageName in bypassed,
-                        active = enabled,
-                        onToggle = { onToggle(app.packageName) },
-                        shape = sectionShape(index, rest.lastIndex, outer, inner),
-                    )
-                }
-            }
+        when (page) {
+            PerAppPage.APPS -> AppsPage(
+                enabled = appsEnabled,
+                bypassed = bypassedApps,
+                onToggleEnabled = onToggleAppsEnabled,
+                onToggle = onToggleApp,
+            )
+            PerAppPage.NETWORKS -> NetworksPage(
+                enabled = trustedWifiEnabled,
+                trusted = trustedWifiSsids,
+                onToggleEnabled = onToggleTrustedWifiEnabled,
+                onToggle = onToggleTrustedWifi,
+            )
         }
 
         // Content scrolls under the status bar and fades out behind this gradient, the
@@ -265,9 +250,9 @@ fun PerAppProxyScreen(
         )
 
         SubScreenBottomBar(
-            items = PerAppDestination.entries.toList(),
-            selected = PerAppDestination.APPS,
-            onSelect = {},
+            items = PerAppPage.entries.toList(),
+            selected = page,
+            onSelect = { page = it },
             onBack = onBack,
             backdrop = null,
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -276,17 +261,279 @@ fun PerAppProxyScreen(
 }
 
 /**
- * The per-app proxy's master switch, the screen's own first block: the toggle tile
- * leading on the left — the block mark while the bypass list applies, the globe once the
- * whole list stops mattering — the title and its story beside it. The whole row taps.
+ * The apps page: the bypass list's master switch, then every launchable app, the picked
+ * ones' block riding on top.
  */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun PerAppToggleRow(
+private fun AppsPage(
     enabled: Boolean,
-    count: Int,
+    bypassed: Set<String>,
+    onToggleEnabled: (Boolean) -> Unit,
+    onToggle: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    // The launcher's own list — labels and icons of every launchable app, re-queried on
+    // every pull. Both loads are package-manager work: off the main thread, and the
+    // pull's wave makes the wait legible — it also answers the page's own first load.
+    var refreshes by remember { mutableIntStateOf(0) }
+    var loading by remember { mutableStateOf(true) }
+    val apps by produceState(initialValue = emptyList<AppEntry>(), refreshes) {
+        loading = true
+        value = withContext(Dispatchers.IO) { installedApps(context) }
+        loading = false
+    }
+    // The picked apps' block rides on top, frozen as the page opened: a toggle repaints
+    // the row where it sits rather than re-sorting the blocks under the finger — the
+    // order only settles again on the next visit.
+    val initialBypassed = remember { bypassed }
+    val selected = remember(apps) { apps.filter { it.packageName in initialBypassed } }
+    val rest = remember(apps) { apps.filter { it.packageName !in initialBypassed } }
+    // Computed here, not in the list's scope: MaterialTheme doesn't reach into it.
+    val outer = MaterialTheme.shapes.extraLarge
+    val inner = MaterialTheme.shapes.extraSmall
+
+    // The wave grows with the pull while the list re-queries; the first load rides
+    // the same wave, so the wait is never a blank page.
+    WavyPullToRefreshBox(
+        isRefreshing = loading,
+        onRefresh = { refreshes++ },
+        modifier = Modifier.fillMaxSize(),
+    ) { pullShift ->
+        // Rows travel under the status bar and the floating bar (fading out behind
+        // the gradients) and rest clear of both thanks to the content padding. The
+        // pull pushes the rows down through the top padding (see
+        // WavyPullToRefreshBox).
+        PagedList(
+            pullShift = pullShift,
+            toggle = {
+                MasterSwitchRow(
+                    title = stringResource(R.string.per_app_title),
+                    supporting = stringResource(
+                        when {
+                            !enabled -> R.string.per_app_disabled
+                            bypassed.isEmpty() -> R.string.per_app_hint
+                            else -> R.string.per_app_count
+                        },
+                        if (bypassed.isEmpty()) 1 else bypassed.size,
+                    ),
+                    enabled = enabled,
+                    onChange = onToggleEnabled,
+                )
+            },
+        ) {
+            itemsIndexed(selected, key = { _, app -> app.packageName }) { index, app ->
+                SelectableRow(
+                    headline = app.label,
+                    supporting = app.packageName,
+                    bypassed = app.packageName in bypassed,
+                    active = enabled,
+                    onToggle = { onToggle(app.packageName) },
+                    shape = sectionShape(index, selected.lastIndex, outer, inner),
+                ) {
+                    AppIcon(app = app, active = enabled)
+                }
+            }
+            if (selected.isNotEmpty() && rest.isNotEmpty()) {
+                item(key = "block gap") { Spacer(modifier = Modifier.height(12.dp)) }
+            }
+            itemsIndexed(rest, key = { _, app -> app.packageName }) { index, app ->
+                SelectableRow(
+                    headline = app.label,
+                    supporting = app.packageName,
+                    bypassed = app.packageName in bypassed,
+                    active = enabled,
+                    onToggle = { onToggle(app.packageName) },
+                    shape = sectionShape(index, rest.lastIndex, outer, inner),
+                ) {
+                    AppIcon(app = app, active = enabled)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The networks page: the trusted networks' master switch, then the Wi-Fi names the OS
+ * tells us — the one the device sits on and the saved ones — plus whatever was added by
+ * hand. Android only shares names with apps that have location access; without the grant
+ * the page still works, the hand-added networks and the permission's own card standing
+ * in for the list.
+ */
+@Composable
+private fun NetworksPage(
+    enabled: Boolean,
+    trusted: Set<String>,
+    onToggleEnabled: (Boolean) -> Unit,
+    onToggle: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    var locationGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ) == PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> locationGranted = granted }
+
+    var refreshes by remember { mutableIntStateOf(0) }
+    var loading by remember { mutableStateOf(true) }
+    var known by remember { mutableStateOf(emptyList<NetworkEntry>()) }
+    LaunchedEffect(refreshes, locationGranted) {
+        loading = true
+        known = withContext(Dispatchers.IO) { knownNetworks(context) }
+        loading = false
+    }
+    // The picked networks' block rides on top, frozen as the page opened — the apps
+    // page's own rule. The hand-added ones surface even when the OS names none.
+    val initialTrusted = remember { trusted }
+    val entries = remember(known, trusted) {
+        (known.map { it.ssid } + trusted).distinct().map { ssid ->
+            NetworkEntry(ssid = ssid, current = known.any { it.ssid == ssid && it.current })
+        }
+    }
+    val selected = remember(entries) { entries.filter { it.ssid in initialTrusted } }
+    val rest = remember(entries) { entries.filter { it.ssid !in initialTrusted } }
+    var pendingAdd by remember { mutableStateOf(false) }
+    // Computed here, not in the list's scope: MaterialTheme doesn't reach into it.
+    val outer = MaterialTheme.shapes.extraLarge
+    val inner = MaterialTheme.shapes.extraSmall
+
+    WavyPullToRefreshBox(
+        isRefreshing = loading,
+        onRefresh = { refreshes++ },
+        modifier = Modifier.fillMaxSize(),
+    ) { pullShift ->
+        PagedList(
+            pullShift = pullShift,
+            toggle = {
+                MasterSwitchRow(
+                    title = stringResource(R.string.trusted_title),
+                    supporting = stringResource(
+                        when {
+                            !enabled -> R.string.per_app_disabled
+                            trusted.isEmpty() -> R.string.trusted_hint
+                            else -> R.string.trusted_count
+                        },
+                        if (trusted.isEmpty()) 1 else trusted.size,
+                    ),
+                    enabled = enabled,
+                    onChange = onToggleEnabled,
+                )
+            },
+        ) {
+            if (!locationGranted) {
+                item(key = "permission") {
+                    PermissionCard(onGrant = {
+                        permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    })
+                }
+                item(key = "permission gap") { Spacer(modifier = Modifier.height(12.dp)) }
+            }
+            item(key = "add network") { AddNetworkRow(onClick = { pendingAdd = true }) }
+            item(key = "add gap") { Spacer(modifier = Modifier.height(12.dp)) }
+            itemsIndexed(selected, key = { _, entry -> entry.ssid }) { index, entry ->
+                SelectableRow(
+                    headline = entry.ssid,
+                    supporting = if (entry.current) stringResource(R.string.trusted_current) else null,
+                    bypassed = entry.ssid in trusted,
+                    active = enabled,
+                    onToggle = { onToggle(entry.ssid) },
+                    shape = sectionShape(index, selected.lastIndex, outer, inner),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_wifi),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            if (selected.isNotEmpty() && rest.isNotEmpty()) {
+                item(key = "block gap") { Spacer(modifier = Modifier.height(12.dp)) }
+            }
+            itemsIndexed(rest, key = { _, entry -> entry.ssid }) { index, entry ->
+                SelectableRow(
+                    headline = entry.ssid,
+                    supporting = if (entry.current) stringResource(R.string.trusted_current) else null,
+                    bypassed = entry.ssid in trusted,
+                    active = enabled,
+                    onToggle = { onToggle(entry.ssid) },
+                    shape = sectionShape(index, rest.lastIndex, outer, inner),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_wifi),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+        }
+    }
+
+    if (pendingAdd) {
+        AddNetworkDialog(
+            onConfirm = { ssid ->
+                pendingAdd = false
+                onToggle(ssid)
+            },
+            onDismiss = { pendingAdd = false },
+        )
+    }
+}
+
+/** The shared page skeleton: the pull-to-refresh box, the padding law, the list. */
+@Composable
+private fun PagedList(
+    pullShift: () -> Dp,
+    toggle: @Composable () -> Unit,
+    content: LazyListScope.() -> Unit,
+) {
+    // Rows travel under the status bar and the floating bar (fading out behind the
+    // gradients) and rest clear of both thanks to the content padding. The pull pushes
+    // the rows down through the top padding (see WavyPullToRefreshBox).
+    val topContentPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp
+    val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues()
+        .calculateBottomPadding() + FloatingBottomBarReservedHeight
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .screenPadding(),
+        // The servers list's segmented container: 2dp gaps between rows instead of
+        // dividers, each block carrying the group's outer corners on its first and last
+        // rows, the small inner ones on the rest.
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        contentPadding = remember(
+            topContentPadding,
+            bottomContentPadding,
+            pullShift,
+        ) {
+            pullShiftedPadding(topContentPadding, bottomContentPadding, pullShift)
+        },
+        content = {
+            // The master switch, the content's own first block: it scrolls with the list
+            // like every other card, riding under the status bar's fade.
+            item(key = "master switch") { toggle() }
+            item(key = "switch gap") { Spacer(modifier = Modifier.height(12.dp)) }
+            content()
+        },
+    )
+}
+
+/**
+ * The master switch row, both pages' first block: the toggle tile leading on the left —
+ * the block mark while the list applies, the globe once the whole list stops mattering —
+ * the title and its story beside it. The whole row taps.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MasterSwitchRow(
+    title: String,
+    supporting: String,
+    enabled: Boolean,
     onChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -300,7 +547,7 @@ private fun PerAppToggleRow(
         shape = MaterialTheme.shapes.extraLarge,
         color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
         contentColor = colors.onSurface,
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier
@@ -317,9 +564,8 @@ private fun PerAppToggleRow(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // The toggle tile, leading: the accent while the bypass list applies, the
-            // crossfading mark in the middle — the block mark while on, the globe once
-            // the whole list stops mattering.
+            // The toggle tile, leading: the accent while the list applies, the
+            // crossfading mark in the middle.
             val toggleResting = if (enabled) colors.primary else colors.secondaryContainer
             val toggleContainer by animateColorAsState(
                 targetValue = if (pressed) {
@@ -328,12 +574,12 @@ private fun PerAppToggleRow(
                     toggleResting
                 },
                 animationSpec = motion.defaultEffectsSpec(),
-                label = "per-app toggle tile container",
+                label = "master switch tile container",
             )
             val toggleContent by animateColorAsState(
                 targetValue = if (enabled) colors.onPrimary else colors.onSecondaryContainer,
                 animationSpec = motion.defaultEffectsSpec(),
-                label = "per-app toggle tile content",
+                label = "master switch tile content",
             )
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -347,7 +593,7 @@ private fun PerAppToggleRow(
                     Crossfade(
                         targetState = if (enabled) R.drawable.ic_block else R.drawable.ic_public,
                         animationSpec = motion.defaultEffectsSpec(),
-                        label = "per-app toggle tile icon",
+                        label = "master switch tile icon",
                     ) { icon ->
                         Icon(
                             painter = painterResource(icon),
@@ -359,16 +605,12 @@ private fun PerAppToggleRow(
             }
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.per_app_title),
+                    text = title,
                     style = MaterialTheme.typography.bodyLarge,
                     color = colors.onSurface,
                 )
                 Text(
-                    text = when {
-                        !enabled -> stringResource(R.string.per_app_disabled)
-                        count == 0 -> stringResource(R.string.per_app_hint)
-                        else -> stringResource(R.string.per_app_count, count)
-                    },
+                    text = supporting,
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.onSurfaceVariant,
                 )
@@ -377,33 +619,22 @@ private fun PerAppToggleRow(
     }
 }
 
-/** One block's row corners: the outer ones at the block's own ends, the inner between. */
-private fun sectionShape(
-    index: Int,
-    lastIndex: Int,
-    outer: CornerBasedShape,
-    inner: CornerBasedShape,
-): Shape = RoundedCornerShape(
-    topStart = if (index == 0) outer.topStart else inner.topStart,
-    topEnd = if (index == 0) outer.topEnd else inner.topEnd,
-    bottomStart = if (index == lastIndex) outer.bottomStart else inner.bottomStart,
-    bottomEnd = if (index == lastIndex) outer.bottomEnd else inner.bottomEnd,
-)
-
 /**
- * One app's row, the server row's twin: the app's own icon bare in the leading slot (no
- * backdrop — launcher icons carry their own shape), the name with the package under it.
- * A picked app wears the accent — it's on the blacklist, staying out of the tunnel — and
- * the tap trades the row between the two states. While the master switch is off the rows
- * all go quiet: dimmed, untappable, the picks' block still sitting where it froze.
+ * One pickable row, the server row's twin: the leading slot bare — the app's own icon, or
+ * a network's mark — the name with a supporting line under it. A picked entry wears the
+ * accent — it stays out of the tunnel — and the tap trades the row between the two
+ * states. While the master switch is off the rows all go quiet: dimmed, untappable, the
+ * picks' block still sitting where it froze.
  */
 @Composable
-private fun AppRow(
-    app: AppEntry,
+private fun SelectableRow(
+    headline: String,
+    supporting: String?,
     bypassed: Boolean,
     active: Boolean,
     onToggle: () -> Unit,
     shape: Shape,
+    leading: @Composable () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -412,7 +643,7 @@ private fun AppRow(
         targetValue = (if (bypassed && active) colors.primaryContainer else colors.surfaceContainer)
             .copy(alpha = LocalSurfaceOpacity.current),
         animationSpec = motion.defaultEffectsSpec(),
-        label = "app row container",
+        label = "pickable row container",
     )
     val contentColor by animateColorAsState(
         targetValue = when {
@@ -421,7 +652,7 @@ private fun AppRow(
             else -> colors.onSurface
         },
         animationSpec = motion.defaultEffectsSpec(),
-        label = "app row content",
+        label = "pickable row content",
     )
     val supportingColor by animateColorAsState(
         targetValue = when {
@@ -430,7 +661,7 @@ private fun AppRow(
             else -> colors.onSurfaceVariant
         },
         animationSpec = motion.defaultEffectsSpec(),
-        label = "app row supporting",
+        label = "pickable row supporting",
     )
     Surface(
         onClick = {
@@ -446,43 +677,21 @@ private fun AppRow(
         ListItem(
             headlineContent = {
                 Text(
-                    text = app.label,
+                    text = headline,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             },
             supportingContent = {
-                Text(
-                    text = app.packageName,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (supporting != null) {
+                    Text(
+                        text = supporting,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             },
-            leadingContent = {
-                // The app's own icon, bare: launcher icons already carry their shape
-                // and padding, so no tile behind it. It drains to grayscale — the row's
-                // quiet state — while the master switch is off.
-                val saturation by animateFloatAsState(
-                    targetValue = if (active) 1f else 0f,
-                    animationSpec = motion.defaultEffectsSpec(),
-                    label = "app icon saturation",
-                )
-                val iconAlpha by animateFloatAsState(
-                    targetValue = if (active) 1f else 0.38f,
-                    animationSpec = motion.defaultEffectsSpec(),
-                    label = "app icon alpha",
-                )
-                Image(
-                    bitmap = app.icon,
-                    contentDescription = null,
-                    colorFilter = ColorMatrixColorFilter(
-                        ColorMatrix().apply { setToSaturation(saturation) },
-                    ),
-                    modifier = Modifier
-                        .size(40.dp)
-                        .alpha(iconAlpha),
-                )
-            },
+            leadingContent = { leading() },
             // No trailing mark: the picked row already wears the accent.
             colors = ListItemDefaults.colors(
                 // The row's Surface already paints the container; painting it here again
@@ -497,6 +706,149 @@ private fun AppRow(
         )
     }
 }
+
+/**
+ * The app's own icon, bare: launcher icons already carry their shape and padding, so no
+ * tile behind it. It drains to grayscale — the row's quiet state — while the master
+ * switch is off.
+ */
+@Composable
+private fun AppIcon(app: AppEntry, active: Boolean) {
+    val motion = MaterialTheme.motionScheme
+    val saturation by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "app icon saturation",
+    )
+    val iconAlpha by animateFloatAsState(
+        targetValue = if (active) 1f else 0.38f,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "app icon alpha",
+    )
+    Image(
+        bitmap = app.icon,
+        contentDescription = null,
+        colorFilter = ColorMatrixColorFilter(
+            ColorMatrix().apply { setToSaturation(saturation) },
+        ),
+        modifier = Modifier
+            .size(40.dp)
+            .alpha(iconAlpha),
+    )
+}
+
+/** The permission's own card, standing in for the network list until it is granted. */
+@Composable
+private fun PermissionCard(onGrant: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
+        contentColor = colors.onSurface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.trusted_permission_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.onSurface,
+            )
+            Text(
+                text = stringResource(R.string.trusted_permission_text),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurfaceVariant,
+            )
+            TextButton(onClick = onGrant) {
+                Text(stringResource(R.string.trusted_permission_grant))
+            }
+        }
+    }
+}
+
+/** The hand-add row: the network's name typed in, trusted on confirm. */
+@Composable
+private fun AddNetworkRow(onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val poke = rememberHapticPoke()
+    Surface(
+        onClick = {
+            poke()
+            onClick()
+        },
+        shape = MaterialTheme.shapes.extraLarge,
+        color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
+        contentColor = colors.onSurface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_add),
+                contentDescription = null,
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+            Text(
+                text = stringResource(R.string.trusted_add),
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.onSurface,
+            )
+        }
+    }
+}
+
+/** The hand-add dialog: a name field, "Add" answering only once it holds something. */
+@Composable
+private fun AddNetworkDialog(
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.trusted_add_title)) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                singleLine = true,
+                label = { Text(stringResource(R.string.trusted_add_field)) },
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name.trim()) },
+                enabled = name.isNotBlank(),
+            ) {
+                Text(stringResource(R.string.trusted_add_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.trusted_add_cancel))
+            }
+        },
+    )
+}
+
+/** One block's row corners: the outer ones at the block's own ends, the inner between. */
+private fun sectionShape(
+    index: Int,
+    lastIndex: Int,
+    outer: CornerBasedShape,
+    inner: CornerBasedShape,
+): Shape = RoundedCornerShape(
+    topStart = if (index == 0) outer.topStart else inner.topStart,
+    topEnd = if (index == 0) outer.topEnd else inner.topEnd,
+    bottomStart = if (index == lastIndex) outer.bottomStart else inner.bottomStart,
+    bottomEnd = if (index == lastIndex) outer.bottomEnd else inner.bottomEnd,
+)
 
 /** Every launchable app except ourselves — we're already outside the tunnel. */
 private fun installedApps(context: Context): List<AppEntry> {
@@ -514,4 +866,23 @@ private fun installedApps(context: Context): List<AppEntry> {
         }
         .distinctBy { it.packageName }
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+}
+
+/** The Wi-Fi names the OS tells us: the one we sit on, then the saved ones. */
+private fun knownNetworks(context: Context): List<NetworkEntry> = try {
+    val wifi = context.getSystemService(WifiManager::class.java) ?: return emptyList()
+    @Suppress("DEPRECATION")
+    val current = wifi.connectionInfo.ssid
+        ?.removeSurrounding("\"")
+        ?.takeIf { ssid -> ssid.isNotEmpty() && ssid != "<unknown ssid>" }
+    @Suppress("DEPRECATION")
+    val saved = wifi.configuredNetworks.orEmpty()
+        .mapNotNull { network -> network.SSID?.removeSurrounding("\"") }
+        .filter { ssid -> ssid.isNotEmpty() && ssid != "<unknown ssid>" }
+    (listOfNotNull(current) + saved).distinct().map { ssid ->
+        NetworkEntry(ssid = ssid, current = ssid == current)
+    }
+} catch (e: Exception) {
+    // A missing permission or an OS that won't share reads as no networks at all.
+    emptyList()
 }
