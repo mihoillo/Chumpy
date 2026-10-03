@@ -231,7 +231,8 @@ object XrayCore {
      * The proxy outbound's {rx, tx} bytes since the *previous* query — the core resets its
      * counters on every read (the Xray way; v2rayNG divides the answer by the seconds
      * since its last query for its speed notification) — so callers fold deltas, they do
-     * not watch a total grow. Zeros while down.
+     * not watch a total grow. The payload's rows read "tag,uplink|downlink,value;" — the
+     * counter names' last segment, not the "up"/"down" shorthand. Zeros while down.
      */
     fun trafficBytes(): LongArray {
         if (!isRunning) return longArrayOf(0L, 0L)
@@ -247,8 +248,8 @@ object XrayCore {
                 val value = parts[2].toLongOrNull() ?: return@forEach
                 when (parts[0]) {
                     "proxy" -> when (parts[1]) {
-                        "down" -> rx += value
-                        "up" -> tx += value
+                        "downlink" -> rx += value
+                        "uplink" -> tx += value
                     }
                 }
             }
