@@ -288,11 +288,12 @@ private fun ServersHeader(state: ServersUiState) {
 /**
  * The subscription card, the devices screen's row language grown up: the database tile
  * on its square backing — the list's rows wear the round one; the card keeps the square,
- * like it always did — with the reload button tucked under it, the subscription's name
- * over what the panel reports. The card's own tap trades the card for the chooser's ask:
- * the report rides down and out of view, and on the same backing steps in the ask —
- * the database tile alone, the call to action, the arrow that folds it back — while the
- * button's tap stays a different ask: pulling new servers in.
+ * like it always did — over what the panel reports, the text standing against the tile
+ * stack's top; with nothing to report but the name, the tile carries the reload button
+ * at its side and the name centers beside them. The card's own tap trades the card for
+ * the chooser's ask: the report rides down and out of view, and on the same backing
+ * steps in the ask — the database tile alone, the call to action, the arrow that folds
+ * it back — while the button's tap stays a different ask: pulling new servers in.
  */
 @Composable
 private fun SubscriptionCard(
@@ -358,89 +359,203 @@ private fun SubscriptionCard(
                     supportingColor = supportingColor,
                 )
             } else {
-                Box {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // The leading column: the database tile on its square backing — the
-                        // list's rows wear the round one, the card keeps the square — the
-                        // reload button under it: the subscription's face, and its refresh,
-                        // stacked.
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = colors.secondaryContainer,
-                                contentColor = colors.onSecondaryContainer,
-                                modifier = Modifier.size(48.dp),
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_database),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                            }
-                            UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
-                        }
-                        Column(
-                            Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            // The subscription's name — the last update's stamp riding at
-                            // its level, flush against the right edge.
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = subscription?.name?.takeIf { it.isNotBlank() }
-                                        ?: stringResource(R.string.subscription_none),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = contentColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                subscription?.let { sub ->
-                                    updatedText(sub)?.let { stamp ->
-                                        Text(
-                                            text = stamp,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = supportingColor,
-                                            maxLines = 1,
-                                            modifier = Modifier.padding(start = 8.dp),
-                                        )
-                                    }
-                                }
-                            }
-                            subscription?.let { sub ->
-                                // What the panel reports: the bars run to the column's
-                                // end, the numbers wait under them, the traffic eaten
-                                // under the days.
-                                SubscriptionInfo(
-                                    subscription = sub,
-                                    supportingColor = supportingColor,
-                                    textInset = 32.dp,
-                                )
-                            }
-                        }
-                    }
-                    // The chevron points the card's own tap at the list it unfolds —
-                    // anchored at the card's foot, clear of the bars above it.
-                    Icon(
-                        painter = painterResource(R.drawable.ic_chevron_right),
-                        contentDescription = stringResource(R.string.subscription_expand),
-                        tint = supportingColor,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 16.dp, bottom = 16.dp)
-                            .size(24.dp)
-                            .graphicsLayer { rotationZ = 90f },
+                // The panel's report decides the stance: a full one stands the text up
+                // against the top of the tile-and-refresh stack; a name alone centers
+                // beside the tile, the refresh button riding at the tile's side — no
+                // dead air under a lone title. The stance itself swaps softly when a
+                // reload changes what there is to show.
+                val sub = subscription
+                val hasReport = sub != null && (
+                    sub.totalBytes > 0 ||
+                        daysTitle(sub.expireEpochSeconds) != null ||
+                        consumedText(sub) != null
                     )
+                AnimatedContent(
+                    targetState = hasReport,
+                    transitionSpec = {
+                        ContentTransform(
+                            targetContentEnter = fadeIn(motion.defaultEffectsSpec()),
+                            initialContentExit = fadeOut(motion.defaultEffectsSpec()),
+                            sizeTransform = SizeTransform(clip = false),
+                        )
+                    },
+                    label = "subscription report stance",
+                ) { full ->
+                    if (full && sub != null) {
+                        SubscriptionReportFace(
+                            subscription = sub,
+                            isUpdating = isUpdating,
+                            contentColor = contentColor,
+                            supportingColor = supportingColor,
+                            onUpdate = onUpdate,
+                        )
+                    } else {
+                        SubscriptionCompactFace(
+                            subscription = sub,
+                            isUpdating = isUpdating,
+                            contentColor = contentColor,
+                            supportingColor = supportingColor,
+                            onUpdate = onUpdate,
+                        )
+                    }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The report face with a full panel report: the tile-and-refresh stack on its square
+ * backing — the list's rows wear the round one, the card keeps the square — and the
+ * text standing against its top: the name over what the panel reports, the chevron
+ * anchored at the foot, clear of the bars.
+ */
+@Composable
+private fun SubscriptionReportFace(
+    subscription: SubscriptionEntity,
+    isUpdating: Boolean,
+    contentColor: Color,
+    supportingColor: Color,
+    onUpdate: () -> Unit,
+) {
+    Box {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DatabaseTile()
+                UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
+            }
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SubscriptionTitleRow(
+                    subscription = subscription,
+                    contentColor = contentColor,
+                    supportingColor = supportingColor,
+                )
+                // What the panel reports: the bars run to the column's end, the
+                // numbers wait under them, the traffic eaten under the days.
+                SubscriptionInfo(
+                    subscription = subscription,
+                    supportingColor = supportingColor,
+                    textInset = 32.dp,
+                )
+            }
+        }
+        // The chevron points the card's own tap at the list it unfolds — anchored at
+        // the card's foot, clear of the bars above it.
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_right),
+            contentDescription = stringResource(R.string.subscription_expand),
+            tint = supportingColor,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 16.dp)
+                .size(24.dp)
+                .graphicsLayer { rotationZ = 90f },
+        )
+    }
+}
+
+/**
+ * The report face with nothing but the name to show: the tile and its refresh button
+ * side by side, the name — with its stamp — centered in what remains, and the chevron
+ * inline at the end, the way the chooser's face carries it.
+ */
+@Composable
+private fun SubscriptionCompactFace(
+    subscription: SubscriptionEntity?,
+    isUpdating: Boolean,
+    contentColor: Color,
+    supportingColor: Color,
+    onUpdate: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DatabaseTile()
+        UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
+        SubscriptionTitleRow(
+            subscription = subscription,
+            contentColor = contentColor,
+            supportingColor = supportingColor,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_right),
+            contentDescription = stringResource(R.string.subscription_expand),
+            tint = supportingColor,
+            modifier = Modifier
+                .size(24.dp)
+                .graphicsLayer { rotationZ = 90f },
+        )
+    }
+}
+
+/**
+ * The database tile on its square backing — the card's tile; the list's rows wear the
+ * round one.
+ */
+@Composable
+private fun DatabaseTile() {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = colors.secondaryContainer,
+        contentColor = colors.onSecondaryContainer,
+        modifier = Modifier.size(48.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(R.drawable.ic_database),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The subscription's name — the last update's stamp riding at its level, flush against
+ * the right edge.
+ */
+@Composable
+private fun SubscriptionTitleRow(
+    subscription: SubscriptionEntity?,
+    contentColor: Color,
+    supportingColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = subscription?.name?.takeIf { it.isNotBlank() }
+                ?: stringResource(R.string.subscription_none),
+            style = MaterialTheme.typography.bodyLarge,
+            color = contentColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        subscription?.let { sub ->
+            updatedText(sub)?.let { stamp ->
+                Text(
+                    text = stamp,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = supportingColor,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
             }
         }
     }
@@ -456,7 +571,6 @@ private fun SubscriptionChooserFace(
     contentColor: Color,
     supportingColor: Color,
 ) {
-    val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -464,20 +578,7 @@ private fun SubscriptionChooserFace(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = colors.secondaryContainer,
-            contentColor = colors.onSecondaryContainer,
-            modifier = Modifier.size(48.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_database),
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
+        DatabaseTile()
         Text(
             text = stringResource(R.string.subscription_choose),
             style = MaterialTheme.typography.bodyLarge,
