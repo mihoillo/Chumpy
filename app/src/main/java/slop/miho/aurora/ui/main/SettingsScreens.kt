@@ -42,6 +42,8 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,6 +62,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -86,6 +89,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -952,6 +956,12 @@ fun ConnectionScreen(
     }
     val contentReachesBar by rememberContentUnderBar(scrollState)
     ReportBarCoverage(contentUnderBar, underlaid = contentReachesBar)
+    // The keyboard counts as the edge while it is up: the delay test URL's field — and
+    // the fingerprint's own — stays above the keys, the focused one asking for its
+    // visibility again once the keys have risen. The bar's reserved height drops out
+    // for the same reason: the bar rides the navigation bars only, so while the keys
+    // stand over it there is nothing under them to keep the seat for.
+    val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -959,12 +969,9 @@ fun ConnectionScreen(
             .verticalScroll(scrollState)
             .padding(
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp,
-                // The keyboard counts as the edge while it is up: the delay test URL's
-                // field — and the fingerprint's own — stays above the keys, the column
-                // scrolling the focused one into view.
                 bottom = WindowInsets.navigationBars.union(WindowInsets.ime)
                     .asPaddingValues().calculateBottomPadding() +
-                    FloatingBottomBarReservedHeight,
+                    if (imeOpen) 0.dp else FloatingBottomBarReservedHeight,
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -1298,6 +1305,15 @@ private fun TestUrlRow(
     onChange: (String) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    // The tap lands while the bottom edge still sits under the bar — the keyboard rises
+    // after, so the field asks for its visibility again once it has: the scroll then
+    // hands it the space the keys took.
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    val requester = remember { BringIntoViewRequester() }
+    var focused by remember { mutableStateOf(false) }
+    LaunchedEffect(imeBottom, focused) {
+        if (focused && imeBottom > 0) requester.bringIntoView()
+    }
     Column(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -1325,7 +1341,10 @@ private fun TestUrlRow(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
                 ),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .onFocusChanged { focused = it.isFocused }
+                    .bringIntoViewRequester(requester),
             )
             Surface(
                 shape = CircleShape,
@@ -1560,6 +1579,14 @@ private fun HappFieldRow(
     onChange: (String) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    // The same ask as the delay test URL's field: the tap lands before the keyboard
+    // does, so the field re-asks for its visibility once the keys have risen.
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    val requester = remember { BringIntoViewRequester() }
+    var focused by remember { mutableStateOf(false) }
+    LaunchedEffect(imeBottom, focused) {
+        if (focused && imeBottom > 0) requester.bringIntoView()
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1592,7 +1619,10 @@ private fun HappFieldRow(
                     )
                 }
             },
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .onFocusChanged { focused = it.isFocused }
+                .bringIntoViewRequester(requester),
         )
         // The pencil, asleep: a pencil, no press, marking the row for a text field.
         Surface(
