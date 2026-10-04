@@ -9,6 +9,7 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -34,12 +35,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -76,6 +75,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
@@ -84,6 +85,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -154,6 +156,12 @@ fun ServersScreen(
     // The add row's own open face and its text, riding the same survival law.
     var addOpen by rememberSaveable { mutableStateOf(false) }
     var addUrl by rememberSaveable { mutableStateOf("") }
+
+    // The add row's open face folds with the chooser itself: the field and its two
+    // doors never outlive the menu they opened from — reopening starts the list clean.
+    LaunchedEffect(dropdownOpen) {
+        if (!dropdownOpen) addOpen = false
+    }
 
     // One dialog at a time: the delete question a long press on a subscription row asks.
     var deleteTarget by remember { mutableStateOf<SubscriptionEntity?>(null) }
@@ -776,8 +784,10 @@ private fun SubscriptionDropdown(
     onDeleteRequest: (SubscriptionEntity) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.extraSmall
+    val density = LocalDensity.current
     // The standalone group leads the list whenever it has something in it — the cards
     // stack's own row, first above the panels' own — and stays gone entirely while it
     // doesn't, so the list never advertises an empty pocket.
@@ -791,8 +801,37 @@ private fun SubscriptionDropdown(
     } else {
         subscriptions
     }
-    // The subscriptions stay one segmented block; only the add row stands apart, the
-    // button gap (8dp) of air between the block and it.
+    // The corner radii come out of the theme's shapes as px against this density, back
+    // into Dp — the seam animates that Dp, and a shape rebuilt around a new Dp is a new
+    // shape, so the outline follows the animation frame by frame. (Dp corners ignore
+    // the shape size they are handed, which is all the theme's shapes are made of.)
+    fun CornerSize.dp(): Dp = with(density) { toPx(Size(1f, 1f), this).toDp() }
+    val outerTop = outer.topStart.dp()
+    val outerBottom = outer.bottomStart.dp()
+    val innerTop = inner.topStart.dp()
+    val innerBottom = inner.bottomStart.dp()
+    // The seam the add row rides on is the block's own last bottom corners: the card's
+    // outer ones while the row stands folded into it, the inner seam once it steps out.
+    val groupBottom by animateDpAsState(
+        targetValue = if (addOpen) outerBottom else innerBottom,
+        animationSpec = motion.defaultSpatialSpec(),
+        label = "subscription block bottom corner",
+    )
+    // The add row's own top corners bloom the same way, in step with the seam.
+    val addTop by animateDpAsState(
+        targetValue = if (addOpen || groups.isEmpty()) outerTop else innerTop,
+        animationSpec = motion.defaultSpatialSpec(),
+        label = "add row top corner",
+    )
+    // The gap the add row opens under itself: 2dp of seam grows to the button gap's 8.
+    val addGap by animateDpAsState(
+        targetValue = if (addOpen) 6.dp else 0.dp,
+        animationSpec = motion.defaultSpatialSpec(),
+        label = "add row gap",
+    )
+    // The subscriptions and the add row stand as one segmented block; the add row's
+    // opening is what parts it — the seam under the block blooms into the card's own
+    // corners and the button gap of air slides in beneath it.
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -814,24 +853,29 @@ private fun SubscriptionDropdown(
                 onClick = { onSelect(subscription.id) },
                 onLongClick = { onDeleteRequest(subscription) },
                 shape = RoundedCornerShape(
-                    topStart = if (first) outer.topStart else inner.topStart,
-                    topEnd = if (first) outer.topEnd else inner.topEnd,
-                    bottomStart = if (last) outer.bottomStart else inner.bottomStart,
-                    bottomEnd = if (last) outer.bottomEnd else inner.bottomEnd,
+                    topStart = if (first) outerTop else innerTop,
+                    topEnd = if (first) outerTop else innerTop,
+                    bottomStart = if (last) groupBottom else innerBottom,
+                    bottomEnd = if (last) groupBottom else innerBottom,
                 ),
             )
         }
+        AddSubscriptionRow(
+            open = addOpen,
+            url = addUrl,
+            onOpenChange = onAddOpenChange,
+            onUrlChange = onAddUrlChange,
+            onAdd = onAdd,
+            shape = RoundedCornerShape(
+                topStart = addTop,
+                topEnd = addTop,
+                bottomStart = outerBottom,
+                bottomEnd = outerBottom,
+            ),
+            color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
+            modifier = Modifier.padding(top = addGap),
+        )
     }
-    Spacer(Modifier.height(8.dp))
-    AddSubscriptionRow(
-        open = addOpen,
-        url = addUrl,
-        onOpenChange = onAddOpenChange,
-        onUrlChange = onAddUrlChange,
-        onAdd = onAdd,
-        shape = outer,
-        color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
-    )
 }
 
 /**
@@ -851,6 +895,7 @@ private fun AddSubscriptionRow(
     onAdd: (url: String, onDone: (String?) -> Unit) -> Unit,
     shape: Shape,
     color: Color,
+    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -899,7 +944,7 @@ private fun AddSubscriptionRow(
         shape = shape,
         color = color,
         contentColor = colors.onSurface,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     ) {
         AnimatedContent(
             targetState = open,
@@ -970,7 +1015,7 @@ private fun AddSubscriptionRow(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 4.dp, bottom = 12.dp),
+                                .padding(top = 8.dp, bottom = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -1104,6 +1149,10 @@ private fun SubscriptionRow(
         ListItem(
             modifier = Modifier
                 .fillMaxWidth()
+                // The tall rows' own measure: rows whose panel reports nothing (the
+                // loose configs, the unlimited subs) keep the same height as the rest —
+                // one even block, no short planks in the middle of it.
+                .heightIn(min = 72.dp)
                 .clip(shape)
                 .combinedClickable(
                     role = Role.Button,
