@@ -430,7 +430,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _servers.update { it.copy(error = null) }
                     onDone(null)
                 }
-                .onFailure { error -> onDone(error.message ?: app.getString(R.string.error_unknown)) }
+                .onFailure { error ->
+                    // A bad paste lands on the error card, not in a toast that is gone
+                    // in a second — the add row's own failure path.
+                    _servers.update {
+                        it.copy(error = error.message ?: app.getString(R.string.error_unknown))
+                    }
+                    onDone(error.message ?: app.getString(R.string.error_unknown))
+                }
         }
     }
 
@@ -496,10 +503,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         ConnectionStore.update(app) {
                             it.copy(selectedSubscriptionId = STANDALONE_SUBSCRIPTION_ID, selectedProfileId = null)
                         }
+                        _servers.update { it.copy(error = null) }
                     }
                     onDone(if (count == 0) app.getString(R.string.import_nothing_new) else null)
                 }
-                .onFailure { error -> onDone(error.message ?: app.getString(R.string.error_unknown)) }
+                .onFailure { error ->
+                    _servers.update {
+                        it.copy(error = error.message ?: app.getString(R.string.error_unknown))
+                    }
+                    onDone(error.message ?: app.getString(R.string.error_unknown))
+                }
         }
     }
 

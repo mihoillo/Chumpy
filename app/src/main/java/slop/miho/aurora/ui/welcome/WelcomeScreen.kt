@@ -1,5 +1,7 @@
 package slop.miho.aurora.ui.welcome
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -41,15 +44,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import slop.miho.aurora.R
 import slop.miho.aurora.data.UiSettings
 import slop.miho.aurora.data.Accent
 import slop.miho.aurora.ui.components.SubmitFieldRow
+import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.main.isSmallScreen
 import slop.miho.aurora.ui.theme.AuroraTheme
 
@@ -75,6 +82,27 @@ fun WelcomeScreen(
     // The snackbar shows whatever the add/import reported; "—" only if it said nothing.
     fun reportError(error: String?) {
         if (error != null) scope.launch { snackbarHostState.showSnackbar(error) }
+    }
+
+    // The file door: whatever the picker hands over rides the import as if pasted —
+    // a WireGuard conf, a share link, a raw config, all the same parsers.
+    val context = LocalContext.current
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+                }.getOrNull()
+            }
+            if (text == null) {
+                reportError(context.getString(R.string.import_read_failed))
+            } else {
+                onImport(text) { error -> reportError(error) }
+            }
+        }
     }
 
     // The one door: a link starting with http is a subscription; everything else the
@@ -143,22 +171,80 @@ fun WelcomeScreen(
                 }
             }
 
-            // The greeting keeps its distance from the card below.
+            // The greeting keeps its distance from the cards below.
             Spacer(Modifier.height(24.dp))
 
-            // The one button, the toggle row's own shape: the field standing in for the
-            // title, the tile for the switch — paste while empty, the arrow to go once
-            // it holds something. The bottom inset is the navbar or the keyboard, never
-            // both: open, the card rides straight on the keys.
-            WelcomeSubmitRow(
-                value = url,
-                onValueChange = { url = it },
-                onSubmit = ::submit,
+            // The way in, two doors stacked: the field card, then the file door under
+            // it. The bottom inset is the navbar or the keyboard, never both: open, the
+            // cards ride straight on the keys.
+            Column(
                 modifier = Modifier
                     .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
-                    // A breath between the card and whatever sits under it — the navbar
-                    // or the keyboard alike.
+                    // A breath between the cards and whatever sits under them — the
+                    // navbar or the keyboard alike.
                     .padding(bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // The one button, the toggle row's own shape: the field standing in for
+                // the title, the tile for the switch — paste while empty, the arrow to
+                // go once it holds something.
+                WelcomeSubmitRow(
+                    value = url,
+                    onValueChange = { url = it },
+                    onSubmit = ::submit,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                ImportConfigRow(
+                    onClick = { filePicker.launch(arrayOf("*/*")) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The file door, the settings' toggle rows' own shape and backdrop: the open folder's
+ * tile standing where the switch's would, the title beside it — one tap and the
+ * system's picker hands the file's text over to the import.
+ */
+@Composable
+private fun ImportConfigRow(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val poke = rememberHapticPoke()
+    Surface(
+        onClick = {
+            poke()
+            onClick()
+        },
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_folder_open),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            Text(
+                text = stringResource(R.string.import_config),
+                style = MaterialTheme.typography.bodyLarge,
             )
         }
     }

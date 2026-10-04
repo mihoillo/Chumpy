@@ -1,5 +1,7 @@
 package slop.miho.aurora.ui.main
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.graphics.ColorUtils
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
@@ -63,6 +65,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,12 +78,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import slop.miho.aurora.R
 import slop.miho.aurora.data.DailyTraffic
 import slop.miho.aurora.data.FlagStyle
@@ -844,6 +851,32 @@ private fun AddSubscriptionRow(
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
+    // The file door, the welcome screen's own: whatever the picker hands over rides the
+    // field's submit as if pasted — a WireGuard conf, a share link, a raw config.
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+                }.getOrNull()
+            }
+            if (text == null) {
+                onAdd("") { error -> if (error == null) onOpenChange(false) }
+            } else {
+                onAdd(text) { error ->
+                    if (error == null) {
+                        onUrlChange("")
+                        onOpenChange(false)
+                    }
+                }
+            }
+        }
+    }
     Surface(
         shape = shape,
         color = color,
@@ -871,31 +904,51 @@ private fun AddSubscriptionRow(
             label = "add subscription row",
         ) { expanded ->
             if (expanded) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // 80, not the closed face's 72: the stadium's 16dp of air on the
-                        // sides is matched above and below too — the gap reads square,
-                        // not wider than tall. The height swap rides the face change.
-                        .heightIn(min = 80.dp)
                         .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    SubmitFieldRow(
-                        value = url,
-                        onValueChange = onUrlChange,
-                        onSubmit = {
-                            onAdd(url.trim()) { error ->
-                                if (error == null) {
-                                    onUrlChange("")
-                                    onOpenChange(false)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            // 80, not the closed face's 72: the stadium's 16dp of air on the
+                            // sides is matched above and below too — the gap reads square,
+                            // not wider than tall. The height swap rides the face change.
+                            .heightIn(min = 80.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SubmitFieldRow(
+                            value = url,
+                            onValueChange = onUrlChange,
+                            onSubmit = {
+                                onAdd(url.trim()) { error ->
+                                    if (error == null) {
+                                        onUrlChange("")
+                                        onOpenChange(false)
+                                    }
                                 }
+                            },
+                            autofocus = true,
+                            onClose = { onOpenChange(false) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    // The file door as a bare word — no tile, no backing, the field's
+                    // own hypertext: a tap hands the system's picker whatever it brings
+                    // to the same door the field fills.
+                    Text(
+                        text = stringResource(R.string.or_import_config),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                poke()
+                                filePicker.launch(arrayOf("*/*"))
                             }
-                        },
-                        autofocus = true,
-                        onClose = { onOpenChange(false) },
-                        modifier = Modifier.weight(1f),
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                     )
                 }
             } else {
