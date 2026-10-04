@@ -49,7 +49,7 @@
     <string name="scan_hint">Point the camera at a QR code</string>
     <string name="scan_close">Close the scanner</string>
     <string name="subscription_cancel">Cancel</string>
-    <string name="subscription_url_field">Subscription URL</string>
+    <string name="subscription_url_field">Add by URL</string>
     <string name="subscription_none">No subscription</string>
     <string name="subscription_choose">Choose subscription</string>
     <string name="subscription_collapse">Collapse</string>
@@ -80,7 +80,7 @@
 
     <!-- Welcome (first run) -->
     <string name="welcome_title">Hello, stranger!</string>
-    <string name="welcome_subtitle">Welcome to Aurora! Add a subscription to get started.</string>
+    <string name="welcome_subtitle">Welcome to Aurora! Add a subscription or config to get started.</string>
     <string name="welcome_add_failed">Couldn\'t add the subscription: %1$s</string>
     <string name="import_failed">Couldn\'t import: %1$s</string>
     <string name="import_nothing_new">Nothing new to import</string>
