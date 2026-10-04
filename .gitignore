@@ -9,3 +9,7 @@ hiddify/
 wg-adhdium.conf
 refs/
 dist/
+
+# The icon design sources and the skills lock — root squatters the build never reads.
+*.svg
+skills-lock.json
