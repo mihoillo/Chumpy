@@ -866,14 +866,11 @@ private fun SubscriptionDropdown(
             onOpenChange = onAddOpenChange,
             onUrlChange = onAddUrlChange,
             onAdd = onAdd,
-            shape = RoundedCornerShape(
-                topStart = addTop,
-                topEnd = addTop,
-                bottomStart = outerBottom,
-                bottomEnd = outerBottom,
-            ),
+            topCorners = addTop,
             color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
-            modifier = Modifier.padding(top = addGap),
+            // The spring's overshoot dips below zero on the way to the seam — padding
+            // takes none of that, it is clamped at the seam itself.
+            modifier = Modifier.padding(top = addGap.coerceAtLeast(0.dp)),
         )
     }
 }
@@ -893,13 +890,21 @@ private fun AddSubscriptionRow(
     onOpenChange: (Boolean) -> Unit,
     onUrlChange: (String) -> Unit,
     onAdd: (url: String, onDone: (String?) -> Unit) -> Unit,
-    shape: Shape,
+    topCorners: Dp,
     color: Color,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
+    val density = LocalDensity.current
+    // The card's own corners out of the theme's shapes as Dp, the block's seam-riding
+    // tops handed in animated — the rest are fixed: the bottom always the card's outer
+    // ones, the seam between the field and the two doors always the inner ones.
+    fun CornerSize.dp(): Dp = with(density) { toPx(Size(1f, 1f), this).toDp() }
+    val outerBottom = MaterialTheme.shapes.extraLarge.bottomStart.dp()
+    val innerTop = MaterialTheme.shapes.extraSmall.topStart.dp()
+    val innerBottom = MaterialTheme.shapes.extraSmall.bottomStart.dp()
     // The file door, the welcome screen's own: whatever the picker hands over rides the
     // field's submit as if pasted — a WireGuard conf, a share link, a raw config.
     val context = LocalContext.current
@@ -940,8 +945,16 @@ private fun AddSubscriptionRow(
             }
         }
     }
+    // The card's outline: the animated top corners (the block's seam, blooming into the
+    // card's own ones as it steps out) over the fixed outer bottom.
+    val cardShape = RoundedCornerShape(
+        topStart = topCorners,
+        topEnd = topCorners,
+        bottomStart = outerBottom,
+        bottomEnd = outerBottom,
+    )
     Surface(
-        shape = shape,
+        shape = cardShape,
         color = color,
         contentColor = colors.onSurface,
         modifier = modifier.fillMaxWidth(),
@@ -967,42 +980,57 @@ private fun AddSubscriptionRow(
             label = "add subscription row",
         ) { expanded ->
             if (expanded) {
+                // The open face stands as its own two-row block: the field's row over
+                // the two doors', the same 2dp seam between them the subscription rows
+                // wear — the divider asked of the card, the block's own language.
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            // 80, not the closed face's 72: the stadium's 16dp of air on the
-                            // sides is matched above and below too — the gap reads square,
-                            // not wider than tall. The height swap rides the face change.
-                            .heightIn(min = 80.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Surface(
+                        shape = RoundedCornerShape(
+                            topStart = topCorners,
+                            topEnd = topCorners,
+                            bottomStart = innerBottom,
+                            bottomEnd = innerBottom,
+                        ),
+                        color = color,
+                        contentColor = colors.onSurface,
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        SubmitFieldRow(
-                            value = url,
-                            onValueChange = onUrlChange,
-                            onSubmit = {
-                                onAdd(url.trim()) { error ->
-                                    if (error == null) {
-                                        onUrlChange("")
-                                        onOpenChange(false)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                // 80, not the closed face's 72: the stadium's 16dp of air on the
+                                // sides is matched above and below too — the gap reads square,
+                                // not wider than tall. The height swap rides the face change.
+                                .heightIn(min = 80.dp)
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            SubmitFieldRow(
+                                value = url,
+                                onValueChange = onUrlChange,
+                                onSubmit = {
+                                    onAdd(url.trim()) { error ->
+                                        if (error == null) {
+                                            onUrlChange("")
+                                            onOpenChange(false)
+                                        }
                                     }
-                                }
-                            },
-                            autofocus = true,
-                            onClose = { onOpenChange(false) },
-                            modifier = Modifier.weight(1f),
-                        )
+                                },
+                                autofocus = true,
+                                onClose = { onOpenChange(false) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                     // The two doors unroll beneath the field like a dropdown menu
                     // settling open: the face swap carries the field in, then the row
                     // itself rolls out — the welcome screen's import card's own layout,
-                    // in the same block as the URL. The title sits at 24, the field's
-                    // own text column: 16 of column padding plus these 8.
+                    // one seam under the URL. The title sits at 24, the field's own
+                    // text column: 16 of row padding plus these 8.
                     AnimatedVisibility(
                         visibleState = remember {
                             MutableTransitionState(false).apply { targetState = true }
@@ -1012,34 +1040,46 @@ private fun AddSubscriptionRow(
                         exit = shrinkVertically(motion.defaultSpatialSpec()) +
                             fadeOut(motion.defaultEffectsSpec()),
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp, bottom = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        Surface(
+                            shape = RoundedCornerShape(
+                                topStart = innerTop,
+                                topEnd = innerTop,
+                                bottomStart = outerBottom,
+                                bottomEnd = outerBottom,
+                            ),
+                            color = color,
+                            contentColor = colors.onSurface,
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text(
-                                text = stringResource(R.string.import_config),
-                                style = MaterialTheme.typography.bodyLarge,
+                            Row(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .padding(start = 8.dp),
-                            )
-                            ActionTile(
-                                icon = R.drawable.ic_upload_file,
-                                label = stringResource(R.string.import_config),
-                                onClick = { filePicker.launch(arrayOf("*/*")) },
-                            )
-                            ActionTile(
-                                icon = R.drawable.ic_qr_code_scanner,
-                                label = stringResource(R.string.scan_qr_code),
-                                onClick = {
-                                    qrScanner.launch(
-                                        Intent(context, ScannerActivity::class.java),
-                                    )
-                                },
-                            )
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.import_config),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(start = 8.dp),
+                                )
+                                ActionTile(
+                                    icon = R.drawable.ic_upload_file,
+                                    label = stringResource(R.string.import_config),
+                                    onClick = { filePicker.launch(arrayOf("*/*")) },
+                                )
+                                ActionTile(
+                                    icon = R.drawable.ic_qr_code_scanner,
+                                    label = stringResource(R.string.scan_qr_code),
+                                    onClick = {
+                                        qrScanner.launch(
+                                            Intent(context, ScannerActivity::class.java),
+                                        )
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -1051,7 +1091,7 @@ private fun AddSubscriptionRow(
                         poke()
                         onOpenChange(true)
                     },
-                    shape = shape,
+                    shape = cardShape,
                     color = Color.Transparent,
                     contentColor = colors.onSurface,
                     modifier = Modifier.fillMaxWidth(),
