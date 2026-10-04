@@ -146,15 +146,20 @@ class SubscriptionRepository(
     }
 
     /**
-     * Manual import: one or more share links (one per line), or a WireGuard .conf body.
-     * Returns the number of profiles actually stored — duplicates are skipped.
+     * Manual import: one or more share links (one per line), a WireGuard .conf body, or
+     * a whole raw Xray client config — object or array — whose proxy outbounds become
+     * the group's rows. Returns the number of profiles actually stored — duplicates are
+     * skipped.
      */
     suspend fun addManualProfiles(text: String): Result<Int> = withContext(Dispatchers.IO) {
         runCatching {
-            val drafts = if (text.trim().startsWith("[Interface]", ignoreCase = true)) {
-                listOfNotNull(LinkParsers.parseWireguardConf(text))
-            } else {
-                text.lines().mapNotNull { LinkParsers.parse(it) }
+            val drafts = when {
+                text.trim().startsWith("[Interface]", ignoreCase = true) ->
+                    listOfNotNull(LinkParsers.parseWireguardConf(text))
+                else -> {
+                    val links = text.lines().mapNotNull { LinkParsers.parse(it) }
+                    if (links.isNotEmpty()) links else ConfigParser.parse(text) ?: emptyList()
+                }
             }
             require(drafts.isNotEmpty()) { "No recognizable server link found" }
             val existing = profiles.bySubscriptionOnce(null).map { it.linkKey }.toSet()
@@ -173,6 +178,11 @@ class SubscriptionRepository(
         // Manual profiles are few; replace-all is the simplest transactional delete.
         val remaining = profiles.bySubscriptionOnce(null).filter { it.id != id }
         profiles.replaceProfiles(null, remaining)
+    }
+
+    /** Drops every standalone profile at once — the group's own delete. */
+    suspend fun deleteManualProfiles() = withContext(Dispatchers.IO) {
+        profiles.replaceProfiles(null, emptyList())
     }
 
     /** Stores a measured ping on a profile row, for the list and the home screen. */

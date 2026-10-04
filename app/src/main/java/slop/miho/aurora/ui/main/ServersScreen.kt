@@ -86,6 +86,7 @@ import slop.miho.aurora.data.DailyTraffic
 import slop.miho.aurora.data.FlagStyle
 import slop.miho.aurora.db.ProfileEntity
 import slop.miho.aurora.db.ProfileType
+import slop.miho.aurora.db.STANDALONE_SUBSCRIPTION_ID
 import slop.miho.aurora.db.SubscriptionEntity
 import slop.miho.aurora.db.balancerMemberKeys
 import slop.miho.aurora.ui.ServersUiState
@@ -121,6 +122,7 @@ fun ServersScreen(
     selectedSubscription: SubscriptionEntity?,
     state: ServersUiState,
     week: List<DailyTraffic> = emptyList(),
+    manualCount: Int = 0,
     flagStyle: FlagStyle = FlagStyle.TWEMOJI,
     tunnelUp: Boolean = false,
     onUpdate: () -> Unit,
@@ -217,6 +219,7 @@ fun ServersScreen(
                                 subscriptions = subscriptions,
                                 selectedId = selectedSubscription?.id,
                                 week = week,
+                                manualCount = manualCount,
                                 addOpen = addOpen,
                                 addUrl = addUrl,
                                 onAddOpenChange = { addOpen = it },
@@ -457,8 +460,16 @@ private fun SubscriptionReportFace(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                DatabaseTile()
-                UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
+                DatabaseTile(
+                    iconRes = if (subscription.id == STANDALONE_SUBSCRIPTION_ID) {
+                        R.drawable.ic_cards_stack
+                    } else {
+                        R.drawable.ic_database
+                    },
+                )
+                if (subscription.url.isNotEmpty()) {
+                    UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
+                }
             }
             Column(
                 Modifier.weight(1f),
@@ -518,8 +529,16 @@ private fun SubscriptionCompactFace(
         // The tile with the button tight against it — the pair reads as one control —
         // and the title a full gap away.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DatabaseTile()
-            UpdateButton(isUpdating = isUpdating, onClick = onUpdate, width = 36.dp, height = 48.dp)
+            DatabaseTile(
+                iconRes = if (subscription?.id == STANDALONE_SUBSCRIPTION_ID) {
+                    R.drawable.ic_cards_stack
+                } else {
+                    R.drawable.ic_database
+                },
+            )
+            if ((subscription?.url?.isNotEmpty()) == true) {
+                UpdateButton(isUpdating = isUpdating, onClick = onUpdate, width = 36.dp, height = 48.dp)
+            }
         }
         SubscriptionTitleRow(
             subscription = subscription,
@@ -733,6 +752,7 @@ private fun SubscriptionDropdown(
     subscriptions: List<SubscriptionEntity>,
     selectedId: String?,
     week: List<DailyTraffic>,
+    manualCount: Int,
     addOpen: Boolean,
     addUrl: String,
     onAddOpenChange: (Boolean) -> Unit,
@@ -744,21 +764,39 @@ private fun SubscriptionDropdown(
     val colors = MaterialTheme.colorScheme
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.extraSmall
+    // The standalone group leads the list whenever it has something in it — the cards
+    // stack's own row, first above the panels' own — and stays gone entirely while it
+    // doesn't, so the list never advertises an empty pocket.
+    val groups = if (manualCount > 0) {
+        listOf(
+            SubscriptionEntity(
+                id = STANDALONE_SUBSCRIPTION_ID,
+                name = stringResource(R.string.standalone_name),
+            ),
+        ) + subscriptions
+    } else {
+        subscriptions
+    }
     // The add row closes the list off, so it counts when the corner shapes are handed out.
-    val rowCount = subscriptions.size + 1
+    val rowCount = groups.size + 1
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(outer),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        subscriptions.forEachIndexed { index, subscription ->
+        groups.forEachIndexed { index, subscription ->
             val first = index == 0
             val last = index == rowCount - 1
             SubscriptionRow(
                 subscription = subscription,
                 selected = subscription.id == selectedId,
                 week = week,
+                icon = if (subscription.id == STANDALONE_SUBSCRIPTION_ID) {
+                    R.drawable.ic_cards_stack
+                } else {
+                    R.drawable.ic_database
+                },
                 onClick = { onSelect(subscription.id) },
                 onLongClick = { onDeleteRequest(subscription) },
                 shape = RoundedCornerShape(
@@ -776,8 +814,8 @@ private fun SubscriptionDropdown(
             onUrlChange = onAddUrlChange,
             onAdd = onAdd,
             shape = RoundedCornerShape(
-                topStart = if (subscriptions.isEmpty()) outer.topStart else inner.topStart,
-                topEnd = if (subscriptions.isEmpty()) outer.topEnd else inner.topEnd,
+                topStart = if (groups.isEmpty()) outer.topStart else inner.topStart,
+                topEnd = if (groups.isEmpty()) outer.topEnd else inner.topEnd,
                 bottomStart = outer.bottomStart,
                 bottomEnd = outer.bottomEnd,
             ),
@@ -922,6 +960,7 @@ private fun SubscriptionRow(
     subscription: SubscriptionEntity,
     selected: Boolean,
     week: List<DailyTraffic>,
+    icon: Int,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     shape: Shape,
@@ -1017,7 +1056,7 @@ private fun SubscriptionRow(
                         animated = true,
                     )
                     Icon(
-                        painter = painterResource(R.drawable.ic_database),
+                        painter = painterResource(icon),
                         contentDescription = null,
                         tint = iconColor,
                         modifier = Modifier.size(24.dp),

@@ -39,6 +39,7 @@ import slop.miho.aurora.data.SettingsStore
 import slop.miho.aurora.data.UiSettings
 import slop.miho.aurora.db.ProfileEntity
 import slop.miho.aurora.db.ProfileType
+import slop.miho.aurora.db.STANDALONE_SUBSCRIPTION_ID
 import slop.miho.aurora.db.SubscriptionEntity
 import slop.miho.aurora.db.balancerMemberKeys
 import slop.miho.aurora.sub.SubscriptionRepository
@@ -180,17 +181,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** The subscription whose profiles the servers screen shows. */
     val selectedSubscriptionId: StateFlow<String?> =
-        combine(subscriptions, connection) { subs, conn ->
-            // Deleted while selected: fall back to the first, or to nothing at all.
-            conn.selectedSubscriptionId?.takeIf { id -> subs.any { it.id == id } }
+        combine(subscriptions, connection, repository.manualProfileCount) { subs, conn, manual ->
+            // Deleted while selected: fall back to the first, or to nothing at all. The
+            // standalone group keeps its selection only while it has something in it.
+            conn.selectedSubscriptionId
+                ?.takeIf { id -> id == STANDALONE_SUBSCRIPTION_ID && manual > 0 || subs.any { it.id == id } }
                 ?: subs.firstOrNull()?.id
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** How many standalone configs wait outside any subscription. */
+    val manualProfileCount: StateFlow<Int> =
+        repository.manualProfileCount
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     private val _updatingSubscriptionId = MutableStateFlow<String?>(null)
 
     /** The selected subscription's own row, for the card. */
     val selectedSubscription: StateFlow<SubscriptionEntity?> =
-        combine(subscriptions, selectedSubscriptionId) { subs, id -> subs.firstOrNull { it.id == id } }
+        combine(subscriptions, selectedSubscriptionId) { subs, id ->
+            when (id) {
+                STANDALONE_SUBSCRIPTION_ID -> SubscriptionEntity(
+                    id = STANDALONE_SUBSCRIPTION_ID,
+                    name = app.getString(R.string.standalone_name),
+                )
+                else -> subs.firstOrNull { it.id == id }
+            }
+        }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _servers = MutableStateFlow(ServersUiState())
@@ -236,8 +252,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // The balancer's own members never stand in the screen's list: they
                     // are its internals — the pick, not the picked. The rows stay in the
                     // store untouched, where connect resolves them by linkKey; only the
-                    // showing of them is taken away.
-                    repository.profilesOf(id).map { it.hidingBalancerMembers() }
+                    // showing of them is taken away. The standalone group's id is a
+                    // label for the manual profiles' null bucket.
+                    repository.profilesOf(id?.takeUnless { it == STANDALONE_SUBSCRIPTION_ID })
+                        .map { it.hidingBalancerMembers() }
                 }
                 .combine(connection) { profiles, conn ->
                     val selected = profiles.firstOrNull { it.id == conn.selectedProfileId }
@@ -352,7 +370,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // wider one.
             val members = if (profile.type == ProfileType.BALANCER) {
                 val keys = profile.balancerMemberKeys.toSet()
-                val rows = repository.profilesOf(selectedSubscriptionId.value).first()
+                val rows = repository
+                    .profilesOf(selectedSubscriptionId.value?.takeUnless { it == STANDALONE_SUBSCRIPTION_ID })
+                    .first()
                 val resolved = rows.filter {
                     it.type != ProfileType.BALANCER && it.linkKey in keys
                 }
@@ -390,10 +410,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ------------------------------------------------------------ subscriptions actions
 
-    /** Adds a subscription (the welcome screen and the dropdown's last row). */
+    /**
+     * Adds a subscription (the welcome screen and the dropdown's last row). The field
+     * takes whatever the user pasted: a panel URL grows a subscription, anything else —
+     * a share link, a WireGuard conf, a raw config — lands in the standalone group.
+     */
     fun addSubscription(url: String, name: String? = null, onDone: (String?) -> Unit = {}) {
+        val trimmed = url.trim()
+        if (!trimmed.startsWith("http://", ignoreCase = true) &&
+            !trimmed.startsWith("https://", ignoreCase = true)
+        ) {
+            addManualProfiles(trimmed, onDone)
+            return
+        }
         viewModelScope.launch {
-            repository.addSubscription(url, name)
+            repository.addSubscription(trimmed, name)
                 .onSuccess { sub ->
                     ConnectionStore.update(app) { it.copy(selectedSubscriptionId = sub.id) }
                     _servers.update { it.copy(error = null) }
@@ -410,6 +441,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateSubscription(id: String) {
+        // The standalone group has no URL to re-fetch; its rows are only ever the
+        // user's own pastes.
+        if (id == STANDALONE_SUBSCRIPTION_ID) return
         if (_updatingSubscriptionId.value != null) return
         _updatingSubscriptionId.value = id
         _servers.update { it.copy(isUpdating = true, error = null) }
@@ -425,10 +459,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Deletes a subscription and everything it brought in. */
+    /** Deletes a subscription and everything it brought in — or the standalone group. */
     fun deleteSubscription(id: String) {
         viewModelScope.launch {
-            repository.deleteSubscription(id)
+            if (id == STANDALONE_SUBSCRIPTION_ID) {
+                repository.deleteManualProfiles()
+            } else {
+                repository.deleteSubscription(id)
+            }
             if (connection.value.selectedSubscriptionId == id) {
                 ConnectionStore.update(app) { it.copy(selectedSubscriptionId = null, selectedProfileId = null) }
             }
@@ -447,11 +485,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.setSubscriptionAutoUpdate(id, enabled) }
     }
 
-    /** Manual import: a link, a WireGuard .conf body, or a list of links. */
+    /** Manual import: a link, a WireGuard .conf body, a raw config, or a list of links. */
     fun addManualProfiles(text: String, onDone: (String?) -> Unit) {
         viewModelScope.launch {
             repository.addManualProfiles(text)
                 .onSuccess { count ->
+                    if (count > 0) {
+                        // The group the configs landed in becomes the shown one, the
+                        // same "select what you just added" the subscriptions follow.
+                        ConnectionStore.update(app) {
+                            it.copy(selectedSubscriptionId = STANDALONE_SUBSCRIPTION_ID, selectedProfileId = null)
+                        }
+                    }
                     onDone(if (count == 0) app.getString(R.string.import_nothing_new) else null)
                 }
                 .onFailure { error -> onDone(error.message ?: app.getString(R.string.error_unknown)) }

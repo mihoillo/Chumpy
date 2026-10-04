@@ -3,6 +3,12 @@ package slop.miho.aurora.db
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+/** The id the standalone group's row wears — the home of configs pasted outside any
+ *  subscription. No row with this id stands in the subscriptions table; it is the
+ *  dropdown's synthetic first entry, resolved to the manual profiles (whose
+ *  subscriptionId is null) wherever a real id would be. */
+const val STANDALONE_SUBSCRIPTION_ID = "standalone"
+
 /**
  * One subscription: a URL whose body is a set of server links, plus the metadata panels
  * attach via response headers — traffic counters and expiry from `subscription-userinfo`,

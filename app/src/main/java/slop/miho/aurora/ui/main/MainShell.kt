@@ -235,6 +235,9 @@ fun MainShell(viewModel: MainViewModel) {
             // The flow itself, not its value: it ticks once a second, and the STATS page
             // collects it in its own branch rather than recomposing the whole shell.
             statsFlow = viewModel.stats,
+            // The standalone group's row count, the same way: only the SERVERS page
+            // ever reads it.
+            manualProfileCount = viewModel.manualProfileCount,
             uiSettings = settings,
             connection = viewModel.connection.collectAsStateWithLifecycle().value,
             coreVersion = viewModel.coreVersion.collectAsStateWithLifecycle().value,
@@ -377,6 +380,7 @@ private fun MainPagerStrip(
     servers: ServersUiState,
     home: HomeUiState,
     statsFlow: StateFlow<StatsUiState>,
+    manualProfileCount: StateFlow<Int>,
     uiSettings: UiSettings,
     connection: slop.miho.aurora.data.ConnectionSettings,
     coreVersion: String?,
@@ -461,11 +465,13 @@ private fun MainPagerStrip(
                             .map { it.week }
                             .distinctUntilChanged()
                             .collectAsStateWithLifecycle(initialValue = emptyList())
+                        val manualCount by manualProfileCount.collectAsStateWithLifecycle()
                         ServersScreen(
                             subscriptions = subscriptions,
                             selectedSubscription = selectedSubscription,
                             state = servers,
                             week = week,
+                            manualCount = manualCount,
                             flagStyle = uiSettings.flagStyle,
                             tunnelUp = tunnelStatus.state == TunnelState.UP,
                             onUpdate = onUpdateSubscription,

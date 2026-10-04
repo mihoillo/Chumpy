@@ -41,7 +41,8 @@
     <string name="subscription_update_failed">Couldn\'t update the subscription: %1$s</string>
     <string name="subscription_update">Update subscription</string>
     <string name="subscription_expand">Switch subscription</string>
-    <string name="subscription_add">Add subscription</string>
+    <string name="subscription_add">Add subscription or config</string>
+    <string name="standalone_name">Loose configs</string>
     <string name="subscription_cancel">Cancel</string>
     <string name="subscription_url_field">Subscription URL</string>
     <string name="subscription_none">No subscription</string>
