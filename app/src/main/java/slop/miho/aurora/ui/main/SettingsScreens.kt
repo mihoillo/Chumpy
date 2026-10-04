@@ -1391,7 +1391,7 @@ private fun TestUrlRow(
  * they stand under it, animating on the same clock the rows themselves unroll on.
  */
 @Composable
-internal fun FoldingGroup(
+private fun FoldingGroup(
     expanded: Boolean,
     headerRows: List<@Composable () -> Unit>,
     rows: List<@Composable () -> Unit>,
