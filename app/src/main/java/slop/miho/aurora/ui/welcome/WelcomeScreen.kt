@@ -237,7 +237,10 @@ private fun ImportConfigRow(
         modifier = modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            // The title is set in at 24, not the row's own 16: the field card's text
+            // lands at 24 too (16 of card padding plus what the field keeps), so the
+            // two cards' lines start as one column.
+            modifier = Modifier.padding(start = 24.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -248,7 +251,7 @@ private fun ImportConfigRow(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ActionTile(
-                    icon = R.drawable.ic_folder_open,
+                    icon = R.drawable.ic_upload_file,
                     label = stringResource(R.string.import_config),
                     onClick = onImport,
                 )

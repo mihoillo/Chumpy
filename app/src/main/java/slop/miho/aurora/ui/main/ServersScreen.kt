@@ -19,7 +19,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -64,7 +63,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -772,9 +770,7 @@ private fun SubscriptionDropdown(
     onSelect: (String) -> Unit,
     onDeleteRequest: (SubscriptionEntity) -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
     val outer = MaterialTheme.shapes.extraLarge
-    val inner = MaterialTheme.shapes.extraSmall
     // The standalone group leads the list whenever it has something in it — the cards
     // stack's own row, first above the panels' own — and stays gone entirely while it
     // doesn't, so the list never advertises an empty pocket.
@@ -788,17 +784,13 @@ private fun SubscriptionDropdown(
     } else {
         subscriptions
     }
-    // The add row closes the list off, so it counts when the corner shapes are handed out.
-    val rowCount = groups.size + 1
+    // Every row stands as a card of its own — the button gap (8dp) between them, the
+    // add fold standing apart from the list the same way.
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(outer),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         groups.forEachIndexed { index, subscription ->
-            val first = index == 0
-            val last = index == rowCount - 1
             SubscriptionRow(
                 subscription = subscription,
                 selected = subscription.id == selectedId,
@@ -810,12 +802,7 @@ private fun SubscriptionDropdown(
                 },
                 onClick = { onSelect(subscription.id) },
                 onLongClick = { onDeleteRequest(subscription) },
-                shape = RoundedCornerShape(
-                    topStart = if (first) outer.topStart else inner.topStart,
-                    topEnd = if (first) outer.topEnd else inner.topEnd,
-                    bottomStart = if (last) outer.bottomStart else inner.bottomStart,
-                    bottomEnd = if (last) outer.bottomEnd else inner.bottomEnd,
-                ),
+                shape = outer,
             )
         }
         AddSubscriptionRow(
@@ -824,23 +811,16 @@ private fun SubscriptionDropdown(
             onOpenChange = onAddOpenChange,
             onUrlChange = onAddUrlChange,
             onAdd = onAdd,
-            shape = RoundedCornerShape(
-                topStart = if (groups.isEmpty()) outer.topStart else inner.topStart,
-                topEnd = if (groups.isEmpty()) outer.topEnd else inner.topEnd,
-                bottomStart = outer.bottomStart,
-                bottomEnd = outer.bottomEnd,
-            ),
-            color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
         )
     }
 }
 
 /**
- * The add row, the list's standing invitation — and, tapped, its own working face: the
- * card's face swap laid sideways, the invitation riding out to the right while the
- * welcome screen's field steps in from the left, the field's own cross — the compact
- * card's tight pair — as the way back. Submitting folds the face back with the field
- * cleared; a failure leaves it open, the URL kept for another try.
+ * The add row, the connection settings' own fold: the invitation stands as the header,
+ * and the working face — the field with the two doors under it — unrolls beneath it the
+ * way the spoof's fields do, and rolls back up the same way. Submitting or a successful
+ * import rolls it back with the field cleared; a failure leaves it standing, the URL
+ * kept for another try.
  */
 @Composable
 private fun AddSubscriptionRow(
@@ -849,8 +829,6 @@ private fun AddSubscriptionRow(
     onOpenChange: (Boolean) -> Unit,
     onUrlChange: (String) -> Unit,
     onAdd: (url: String, onDone: (String?) -> Unit) -> Unit,
-    shape: Shape,
-    color: Color,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -895,153 +873,112 @@ private fun AddSubscriptionRow(
             }
         }
     }
-    Surface(
-        shape = shape,
-        color = color,
-        contentColor = colors.onSurface,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        AnimatedContent(
-            targetState = open,
-            transitionSpec = {
-                // The card's own face swap laid sideways: opening, the invitation rides
-                // out to the right while the field steps in from the left; closing, the
-                // field retracts and the invitation comes back. The height rides along,
-                // unclipped while it goes.
-                val direction = if (targetState) 1 else -1
-                ContentTransform(
-                    targetContentEnter = slideInHorizontally(motion.defaultSpatialSpec()) {
-                        -direction * it / 2
-                    } + fadeIn(motion.defaultEffectsSpec()),
-                    initialContentExit = slideOutHorizontally(motion.defaultSpatialSpec()) {
-                        direction * it / 2
-                    } + fadeOut(motion.defaultEffectsSpec()),
-                    sizeTransform = SizeTransform(clip = false),
+    // The fold itself, the connection settings' own: the invitation's header row, the
+    // field and the two doors unrolling beneath it — the animated seam corners and the
+    // 2dp seams between the rows are the fold group's own, no triangle tile anywhere.
+    FoldingGroup(
+        expanded = open,
+        headerRows = listOf {
+            // The standing invitation, the row's only face while the fold sits closed —
+            // the tap that opens it is the same one that closes it.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 72.dp)
+                    .clickable {
+                        poke()
+                        onOpenChange(!open)
+                    }
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = colors.secondaryContainer,
+                    contentColor = colors.onSecondaryContainer,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_add),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.subscription_add),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-            },
-            label = "add subscription row",
-        ) { expanded ->
-            if (expanded) {
-                Column(
+            }
+        },
+        rows = listOf(
+            {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        // 80, not the header's 72: the stadium's 16dp of air on the sides
+                        // is matched above and below too — the gap reads square, not
+                        // wider than tall.
+                        .heightIn(min = 80.dp)
                         .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            // 80, not the closed face's 72: the stadium's 16dp of air on the
-                            // sides is matched above and below too — the gap reads square,
-                            // not wider than tall. The height swap rides the face change.
-                            .heightIn(min = 80.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        SubmitFieldRow(
-                            value = url,
-                            onValueChange = onUrlChange,
-                            onSubmit = {
-                                onAdd(url.trim()) { error ->
-                                    if (error == null) {
-                                        onUrlChange("")
-                                        onOpenChange(false)
-                                    }
+                    SubmitFieldRow(
+                        value = url,
+                        onValueChange = onUrlChange,
+                        onSubmit = {
+                            onAdd(url.trim()) { error ->
+                                if (error == null) {
+                                    onUrlChange("")
+                                    onOpenChange(false)
                                 }
-                            },
-                            autofocus = true,
-                            onClose = { onOpenChange(false) },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    // The two doors unroll beneath the field like a dropdown menu
-                    // settling open: the face swap carries the field in, then the row
-                    // itself rolls out — the welcome screen's import card's own layout,
-                    // in the same block as the URL.
-                    AnimatedVisibility(
-                        visibleState = remember {
-                            MutableTransitionState(false).apply { targetState = true }
-                        },
-                        enter = expandVertically(motion.defaultSpatialSpec()) +
-                            fadeIn(motion.defaultEffectsSpec()),
-                        exit = shrinkVertically(motion.defaultSpatialSpec()) +
-                            fadeOut(motion.defaultEffectsSpec()),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.import_config),
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f),
-                            )
-                            ActionTile(
-                                icon = R.drawable.ic_folder_open,
-                                label = stringResource(R.string.import_config),
-                                onClick = { filePicker.launch(arrayOf("*/*")) },
-                            )
-                            ActionTile(
-                                icon = R.drawable.ic_qr_code_scanner,
-                                label = stringResource(R.string.scan_qr_code),
-                                onClick = {
-                                    qrScanner.launch(
-                                        Intent(context, ScannerActivity::class.java),
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
-            } else {
-                // The invitation's closed face: its own transparent Surface carries the
-                // click so the ripple keeps the row's segmented shape.
-                Surface(
-                    onClick = {
-                        poke()
-                        onOpenChange(true)
-                    },
-                    shape = shape,
-                    color = Color.Transparent,
-                    contentColor = colors.onSurface,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 72.dp)
-                            .padding(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = colors.secondaryContainer,
-                            contentColor = colors.onSecondaryContainer,
-                            modifier = Modifier.size(40.dp),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_add),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                )
                             }
-                        }
-                        Text(
-                            text = stringResource(R.string.subscription_add),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = colors.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                        },
+                        autofocus = true,
+                        onClose = { onOpenChange(false) },
+                        modifier = Modifier.weight(1f),
+                    )
                 }
-            }
-        }
-    }
+            },
+            {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // The title sits at 24, the field's own text column: 16 of row
+                        // padding plus these 8.
+                        .padding(start = 24.dp, end = 16.dp, top = 4.dp, bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.import_config),
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                    ActionTile(
+                        icon = R.drawable.ic_upload_file,
+                        label = stringResource(R.string.import_config),
+                        onClick = { filePicker.launch(arrayOf("*/*")) },
+                    )
+                    ActionTile(
+                        icon = R.drawable.ic_qr_code_scanner,
+                        label = stringResource(R.string.scan_qr_code),
+                        onClick = {
+                            qrScanner.launch(
+                                Intent(context, ScannerActivity::class.java),
+                            )
+                        },
+                    )
+                }
+            },
+        ),
+    )
 }
 
 /**

@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -100,7 +101,11 @@ fun SubmitFieldRow(
                 imeAction = ImeAction.Done,
             ),
             keyboardActions = KeyboardActions(onDone = { onSubmit() }),
-            // No outline and no fill of its own: the backdrop is the field's.
+            // No outline and no fill of its own: the backdrop is the field's. It rides
+            // 8dp into the card's padding (offset, not layout: transparent chrome): the
+            // field's text lands at the card's 16 plus its own 16 minus these 8 — the
+            // same 24 the import titles beside it sit at, the two lines reading as one
+            // column.
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Color.Transparent,
                 unfocusedBorderColor = Color.Transparent,
@@ -109,6 +114,7 @@ fun SubmitFieldRow(
             ),
             modifier = Modifier
                 .weight(1f)
+                .offset(x = (-8).dp)
                 .focusRequester(focusRequester),
         )
         val colors = MaterialTheme.colorScheme
