@@ -195,7 +195,14 @@ object XrayConfigBuilder {
                 put(
                     "servers",
                     buildJsonArray {
-                        add(JsonPrimitive("local"))
+                        // The first server is the one the wireguard outbound asks for its
+                        // peer endpoint — and the only resolver that knows private-zone
+                        // names (the system's). It must be "localhost": "local" is not a
+                        // special address to the core, the endpoint lookup then answers
+                        // "record not found", and the handshake never starts — a tunnel
+                        // that is up while every packet dies. The public servers behind
+                        // it catch what the system cannot resolve at all.
+                        add(JsonPrimitive("localhost"))
                         add(JsonPrimitive("1.1.1.1"))
                         add(JsonPrimitive("8.8.8.8"))
                     },

@@ -45,5 +45,10 @@ class WireguardConfigTest {
         val peers = settings["peers"]!!.jsonArray.first().jsonObject
         assertEquals("wg.example.com:51820", peers["endpoint"]!!.jsonPrimitive.content)
         assertEquals("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=", peers["publicKey"]!!.jsonPrimitive.content)
+
+        // The first DNS server resolves the peer endpoint; "local" is not a core
+        // special address, and the handshake dies with "record not found" on it.
+        val dns = config.jsonObject["dns"]!!.jsonObject["servers"]!!.jsonArray
+        assertEquals("localhost", dns.first().jsonPrimitive.content)
     }
 }
