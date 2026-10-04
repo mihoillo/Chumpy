@@ -28,7 +28,9 @@ import androidx.compose.ui.unit.dp
 /**
  * A square action tile — the settings' toggle tile's own twin, only it presses instead
  * of switching: the 48dp rounded square on the secondary container, the mark centered,
- * the same pressed dip and click pop. One tile, one action.
+ * the same pressed dip and click pop. One tile, one action. [indicated] false takes the
+ * press light off — for the doors that hand over to another activity, where the ripple
+ * would hang mid-fade behind the transition.
  */
 @Composable
 fun ActionTile(
@@ -36,6 +38,7 @@ fun ActionTile(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    indicated: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -47,7 +50,7 @@ fun ActionTile(
     var taps by remember { mutableIntStateOf(0) }
     val resting = colors.secondaryContainer
     val container by animateColorAsState(
-        targetValue = if (pressed) lerp(resting, colors.onSurface, 0.1f) else resting,
+        targetValue = if (indicated && pressed) lerp(resting, colors.onSurface, 0.1f) else resting,
         animationSpec = motion.defaultEffectsSpec(),
         label = "action tile container",
     )
@@ -60,7 +63,7 @@ fun ActionTile(
             .pressBounce(pressed, taps)
             .combinedClickable(
                 interactionSource = interactionSource,
-                indication = LocalIndication.current,
+                indication = if (indicated) LocalIndication.current else null,
                 role = Role.Button,
             ) {
                 poke()

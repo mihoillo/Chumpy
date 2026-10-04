@@ -953,15 +953,13 @@ private fun AddSubscriptionRow(
         bottomStart = outerBottom,
         bottomEnd = outerBottom,
     )
-    Surface(
-        shape = cardShape,
-        color = color,
-        contentColor = colors.onSurface,
+    // No outer shell: each face carries its own surface, so the 2dp seam between the
+    // field and the two doors shows the backdrop through — the same seam the
+    // subscription rows wear, not a stripe of the card's own color.
+    AnimatedContent(
+        targetState = open,
         modifier = modifier.fillMaxWidth(),
-    ) {
-        AnimatedContent(
-            targetState = open,
-            transitionSpec = {
+        transitionSpec = {
                 // The card's own face swap laid sideways: opening, the invitation rides
                 // out to the right while the field steps in from the left; closing, the
                 // field retracts and the invitation comes back. The height rides along,
@@ -1073,6 +1071,7 @@ private fun AddSubscriptionRow(
                                 ActionTile(
                                     icon = R.drawable.ic_qr_code_scanner,
                                     label = stringResource(R.string.scan_qr_code),
+                                    indicated = false,
                                     onClick = {
                                         qrScanner.launch(
                                             Intent(context, ScannerActivity::class.java),
@@ -1084,15 +1083,15 @@ private fun AddSubscriptionRow(
                     }
                 }
             } else {
-                // The invitation's closed face: its own transparent Surface carries the
-                // click so the ripple keeps the card's own shape.
+                // The invitation's closed face: the card itself, the tap that opens it
+                // riding the ripple of its own shape.
                 Surface(
                     onClick = {
                         poke()
                         onOpenChange(true)
                     },
                     shape = cardShape,
-                    color = Color.Transparent,
+                    color = color,
                     contentColor = colors.onSurface,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -1129,7 +1128,6 @@ private fun AddSubscriptionRow(
                 }
             }
         }
-    }
 }
 
 /**

@@ -258,6 +258,7 @@ private fun ImportConfigRow(
                 ActionTile(
                     icon = R.drawable.ic_qr_code_scanner,
                     label = stringResource(R.string.scan_qr_code),
+                    indicated = false,
                     onClick = onScan,
                 )
             }
