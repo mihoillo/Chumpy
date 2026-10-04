@@ -1,4 +1,5 @@
-import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -15,9 +16,9 @@ android {
 
     // The build's own number: every invocation that assembles a release APK takes the
     // next one (debug-only and test runs hold it, so a delivery's debug build carries the
-    // release's number). The version reads 0.0.<number>, and the number rides along as
-    // versionCode, so every build installs over the one before it. The file at the root
-    // carries it: visible in git, safe across cleanups.
+    // release's number). The number rides along as versionCode, so every build installs
+    // over the one before it. The file at the root carries it: visible in git, safe
+    // across cleanups.
     val buildNumberFile = rootProject.file("build_number.properties")
     val releaseAssembled = gradle.startParameter.taskNames.any { name ->
         val task = name.substringAfterLast(':')
@@ -28,15 +29,27 @@ android {
         if (releaseAssembled) 1 else 0
     if (releaseAssembled) buildNumberFile.writeText(buildNumber.toString())
 
+    // The version's own three numbers, handed out by hand: the global release — a new
+    // feature's mark, 0 while the app's whole functionality is still landing — and the
+    // minor release, raised on request. The third number is the build itself: the
+    // ever-counting one above, starting at 76.
+    val majorVersion = 0
+    val minorVersion = 0
+    // Whoever runs the build signs the version with their own system username.
+    val builderName = System.getProperty("user.name") ?: "unknown"
+
     defaultConfig {
         applicationId = providers.gradleProperty("auroraPackageName").get()
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = buildNumber
-        versionName = "0.0.$buildNumber"
-        // The About page's build stamp: the day this build was assembled, baked in at
-        // the same moment. ROOT locale keeps it English, the app's only language.
-        val buildDate = LocalDate.now().format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ROOT))
+        versionName = "$majorVersion.$minorVersion.$buildNumber-$builderName"
+        // The About page's build stamp: when this build was assembled, on the Moscow
+        // clock with its offset said out loud. ROOT locale keeps it English, the app's
+        // only language.
+        val buildDate = ZonedDateTime.now(ZoneId.of("Europe/Moscow"))
+            .format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.ROOT)) +
+            " MSK (UTC+3)"
         buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
 

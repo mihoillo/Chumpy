@@ -1023,18 +1023,19 @@ fun ConnectionScreen(
             },
         )
         // The Happ spoof's own block, between the carrying and the measuring. The header
-        // carries two rows: the toggle ("Spoof as Happ", Enabled/Disabled) and the
-        // strings' doorway beneath it — "Edit spoof strings" with the background
-        // refresh's own triangle — so a working spoof sits compact, two rows tall, and
-        // the fingerprint's seven fields ride folded behind the doorway, one row each,
-        // editable whatever the toggle says. Enabling the spoof closes the fold: the
-        // identity is set, the block goes quiet. The regenerator leads the fold's list,
-        // a fresh identity one deliberate tap above the strings it rewrites.
+        // carries two rows of its own, separated by the fold rows' own 2dp seam: the
+        // toggle ("Spoof as Happ", Enabled/Disabled) and the strings' doorway beneath
+        // it — "Edit spoof strings" with the background refresh's own triangle — so a
+        // working spoof sits compact, two rows tall, and the fingerprint's seven fields
+        // ride folded behind the doorway, one row each, editable whatever the toggle
+        // says. Enabling the spoof closes the fold: the identity is set, the block goes
+        // quiet. The regenerator leads the fold's list, a fresh identity one deliberate
+        // tap above the strings it rewrites.
         var happOpen by rememberSaveable { mutableStateOf(false) }
         FoldingGroup(
             expanded = happOpen,
-            header = {
-                Column {
+            headerRows = listOf(
+                {
                     HappToggleRow(
                         checked = settings.happSpoof,
                         onToggle = { enabled ->
@@ -1042,12 +1043,14 @@ fun ConnectionScreen(
                             if (enabled) happOpen = false
                         },
                     )
+                },
+                {
                     EditSpoofStringsRow(
                         expanded = happOpen,
                         onToggle = { happOpen = !happOpen },
                     )
-                }
-            },
+                },
+            ),
             rows = listOf(
                 {
                     HappRegenerateRow(
@@ -1128,19 +1131,21 @@ fun ConnectionScreen(
             val autoCount = subscriptions.count { it.autoUpdate }
             FoldingGroup(
                 expanded = refreshOpen,
-                header = {
-                    BackgroundRefreshRow(
-                        supporting = when {
-                            autoCount == 0 -> stringResource(R.string.per_app_disabled)
-                            else -> stringResource(
-                                R.string.settings_background_refresh_count,
-                                autoCount,
-                            )
-                        },
-                        expanded = refreshOpen,
-                        onToggle = { refreshOpen = !refreshOpen },
-                    )
-                },
+                headerRows = listOf(
+                    {
+                        BackgroundRefreshRow(
+                            supporting = when {
+                                autoCount == 0 -> stringResource(R.string.per_app_disabled)
+                                else -> stringResource(
+                                    R.string.settings_background_refresh_count,
+                                    autoCount,
+                                )
+                            },
+                            expanded = refreshOpen,
+                            onToggle = { refreshOpen = !refreshOpen },
+                        )
+                    }
+                ),
                 rows = subscriptions.map { subscription ->
                     @Composable {
                         ToggleRow(
@@ -1388,7 +1393,7 @@ private fun TestUrlRow(
 @Composable
 private fun FoldingGroup(
     expanded: Boolean,
-    header: @Composable () -> Unit,
+    headerRows: List<@Composable () -> Unit>,
     rows: List<@Composable () -> Unit>,
 ) {
     val outer = MaterialTheme.shapes.extraLarge
@@ -1402,9 +1407,10 @@ private fun FoldingGroup(
     fun CornerSize.dp(): Dp = with(density) { toPx(Size(1f, 1f), this).toDp() }
     val outerTop = outer.topStart.dp()
     val outerBottom = outer.bottomStart.dp()
+    val innerTop = inner.topStart.dp()
     val innerBottom = inner.bottomStart.dp()
-    // The seam the fold rides on is the header's own bottom corners: the card's outer
-    // ones while the rows are folded, the inner seam once they stand under it.
+    // The seam the fold rides on is the header's last row's bottom corners: the card's
+    // outer ones while the rows are folded, the inner seam once they stand under it.
     val headerBottom by animateDpAsState(
         targetValue = if (expanded) innerBottom else outerBottom,
         animationSpec = motion.defaultSpatialSpec(),
@@ -1414,18 +1420,26 @@ private fun FoldingGroup(
         modifier = Modifier
             .fillMaxWidth()
             .clip(outer),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainer.withSurfaceOpacity(),
-            shape = RoundedCornerShape(
-                topStart = outerTop,
-                topEnd = outerTop,
-                bottomStart = headerBottom,
-                bottomEnd = headerBottom,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            header()
+        // The header's own rows ride as surfaces of their own, separated by the same
+        // 2dp seams the fold's rows wear — the first keeps the card's outer top, the
+        // last carries the fold's animated seam, the ones between take inner corners
+        // all around.
+        headerRows.forEachIndexed { index, row ->
+            val last = index == headerRows.lastIndex
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainer.withSurfaceOpacity(),
+                shape = RoundedCornerShape(
+                    topStart = if (index == 0) outerTop else innerTop,
+                    topEnd = if (index == 0) outerTop else innerTop,
+                    bottomStart = if (last) headerBottom else innerBottom,
+                    bottomEnd = if (last) headerBottom else innerBottom,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                row()
+            }
         }
         // The fold itself: the rows unroll down from the header and roll back up under
         // it, the fade riding strong on top — the background refresh's own trade.
@@ -1437,7 +1451,6 @@ private fun FoldingGroup(
                 fadeOut(motion.defaultEffectsSpec()),
         ) {
             Column(
-                Modifier.padding(top = 2.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 rows.forEachIndexed { index, row ->
