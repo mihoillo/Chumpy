@@ -1,5 +1,6 @@
 package slop.miho.aurora.ui.main
 
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.graphics.ColorUtils
@@ -63,6 +64,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -97,6 +99,8 @@ import slop.miho.aurora.db.STANDALONE_SUBSCRIPTION_ID
 import slop.miho.aurora.db.SubscriptionEntity
 import slop.miho.aurora.db.balancerMemberKeys
 import slop.miho.aurora.ui.ServersUiState
+import slop.miho.aurora.ui.scan.ScannerActivity
+import slop.miho.aurora.ui.components.ActionTile
 import slop.miho.aurora.ui.components.CookieBackdrop
 import slop.miho.aurora.ui.components.EmojiFlag
 import slop.miho.aurora.ui.components.ErrorCard
@@ -877,6 +881,20 @@ private fun AddSubscriptionRow(
             }
         }
     }
+    // The camera door, the file door's own twin: the scanner's decoded text rides the
+    // field's submit the same way — the field clears and the face folds on success.
+    val qrScanner = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val text = result.data?.getStringExtra(ScannerActivity.KEY_TEXT)
+        if (text == null) return@rememberLauncherForActivityResult
+        onAdd(text) { error ->
+            if (error == null) {
+                onUrlChange("")
+                onOpenChange(false)
+            }
+        }
+    }
     Surface(
         shape = shape,
         color = color,
@@ -935,21 +953,47 @@ private fun AddSubscriptionRow(
                             modifier = Modifier.weight(1f),
                         )
                     }
-                    // The file door as a bare word — no tile, no backing, the field's
-                    // own hypertext: a tap hands the system's picker whatever it brings
-                    // to the same door the field fills.
-                    Text(
-                        text = stringResource(R.string.or_import_config),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.primary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                poke()
-                                filePicker.launch(arrayOf("*/*"))
-                            }
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                    )
+                    // The two doors unroll beneath the field like a dropdown menu
+                    // settling open: the face swap carries the field in, then the row
+                    // itself rolls out — the welcome screen's import card's own layout,
+                    // in the same block as the URL.
+                    AnimatedVisibility(
+                        visibleState = remember {
+                            MutableTransitionState(false).apply { targetState = true }
+                        },
+                        enter = expandVertically(motion.defaultSpatialSpec()) +
+                            fadeIn(motion.defaultEffectsSpec()),
+                        exit = shrinkVertically(motion.defaultSpatialSpec()) +
+                            fadeOut(motion.defaultEffectsSpec()),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.import_config),
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f),
+                            )
+                            ActionTile(
+                                icon = R.drawable.ic_folder_open,
+                                label = stringResource(R.string.import_config),
+                                onClick = { filePicker.launch(arrayOf("*/*")) },
+                            )
+                            ActionTile(
+                                icon = R.drawable.ic_qr_code_scanner,
+                                label = stringResource(R.string.scan_qr_code),
+                                onClick = {
+                                    qrScanner.launch(
+                                        Intent(context, ScannerActivity::class.java),
+                                    )
+                                },
+                            )
+                        }
+                    }
                 }
             } else {
                 // The invitation's closed face: its own transparent Surface carries the

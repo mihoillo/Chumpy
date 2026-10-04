@@ -2,6 +2,7 @@ package slop.miho.aurora.ui.welcome
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -26,7 +27,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -56,8 +56,9 @@ import slop.miho.aurora.R
 import slop.miho.aurora.data.UiSettings
 import slop.miho.aurora.data.Accent
 import slop.miho.aurora.ui.components.SubmitFieldRow
-import slop.miho.aurora.ui.components.rememberHapticPoke
+import slop.miho.aurora.ui.components.ActionTile
 import slop.miho.aurora.ui.main.isSmallScreen
+import slop.miho.aurora.ui.scan.ScannerActivity
 import slop.miho.aurora.ui.theme.AuroraTheme
 
 /**
@@ -102,6 +103,20 @@ fun WelcomeScreen(
             } else {
                 onImport(text) { error -> reportError(error) }
             }
+        }
+    }
+
+    // The camera door: the scanner hands the decoded text back the same way the file
+    // picker does — a subscription URL rides the add, anything else rides the import.
+    val qrScanner = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val text = result.data?.getStringExtra(ScannerActivity.KEY_TEXT)
+        if (text == null) return@rememberLauncherForActivityResult
+        if (text.startsWith("http", ignoreCase = true)) {
+            onAddSubscription(text, null) { error -> reportError(error) }
+        } else {
+            onImport(text) { error -> reportError(error) }
         }
     }
 
@@ -195,7 +210,8 @@ fun WelcomeScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 ImportConfigRow(
-                    onClick = { filePicker.launch(arrayOf("*/*")) },
+                    onImport = { filePicker.launch(arrayOf("*/*")) },
+                    onScan = { qrScanner.launch(Intent(context, ScannerActivity::class.java)) },
                 )
             }
         }
@@ -203,21 +219,18 @@ fun WelcomeScreen(
 }
 
 /**
- * The file door, the settings' toggle rows' own shape and backdrop: the open folder's
- * tile standing where the switch's would, the title beside it — one tap and the
- * system's picker hands the file's text over to the import.
+ * The import card, the theme-swap rows' own arrangement: the title holds the left end,
+ * the two tiles trail at the right — the open folder takes a file off the storage, the
+ * scanner takes a code off the camera. The card itself doesn't press; its tiles are the
+ * buttons, the toggle tile's own twins down to the press dip and click pop.
  */
 @Composable
 private fun ImportConfigRow(
-    onClick: () -> Unit,
+    onImport: () -> Unit,
+    onScan: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val poke = rememberHapticPoke()
     Surface(
-        onClick = {
-            poke()
-            onClick()
-        },
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -228,24 +241,23 @@ private fun ImportConfigRow(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(48.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_folder_open),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
             Text(
                 text = stringResource(R.string.import_config),
                 style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionTile(
+                    icon = R.drawable.ic_folder_open,
+                    label = stringResource(R.string.import_config),
+                    onClick = onImport,
+                )
+                ActionTile(
+                    icon = R.drawable.ic_qr_code_scanner,
+                    label = stringResource(R.string.scan_qr_code),
+                    onClick = onScan,
+                )
+            }
         }
     }
 }

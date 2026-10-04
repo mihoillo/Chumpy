@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- The QR scanner's own; asked for only there, on first scan. -->
+    <uses-permission android:name="android.permission.CAMERA" />
     <!-- The trusted networks read the current Wi-Fi's name; Android shares names with
          location access only (and with the Wi-Fi state visible at all). -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -104,6 +107,15 @@
             android:parentActivityName=".MainActivity" />
         <activity
             android:name=".ui.perapp.PerAppProxyActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+        <!--
+            The QR scanner: a full-screen camera that returns one decoded string. A
+            separate activity rather than a navbar destination: it needs the camera
+            permission and a result channel, and back (gesture or tile) simply exits.
+        -->
+        <activity
+            android:name=".ui.scan.ScannerActivity"
             android:exported="false"
             android:parentActivityName=".MainActivity" />
 

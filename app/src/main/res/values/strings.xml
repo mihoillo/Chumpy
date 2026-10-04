@@ -44,8 +44,10 @@
     <string name="subscription_add">Add subscription or config</string>
     <string name="standalone_name">Loose configs</string>
     <string name="import_config">Import config</string>
-    <string name="or_import_config">or import config</string>
     <string name="import_read_failed">Couldn\'t read the file</string>
+    <string name="scan_qr_code">Scan QR code</string>
+    <string name="scan_hint">Point the camera at a QR code</string>
+    <string name="scan_close">Close the scanner</string>
     <string name="subscription_cancel">Cancel</string>
     <string name="subscription_url_field">Subscription URL</string>
     <string name="subscription_none">No subscription</string>
