@@ -100,7 +100,13 @@ object OutboundBuilder {
                 put("port", profile.serverPort)
             }
 
-            ProfileType.WIREGUARD -> wireguardSettings(profile)
+            // The one branch that builds its object as a whole: its entries still have
+            // to be put into this builder — a bare expression here is the lambda's last
+            // statement, its value dropped, and the outbound would ship with empty
+            // settings (the core's "WireGuard secret key must not be empty").
+            ProfileType.WIREGUARD -> wireguardSettings(profile).forEach { (key, value) ->
+                put(key, value)
+            }
         }
     }
 
