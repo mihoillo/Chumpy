@@ -1755,12 +1755,14 @@ private fun PlainRow(
 /**
  * The "About" page: the welcome screen's own hero turned upright — the app's mark big
  * at the top of the page, its name under it, the tagline under that — then the build's
- * own numbers, and the project's two homes. The core's version only exists once it has
- * booted in its own process; before that, the row says so.
+ * own numbers, and the project's two homes. The core's version is the name and number,
+ * with its run state riding behind a middle dot — the version is knowable either way, the
+ * process answers from its first boot on.
  */
 @Composable
 fun AboutScreen(
     coreVersion: String?,
+    coreRunning: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
@@ -1846,8 +1848,15 @@ fun AboutScreen(
             {
                 PlainRow(
                     title = stringResource(R.string.settings_about_core),
-                    supporting = coreVersion
-                        ?: stringResource(R.string.settings_about_core_unknown),
+                    supporting = buildString {
+                        coreVersion?.let { append(it).append(" · ") }
+                        append(
+                            stringResource(
+                                if (coreRunning) R.string.settings_about_core_running
+                                else R.string.settings_about_core_not_running,
+                            ),
+                        )
+                    },
                 )
             },
             {

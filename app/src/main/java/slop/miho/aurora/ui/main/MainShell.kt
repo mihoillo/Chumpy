@@ -241,6 +241,7 @@ fun MainShell(viewModel: MainViewModel) {
             uiSettings = settings,
             connection = viewModel.connection.collectAsStateWithLifecycle().value,
             coreVersion = viewModel.coreVersion.collectAsStateWithLifecycle().value,
+            coreRunning = viewModel.coreRunning.collectAsStateWithLifecycle().value,
             onUiSettingsChange = viewModel::updateSettings,
             onChangeConnection = viewModel::updateConnection,
             onOpenServers = {
@@ -384,6 +385,7 @@ private fun MainPagerStrip(
     uiSettings: UiSettings,
     connection: slop.miho.aurora.data.ConnectionSettings,
     coreVersion: String?,
+    coreRunning: Boolean,
     onUiSettingsChange: ((UiSettings) -> UiSettings) -> Unit,
     onChangeConnection: ((slop.miho.aurora.data.ConnectionSettings) -> slop.miho.aurora.data.ConnectionSettings) -> Unit,
     onOpenServers: () -> Unit,
@@ -508,7 +510,10 @@ private fun MainPagerStrip(
                         onChangeSettings = onUiSettingsChange,
                         onToggleAutoUpdate = onToggleAutoUpdate,
                     )
-                    SettingsCategory.ABOUT -> AboutScreen(coreVersion = coreVersion)
+                    SettingsCategory.ABOUT -> AboutScreen(
+                        coreVersion = coreVersion,
+                        coreRunning = coreRunning,
+                    )
                 }
             }
         }

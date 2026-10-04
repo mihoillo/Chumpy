@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -172,6 +173,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _coreVersion = MutableStateFlow<String?>(null)
     val coreVersion: StateFlow<String?> = _coreVersion.asStateFlow()
 
+    /** Whether the core's loop is up — the about screen's status half. */
+    val coreRunning: StateFlow<Boolean> = tunnelStatus
+        .map { it.state == TunnelState.UP }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     // ------------------------------------------------------------ subscriptions
 
     /** Every subscription, oldest first; the servers screen's dropdown list. */
@@ -303,9 +309,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         observeTunnelForHome()
         observeTunnelForStats()
         observeIdentityChips()
-        viewModelScope.launch { _coreVersion.value = tunnelClient.coreVersion() }
+        viewModelScope.launch {
+            // The ":core" process spins up with the bind, but the bind itself is async —
+            // the first ask often lands before the binder answers. Keep asking until it
+            // does; the version never changes mid-session, so one answer settles it.
+            while (_coreVersion.value == null) {
+                _coreVersion.value = tunnelClient.coreVersion()?.let(::conciseCoreVersion)
+                if (_coreVersion.value == null) delay(500)
+            }
+        }
         reparseAfterUpgrade()
     }
+
+    /**
+     * The core's banner ("Xray 26.3.27 (Xray, Penetrates Everything.) d2758a0 …") trimmed
+     * to what a version line wants: the name and the number.
+     */
+    private fun conciseCoreVersion(raw: String): String =
+        raw.lineSequence().firstOrNull()?.substringBefore(" (")?.ifBlank { raw } ?: raw
 
     /**
      * The parser grows — balancers, dialects, member hiding — while the store keeps

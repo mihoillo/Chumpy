@@ -1,7 +1,5 @@
 package slop.miho.aurora.ui.components
 
-import android.os.Build
-import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
@@ -34,7 +32,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -69,10 +66,10 @@ fun WavyPullToRefreshBox(
     onRefreshDenied: (() -> Unit)? = null,
     content: @Composable BoxScope.(pullShift: () -> Dp) -> Unit,
 ) {
-    val view = LocalView.current
     // The kicks honor the app-wide haptic-feedback setting, like every other poke.
     val hapticsOn = LocalUiSettings.current.hapticFeedback
     val deniedKicks = rememberHapticDeniedKicks()
+    val thresholdPoke = rememberHapticPoke()
     val slow = LocalUiSettings.current.slowAnimations
     val density = LocalDensity.current
     val isRefreshingState = rememberUpdatedState(isRefreshing)
@@ -171,14 +168,16 @@ fun WavyPullToRefreshBox(
         },
     )
 
-    // One kick when the finger crosses the threshold while dragging, so it is clear the pull
-    // is deep enough and letting go will refresh.
+    // One light poke when the finger crosses the threshold while dragging, so it is clear
+    // the pull is deep enough and letting go will refresh. The crisp 15ms pulse the app's
+    // taps use, not a feedback constant: CONFIRM reads as a firm double thud on devices
+    // with a good haptic motor — far too heavy for a mere "you're past the line".
     LaunchedEffect(state, enabled, hapticsOn) {
         var pastThreshold = false
         snapshotFlow { state.distanceFraction >= 1f && !state.isAnimating }
             .collect { crossed ->
                 if (crossed && !pastThreshold && enabled && hapticsOn) {
-                    view.performHapticFeedback(thresholdKickConstant())
+                    thresholdPoke()
                 }
                 pastThreshold = crossed
             }
@@ -267,7 +266,3 @@ private const val PULL_STRETCH_RATE = 0.6f
 /** The release spring: a visible overshoot that settles in one soft bounce. */
 private const val PULL_RELEASE_DAMPING = 0.5f
 private const val PULL_RELEASE_STIFFNESS = 380f
-
-private fun thresholdKickConstant() =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM
-    else HapticFeedbackConstants.VIRTUAL_KEY

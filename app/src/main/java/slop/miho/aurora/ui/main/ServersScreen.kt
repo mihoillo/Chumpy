@@ -1028,7 +1028,8 @@ private fun AddSubscriptionRow(
                     // settling open: the face swap carries the field in, then the row
                     // itself rolls out — the welcome screen's import card's own layout,
                     // one seam under the URL. The title sits at 24, the field's own
-                    // text column: 16 of row padding plus these 8.
+                    // text column: 16 of row padding plus these 8. The padding is even
+                    // on all sides: the tile's 48 + 16 + 16 matches the field row's 80.
                     AnimatedVisibility(
                         visibleState = remember {
                             MutableTransitionState(false).apply { targetState = true }
@@ -1052,7 +1053,7 @@ private fun AddSubscriptionRow(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    .padding(16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {

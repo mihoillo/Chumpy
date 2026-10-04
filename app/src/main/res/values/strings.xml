@@ -166,7 +166,8 @@
     <string name="settings_background_refresh">Background refresh</string>
     <string name="settings_background_refresh_count">Auto-updates %d subscriptions</string>
     <string name="settings_about_core">Xray core</string>
-    <string name="settings_about_core_unknown">not running yet</string>
+    <string name="settings_about_core_running">running</string>
+    <string name="settings_about_core_not_running">not running</string>
     <string name="settings_about_version">Version</string>
     <string name="settings_about_build_date">Build date</string>
     <string name="settings_about_tagline">Xray based client with Material 3 Expressive</string>
