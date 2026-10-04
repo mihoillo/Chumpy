@@ -116,6 +116,7 @@ import slop.miho.aurora.ui.components.splitLeadingFlag
 import slop.miho.aurora.ui.components.splitLeadingPrideFlag
 import slop.miho.aurora.ui.components.rememberHapticDeniedKicks
 import slop.miho.aurora.ui.components.rememberHapticPoke
+import slop.miho.aurora.ui.components.rememberHapticSoftPoke
 import slop.miho.aurora.ui.components.WavyPullToRefreshBox
 import slop.miho.aurora.ui.components.pressBounce
 import slop.miho.aurora.ui.components.pullShiftedPadding
@@ -1698,11 +1699,13 @@ private fun ServerRow(
     }
     val poke = rememberHapticPoke()
     // The sweep's answers land one by one, and each hand-over on the row's ping chip —
-    // the old number out, the new one flying in — taps the same crisp poke the row's
-    // selection does; the first reading a row composes with is its own, not a change.
+    // the old number out, the new one flying in — taps the soft poke: a sweep pokes a
+    // dozen rows in a couple of seconds, and the full tap amplitude machine-guns on a
+    // good motor. The first reading a row composes with is its own, not a change.
+    val resultPoke = rememberHapticSoftPoke()
     var measured by remember(profile.id) { mutableStateOf(false) }
     LaunchedEffect(profile.id, profile.testDelayMillis, profile.lastTestAt) {
-        if (measured) poke()
+        if (measured) resultPoke()
         measured = true
     }
 
