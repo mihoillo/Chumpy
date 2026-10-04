@@ -69,7 +69,7 @@ fun WavyPullToRefreshBox(
     // The kicks honor the app-wide haptic-feedback setting, like every other poke.
     val hapticsOn = LocalUiSettings.current.hapticFeedback
     val deniedKicks = rememberHapticDeniedKicks()
-    val thresholdPoke = rememberHapticPoke()
+    val thresholdPoke = rememberHapticSoftPoke()
     val slow = LocalUiSettings.current.slowAnimations
     val density = LocalDensity.current
     val isRefreshingState = rememberUpdatedState(isRefreshing)
@@ -168,10 +168,11 @@ fun WavyPullToRefreshBox(
         },
     )
 
-    // One light poke when the finger crosses the threshold while dragging, so it is clear
-    // the pull is deep enough and letting go will refresh. The crisp 15ms pulse the app's
-    // taps use, not a feedback constant: CONFIRM reads as a firm double thud on devices
-    // with a good haptic motor — far too heavy for a mere "you're past the line".
+    // One soft poke when the finger crosses the threshold while dragging, so it is clear
+    // the pull is deep enough and letting go will refresh. The soft pulse — a quarter of
+    // the tap poke's amplitude — not a feedback constant and not the full poke either:
+    // CONFIRM reads as a firm double thud on a good motor, and even the plain poke sits
+    // heavy where the gesture only wants a tick.
     LaunchedEffect(state, enabled, hapticsOn) {
         var pastThreshold = false
         snapshotFlow { state.distanceFraction >= 1f && !state.isAnimating }

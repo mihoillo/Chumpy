@@ -36,6 +36,30 @@ fun rememberHapticPoke(): () -> Unit {
 }
 
 /**
+ * A softer poke — the pull-to-refresh threshold's "you're past the line": the same brief
+ * pulse as a tap at a quarter of the amplitude. Devices with a good haptic motor (Pixels)
+ * read the full-amplitude poke as a heavy thump there, where the gesture only wants a
+ * tick. Without amplitude control (older motors) the plain short poke stays — it is
+ * barely felt on those anyway.
+ */
+@Composable
+fun rememberHapticSoftPoke(): () -> Unit {
+    val vibrator = LocalContext.current.getSystemService(Vibrator::class.java)
+    val enabled = LocalUiSettings.current.hapticFeedback
+    return remember(vibrator, enabled) {
+        {
+            if (enabled && vibrator?.hasVibrator() == true) {
+                val amplitude = if (vibrator.hasAmplitudeControl()) SOFT_POKE_AMPLITUDE
+                else VibrationEffect.DEFAULT_AMPLITUDE
+                vibrator.vibrate(
+                    VibrationEffect.createOneShot(POKE_MILLIS, amplitude),
+                )
+            }
+        }
+    }
+}
+
+/**
  * [count] crisp pokes in a row — a double reads as "that worked". The same pulse as the tap
  * poke, so multi-poke feedback matches the single one in feel.
  */
@@ -84,6 +108,7 @@ fun rememberHapticDeniedKicks(count: Int = DENIED_KICK_COUNT): () -> Unit {
 }
 
 private const val POKE_MILLIS = 15L
+private const val SOFT_POKE_AMPLITUDE = 64
 private const val POKE_INTERVAL_MILLIS = 100L
 private const val DENIED_KICK_COUNT = 3
 private const val DENIED_KICK_INTERVAL_MILLIS = 120L
