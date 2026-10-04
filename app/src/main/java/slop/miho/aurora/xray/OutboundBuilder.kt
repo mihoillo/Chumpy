@@ -153,7 +153,12 @@ object OutboundBuilder {
      * text to a public address), no matter what tlsSettings/realitySettings sit next to it.
      */
     private fun streamSettings(profile: ProfileEntity): JsonObject? {
-        var json = buildJsonObject { put("network", profile.network.ifEmpty { "tcp" }) }
+        // Hysteria2 rides its own transport, named after the protocol — the link parser
+        // stamps it on every import, but rows that predate that (or came from foreign
+        // formats) carry an empty network, and the core answers those with "not hysteria
+        // transport". The profile type decides, the network field can only agree.
+        val network = if (profile.type == ProfileType.HYSTERIA2) "hysteria" else profile.network.ifEmpty { "tcp" }
+        var json = buildJsonObject { put("network", network) }
 
         when (profile.security) {
             TLS -> json = json.with("security" to JsonPrimitive(TLS)).with("tlsSettings" to tlsSettings(profile))
@@ -162,7 +167,7 @@ object OutboundBuilder {
 
         transportSettings(profile)?.let { (name, settings) -> json = json.with(name to settings) }
 
-        if (profile.network == "hysteria") {
+        if (profile.type == ProfileType.HYSTERIA2 || profile.network == "hysteria") {
             json = json.with(
                 "hysteriaSettings" to buildJsonObject {
                     put("version", 2)
@@ -181,7 +186,7 @@ object OutboundBuilder {
         if (profile.fingerprint.isNotEmpty()) put("fingerprint", profile.fingerprint)
         // Hysteria2 rides on HTTP/3; everything else keeps the link's own list.
         val alpn = profile.alpn.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-        val effective = if (alpn.isNotEmpty()) alpn else if (profile.network == "hysteria") listOf("h3") else emptyList()
+        val effective = if (alpn.isNotEmpty()) alpn else if (profile.type == ProfileType.HYSTERIA2 || profile.network == "hysteria") listOf("h3") else emptyList()
         if (effective.isNotEmpty()) put("alpn", JsonArray(effective.map(::JsonPrimitive)))
     }
 

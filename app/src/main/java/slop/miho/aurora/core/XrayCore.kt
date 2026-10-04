@@ -32,6 +32,9 @@ object XrayCore {
     /** Where the geo databases live once copied out of the APK assets. */
     private const val ASSET_DIR = "xray_assets"
 
+    /** How long the core's stop call may take before it counts as wedged. */
+    private const val STOP_GRACE_MILLIS = 5_000L
+
     private const val GEOIP = "geoip.dat"
     private const val GEOSITE = "geosite.dat"
 
@@ -167,14 +170,42 @@ object XrayCore {
         }
     }
 
-    /** Stops the core loop; the controller stays alive for the next start. Worker only. */
+    /**
+     * Stops the core loop; the controller stays alive for the next start. Worker only.
+     *
+     * The Go call is given a grace period, not an eternity: a wedged loop (seen with the
+     * wireguard outbound) would block teardown forever and pin the app in Disconnecting.
+     * Past the grace the controller is abandoned — it is unusable anyway, and only
+     * process death frees the port it holds — and a reaper tears the core process down
+     * once the caller has finished its own unwinding (stopSelf, TUN close, the DOWN
+     * broadcast), which it always does within a second or two.
+     */
     fun stopLoop() {
         if (!isRunning) return
         isRunning = false
+        val core = controller ?: return
+        val stopper = Thread {
+            try {
+                core.stopLoop()
+            } catch (e: Exception) {
+                Log.w(TAG, "stopLoop failed", e)
+            }
+        }
+        stopper.start()
         try {
-            controller?.stopLoop()
-        } catch (e: Exception) {
-            Log.w(TAG, "stopLoop failed", e)
+            stopper.join(STOP_GRACE_MILLIS)
+        } catch (_: InterruptedException) {
+        }
+        if (stopper.isAlive) {
+            Log.e(TAG, "Core stopLoop wedged; abandoning the controller and exiting")
+            controller = null
+            Thread {
+                try {
+                    Thread.sleep(3_000)
+                } catch (_: InterruptedException) {
+                }
+                System.exit(0)
+            }.start()
         }
     }
 
