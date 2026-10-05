@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
 import android.net.wifi.WifiManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -967,12 +968,36 @@ private fun installedApps(context: Context): List<AppEntry> {
             AppEntry(
                 packageName = pkg,
                 label = info.loadLabel(pm).toString(),
-                icon = info.loadIcon(pm).toBitmap().asImageBitmap(),
+                icon = iconAtRowSize(info.loadIcon(pm)),
             )
         }
         .distinctBy { it.packageName }
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
 }
+
+/**
+ * The icon at the size the row can use, never the size it shipped with. The plain
+ * conversion keeps the drawable's own pixels, and a broken launcher icon — an OEM
+ * theme's or a stray apk's — can come out thousands of pixels square: a 6977×6977
+ * one (194MB) crashed a OnePlus 8T the moment its row drew, the hardware canvas
+ * refusing anything past 100MB. Anything over the cap rides down proportionally;
+ * anything under it stands as it shipped.
+ */
+private fun iconAtRowSize(drawable: Drawable): ImageBitmap {
+    val w = drawable.intrinsicWidth
+    val h = drawable.intrinsicHeight
+    if (w <= 0 || h <= 0 || (w <= MAX_APP_ICON_PX && h <= MAX_APP_ICON_PX)) {
+        return drawable.toBitmap().asImageBitmap()
+    }
+    val scale = MAX_APP_ICON_PX.toFloat() / maxOf(w, h)
+    return drawable.toBitmap(
+        (w * scale).toInt().coerceAtLeast(1),
+        (h * scale).toInt().coerceAtLeast(1),
+    ).asImageBitmap()
+}
+
+/** The row's 40dp of icon, plus headroom for the densest screens. */
+private const val MAX_APP_ICON_PX = 192
 
 /**
  * The Wi-Fi the device sits on, by name — the only network the OS names for a modern
