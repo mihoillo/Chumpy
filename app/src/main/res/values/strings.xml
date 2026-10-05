@@ -250,9 +250,10 @@
     <string name="notif_channel_alerts_desc">A running tunnel that fell</string>
     <string name="notif_interrupted_title">Connection interrupted</string>
     <string name="notif_interrupted_revoked">Another VPN took over this one.</string>
-    <string name="notif_interrupted_auto">Another VPN took over this one — Aurora reconnects when it steps aside.</string>
+    <string name="notif_interrupted_auto">Another VPN took over this one. Reconnecting…</string>
     <string name="notif_reconnected_title">Connection restored</string>
     <string name="notif_reconnected_text">Aurora brought the tunnel back by itself.</string>
+    <string name="notif_reconnect_failed_title">Reconnect failed</string>
     <string name="notif_interrupted_network">The network under the tunnel changed.</string>
     <string name="notif_interrupted_off">The tunnel is down — Aurora will not bring it back on its own.</string>
     <string name="notif_action_reconnect">Reconnect</string>

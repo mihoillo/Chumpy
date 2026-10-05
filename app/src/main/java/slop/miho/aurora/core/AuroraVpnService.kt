@@ -34,12 +34,12 @@ import java.util.concurrent.atomic.AtomicInteger
  * next to [XrayCore], comes up as a foreground service on connect, and answers three start
  * paths with the same code: the app's connect command, the QS tile, and the system's own
  * Always-on restart (a null intent / the VpnService interface action) — the last only when
- * auto-reconnect says so AND the system is Aurora's to take: another VPN's tenure gets the
- * restart the same patience the fall gave it, never a fight for the slot. Off, the restart
- * is declined, the tunnel stays down and the fall notice's Reconnect is the way back.
- * Auto-reconnect owns a fall's aftermath too: armed by one the user did not ask for, its
- * watch asks every few seconds whether the system is Aurora's again, and brings the tunnel
- * back the moment it is — said out loud, the fall's banner replaced by its answer.
+ * auto-reconnect says so: off, the restart is declined, the tunnel stays down and the fall
+ * notice's Reconnect is the way back. Auto-reconnect owns a fall's aftermath too: answered
+ * at once, the climb back beginning the moment the fall is finished — no waiting — and the
+ * fall notice edited to the outcome: restored, or the failure that ended it. Three falls
+ * in a row that a foreign VPN caused stand the auto-reconnect down: a fight the VPN keeps
+ * winning is a loop, not a connection.
  *
  * A connect while the tunnel is already up is a reload: the interface stays, only the core
  * loop restarts with the fresh config the UI just wrote — that is the server-switch path.
@@ -100,11 +100,11 @@ class AuroraVpnService : VpnService() {
         private const val AUTHORIZATION_CHECK_MILLIS = 5_000L
 
         /**
-         * How often the auto-reconnect's watch asks whether the system is Aurora's again:
-         * armed by a fall the user did not ask for, it brings the tunnel back the moment
-         * the other VPN steps aside.
+         * How many times in a row auto-reconnect may answer a foreign-VPN fall before it
+         * stands down: each answer is a fight for the slot, and a fight the VPN keeps
+         * winning is a loop otherwise. Reset the moment a tunnel stays up.
          */
-        private const val RECONNECT_WATCH_MILLIS = 5_000L
+        private const val AUTO_RECONNECT_ATTEMPT_CAP = 3
 
         const val ACTION_CONNECT = "slop.miho.aurora.core.CONNECT"
         const val ACTION_DISCONNECT = "slop.miho.aurora.core.DISCONNECT"
@@ -200,36 +200,13 @@ class AuroraVpnService : VpnService() {
     /** The handover timer's own looper; holds re-dials and authorization checks only. */
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /**
-     * The auto-reconnect's own patience, armed by a fall the user did not ask for while
-     * the toggle says on: every few seconds it asks whether the system is Aurora's again —
-     * the consent back, no foreign VPN routing the app — and the moment it is, the tunnel
-     * comes back by itself, the toggle's whole promise. The user's own stop disarms it: a
-     * hand-lowered tunnel is not the watch's to raise, and a tunnel brought back up disarms
-     * it too, in [startTunnelWatch].
-     */
-    private val reconnectWatch: Runnable = Runnable {
-        worker.execute {
-            if (!awaitingReconnect) return@execute
-            if (prepare(this) == null && !foreignVpnHoldsTheDefault()) {
-                Log.i(TAG, "Auto-reconnect: the system is ours again, bringing the tunnel back")
-                awaitingReconnect = false
-                // The recovery is said out loud: the user asked to know when a fallen
-                // tunnel came back by itself, and the notice rides the connect's success.
-                announceAutoReconnect = true
-                startOrReloadVpn()
-            } else {
-                mainHandler.postDelayed(reconnectWatch, RECONNECT_WATCH_MILLIS)
-            }
-        }
-    }
-
-    @Volatile
-    private var awaitingReconnect = false
-
-    /** Set by the watch: the next tunnel that stands up was Aurora's own doing — say so. */
+    /** Set by the auto-reconnect: the next tunnel outcome — up, or failed — edits the fall notice. */
     @Volatile
     private var announceAutoReconnect = false
+
+    /** Consecutive auto-reconnect answers to foreign-VPN falls; reset by a tunnel that stays up. */
+    @Volatile
+    private var autoReconnectAttempts = 0
 
     /**
      * The authorization self-check: prepare() is a pure query, no dialog, and it answers
@@ -255,22 +232,23 @@ class AuroraVpnService : VpnService() {
             val foreign = foreignVpnHoldsTheDefault()
             if (foreign || prepare(this) != null) {
                 Log.w(TAG, "The VPN authorization is gone — or another VPN holds the default — and onRevoke never came; stopping")
-                // Auto-reconnect on: the fall still falls — the other VPN holds the system,
-                // and fighting it for the slot is the thing the soft fall exists to avoid —
-                // but the watch arms, and the tunnel comes back the moment the coast clears.
                 val auto = ConnectionStore.autoReconnectFresh(this)
+                if (foreign && auto) autoReconnectAttempts++
+                // The promise text only while the answer is coming: beyond the cap, the
+                // notice states the fall and leaves it to the user's own hand.
+                val answering = foreign && auto && autoReconnectAttempts <= AUTO_RECONNECT_ATTEMPT_CAP
                 stopVpn(
                     getString(
-                        if (foreign && auto) R.string.notif_interrupted_auto
+                        if (answering) R.string.notif_interrupted_auto
                         else R.string.notif_interrupted_revoked,
                     ),
                     keepTun = foreign,
+                    reconnectAfter = answering,
                 )
-                if (foreign && auto) {
-                    awaitingReconnect = true
-                    mainHandler.postDelayed(reconnectWatch, RECONNECT_WATCH_MILLIS)
-                }
             } else {
+                // A tunnel that stays up forgives the count: whatever fought it before,
+                // this one holds.
+                autoReconnectAttempts = 0
                 mainHandler.postDelayed(authorizationCheck, AUTHORIZATION_CHECK_MILLIS)
             }
         }
@@ -338,35 +316,17 @@ class AuroraVpnService : VpnService() {
         ensureForeground()
         // Always-on restarts from the OS deliver the VpnService interface action, or null.
         val systemVpnStart = intent == null || intent.action == VpnService.SERVICE_INTERFACE
-        if (systemVpnStart) {
-            // The flag read off the file, not this process's prefs cache: the UI wrote it,
-            // and the cache never saw that write.
-            val auto = ConnectionStore.autoReconnectFresh(this)
-            // The restart asks for the VPN back, but another VPN may hold the system — the
-            // restart that follows such a fall must not barge in and take the slot from the
-            // newcomer, which is exactly what a plain connect here would do. Auto-reconnect
-            // waits for the coast to clear; it does not fight. Off, it does not come back
-            // at all — the fall notice's Reconnect is the way back by the user's own hand.
-            val foreign = foreignVpnHoldsTheDefault()
-            if (!auto || foreign) {
-                Log.i(
-                    TAG,
-                    "System restart declined: " +
-                        if (foreign) "another VPN holds the system" else "auto-reconnect is off",
-                )
-                stopVpn(
-                    when {
-                        foreign && auto -> getString(R.string.notif_interrupted_auto)
-                        foreign -> getString(R.string.notif_interrupted_revoked)
-                        else -> getString(R.string.notif_interrupted_off)
-                    },
-                )
-                if (foreign && auto) {
-                    awaitingReconnect = true
-                    mainHandler.postDelayed(reconnectWatch, RECONNECT_WATCH_MILLIS)
-                }
-                return START_NOT_STICKY
-            }
+        // The flag read off the file, not this process's prefs cache: the UI wrote it,
+        // and the cache never saw that write.
+        if (systemVpnStart && !ConnectionStore.autoReconnectFresh(this)) {
+            // The system wants its VPN back — the always-on engine's restart, the sticky
+            // resurrection after the core process died — but nobody asked for it.
+            // Auto-reconnect off: the tunnel stays down, and the alert's Reconnect is
+            // the way back by the user's own hand. On, the restart is the auto-reconnect
+            // itself: the tunnel comes back at once, wherever it fell.
+            Log.i(TAG, "System restart declined: auto-reconnect is off")
+            stopVpn(getString(R.string.notif_interrupted_off))
+            return START_NOT_STICKY
         }
         val action = if (systemVpnStart) ACTION_CONNECT else intent?.action
         when (action) {
@@ -379,15 +339,12 @@ class AuroraVpnService : VpnService() {
     override fun onRevoke() {
         // The system took the VPN away (revoked, or another VPN took over): the tunnel
         // falls the way v2rayNG's does — down, now, and said out loud, the alert's
-        // Reconnect being the way back. Auto-reconnect on: the watch arms too — where the
-        // consent still answers null, the tunnel comes back by itself as soon as it can.
+        // Reconnect being the way back. Auto-reconnect on: the fall is answered at once.
         Log.w(TAG, "VPN revoked")
-        val auto = ConnectionStore.autoReconnectFresh(this)
-        stopVpn(getString(R.string.notif_interrupted_revoked))
-        if (auto) {
-            awaitingReconnect = true
-            mainHandler.postDelayed(reconnectWatch, RECONNECT_WATCH_MILLIS)
-        }
+        stopVpn(
+            getString(R.string.notif_interrupted_revoked),
+            reconnectAfter = ConnectionStore.autoReconnectFresh(this),
+        )
     }
 
     override fun onDestroy() {
@@ -448,7 +405,13 @@ class AuroraVpnService : VpnService() {
                 ensureForeground()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to bring the tunnel up", e)
-                announceAutoReconnect = false
+                if (announceAutoReconnect) {
+                    // The auto-reconnect's own outcome: the notice that promised the climb
+                    // back now says how it ended. Reconnect stays its action — the user's
+                    // own hand can try what the automation could not.
+                    announceAutoReconnect = false
+                    notifyReconnectFailed(describe(e))
+                }
                 stopTunnelWatch()
                 XrayCore.stopLoop()
                 closeTun()
@@ -466,12 +429,12 @@ class AuroraVpnService : VpnService() {
      * the newcomer's VPN together with ours the moment our own interface dies. The
      * interface stands down without dying: nothing routes into it anymore, the core has
      * stopped, only the fd stays, retiring at the next connect or with the process.
+     *
+     * [reconnectAfter] is auto-reconnect's answer: the moment the fall is finished, the
+     * climb back begins — no waiting, the next tunnel goes up at once, and its outcome
+     * (up, or failed) is what the fall notice is edited to say.
      */
-    private fun stopVpn(interruptionReason: String? = null, keepTun: Boolean = false) {
-        // The auto-reconnect's patience dies with the stop: a tunnel the user lowered by
-        // hand is not the watch's to raise. The flag dies here, in the synchronous part —
-        // a fall that means to re-arm does so after this returns, not before.
-        awaitingReconnect = false
+    private fun stopVpn(interruptionReason: String? = null, keepTun: Boolean = false, reconnectAfter: Boolean = false) {
         // The watch goes first: no handover may schedule behind a stop, and one already
         // waiting must die with it — nothing brings the tunnel back from the dead.
         stopTunnelWatch()
@@ -497,6 +460,13 @@ class AuroraVpnService : VpnService() {
                 XrayCore.publish(TunnelStatus(TunnelState.DOWN))
                 if (interruptionReason != null) {
                     notifyInterrupted(interruptionReason)
+                }
+                if (reconnectAfter) {
+                    // The answer the toggle promised: no waiting, the climb back begins
+                    // the moment the fall is finished. The outcome edits the notice.
+                    Log.i(TAG, "Auto-reconnect: answering the fall at once")
+                    announceAutoReconnect = true
+                    startOrReloadVpn()
                 }
             }
         }
@@ -564,9 +534,6 @@ class AuroraVpnService : VpnService() {
      */
     private fun startTunnelWatch() {
         if (watching) return
-        // A tunnel standing up ends the auto-reconnect's watch: whatever it was waiting
-        // for has arrived.
-        awaitingReconnect = false
         val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
         connectivityManager = connectivity
         try {
@@ -829,9 +796,9 @@ class AuroraVpnService : VpnService() {
     }
 
     /**
-     * The recovery notice: the tunnel fell and came back by itself — the watch's doing.
-     * The fall's own slot, the fall's own channel: the banner that said "interrupted" is
-     * replaced by its answer — "restored" — and wears the on glyph, the tunnel standing.
+     * The recovery edit: the fall notice becomes its own answer — restored, the on glyph,
+     * the tunnel standing. Same slot as the fall it answers: one notification, telling
+     * the story's current page.
      */
     private fun notifyReconnected() {
         val manager = getSystemService(NotificationManager::class.java) ?: return
@@ -850,6 +817,38 @@ class AuroraVpnService : VpnService() {
                 .setContentText(getString(R.string.notif_reconnected_text))
                 .setContentIntent(open)
                 .setAutoCancel(true)
+                .build(),
+        )
+    }
+
+    /**
+     * The failure edit: the climb back did not land, and the notice says so — the error
+     * under the title, Reconnect still its action.
+     */
+    private fun notifyReconnectFailed(reason: String) {
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        ensureAlertChannel(manager)
+        val reconnect = PendingIntent.getForegroundService(
+            this,
+            2,
+            Intent(this, AuroraVpnService::class.java).setAction(ACTION_CONNECT),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        manager.notify(
+            ALERT_NOTIFICATION_ID,
+            Notification.Builder(this, ALERT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_tile_off)
+                .setContentTitle(getString(R.string.notif_reconnect_failed_title))
+                .setContentText(reason)
+                .setContentIntent(reconnect)
+                .setAutoCancel(true)
+                .addAction(
+                    Notification.Action.Builder(
+                        Icon.createWithResource(this, R.drawable.ic_power),
+                        getString(R.string.notif_action_reconnect),
+                        reconnect,
+                    ).build(),
+                )
                 .build(),
         )
     }
