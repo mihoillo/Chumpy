@@ -8,13 +8,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
-import android.net.ConnectivityManager
-import android.net.Network
 import android.net.VpnService
 import android.net.wifi.WifiManager
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.StrictMode
 import android.util.Log
@@ -34,15 +30,6 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * A connect while the tunnel is already up is a reload: the interface stays, only the core
  * loop restarts with the fresh config the UI just wrote — that is the server-switch path.
- *
- * The same reload answers the network switching under the tunnel: the core's outbound
- * sockets ride the system's default network (the app being the one package the VPN does
- * not capture), and a switch — Wi-Fi to mobile, or a Wi-Fi's own reconnect — strands them
- * on the network that went away. Stock Android kills those sockets outright and the core
- * re-dials on its own; a cheap ROM's radios leave them half-open, writes sink into them
- * and nothing comes back, the state machine still calling the tunnel up. The default
- * network is watched, and a change re-dials everything onto whatever now carries the
- * traffic — the state line says Connecting for the second it takes.
  */
 class AuroraVpnService : VpnService() {
     companion object {
@@ -52,13 +39,6 @@ class AuroraVpnService : VpnService() {
 
         const val ACTION_CONNECT = "slop.miho.aurora.core.CONNECT"
         const val ACTION_DISCONNECT = "slop.miho.aurora.core.DISCONNECT"
-
-        /**
-         * How long a network change waits before its reload: switches flap — a Wi-Fi
-         * reconnect bounces the default network through cellular and back — and every
-         * flap restarts the wait, so the storm folds into one re-dial.
-         */
-        private const val NETWORK_SETTLE_MILLIS = 1_500L
 
         /** The TUN's own address; the core receives everything routed into it. */
         private const val TUN_ADDRESS = "172.19.0.1"
@@ -120,46 +100,12 @@ class AuroraVpnService : VpnService() {
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "vpn-worker") }
     private val starting = AtomicBoolean(false)
 
-    /** The default network the tunnel last rode; the first callback report seeds it. */
-    @Volatile
-    private var currentNetwork: Network? = null
-
-    private val mainHandler = Handler(Looper.getMainLooper())
-
-    /**
-     * The re-dial itself: the server-switch path reused — the interface stays, the core
-     * loop restarts, every outbound dials fresh on whatever network now carries the
-     * traffic. A start already in flight means the reload waits out the settle and tries
-     * again: a connect that raced the switch dialed on the dying network too.
-     */
-    private val networkReload: Runnable = Runnable {
-        if (!startOrReloadVpn()) {
-            mainHandler.removeCallbacks(networkReload)
-            mainHandler.postDelayed(networkReload, NETWORK_SETTLE_MILLIS)
-        }
-    }
-
-    /** Watches the system's default network: a change re-dials the core onto it. */
-    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) {
-            // The registration's own first report names the network we are already on.
-            if (network == currentNetwork) return
-            currentNetwork = network
-            if (!XrayCore.isRunning) return
-            mainHandler.removeCallbacks(networkReload)
-            mainHandler.postDelayed(networkReload, NETWORK_SETTLE_MILLIS)
-            Log.i(TAG, "Default network changed; re-dialing the core in ${NETWORK_SETTLE_MILLIS}ms")
-        }
-    }
-
     override fun onCreate() {
         super.onCreate()
         // The gomobile runtime makes blocking calls from threads we don't control.
         val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
         StrictMode.setThreadPolicy(policy)
         XrayCore.init(this)
-        getSystemService(ConnectivityManager::class.java)
-            ?.registerDefaultNetworkCallback(networkCallback)
     }
 
     override fun onBind(intent: Intent) = binder
@@ -185,22 +131,14 @@ class AuroraVpnService : VpnService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        mainHandler.removeCallbacks(networkReload)
-        try {
-            getSystemService(ConnectivityManager::class.java)
-                ?.unregisterNetworkCallback(networkCallback)
-        } catch (_: Exception) {
-            // The callback was never registered, or the system already forgot it.
-        }
         closeTun()
         cancelNotification()
     }
 
-    /** Returns false when a start is already in flight and this one was dropped. */
-    private fun startOrReloadVpn(): Boolean {
+    private fun startOrReloadVpn() {
         if (!starting.compareAndSet(false, true)) {
             Log.w(TAG, "A start is already in progress")
-            return false
+            return
         }
         XrayCore.publish(TunnelStatus(TunnelState.CONNECTING))
         worker.execute {
@@ -244,13 +182,9 @@ class AuroraVpnService : VpnService() {
                 starting.set(false)
             }
         }
-        return true
     }
 
     private fun stopVpn() {
-        // A reload the settle timer still holds must not bring the tunnel back from the
-        // dead: the user turned it off, whatever the network does next is not its business.
-        mainHandler.removeCallbacks(networkReload)
         XrayCore.publish(TunnelStatus(TunnelState.DISCONNECTING))
         worker.execute {
             try {
