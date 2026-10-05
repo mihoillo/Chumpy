@@ -306,7 +306,7 @@ class ConfigParserTest {
     }
 
     @Test
-    fun `the real panelsub payload parses and its members hide`() {
+    fun `the real panelsub payload parses and its members stand`() {
         val body = javaClass.getResourceAsStream("/panelsub.json")!!
             .readBytes().decodeToString()
         val parsed = ConfigParser.parse(body)!!
@@ -315,25 +315,77 @@ class ConfigParserTest {
         val servers = parsed.filter { it.type != ProfileType.BALANCER }
         println("SERVERS: " + servers.size + " " + servers.map { it.remarks })
         // The store stamps linkKeys the way the repository does — one pass, the parse's
-        // own order kept — and the screen hides members.
+        // own order kept. Balancers and their members stand together now: the members
+        // are the servers the balancer picks between, still the user's to choose by
+        // hand — a pick-everything group is most of what a panel ships.
         val all = parsed.mapIndexed { i, p -> p.copy(linkKey = p.computeLinkKey(), order = i.toLong()) }
-        val memberKeys = all.asSequence().filter { it.type == ProfileType.BALANCER }
-            .flatMap { it.balancerMemberKeys.asSequence() }.toSet()
-        val visible = all.filter { it.type == ProfileType.BALANCER || it.linkKey !in memberKeys }
-        println("VISIBLE: " + visible.size + " " + visible.map { it.remarks })
+        println("ALL: " + all.map { it.remarks })
         // The third balancer (WL-1) is all-hysteria outbounds — a protocol this core
         // does not speak — so parsing drops it whole; its members never stand anywhere.
         assertEquals(2, balancers.size)
-        assertEquals(7, visible.filter { it.type != ProfileType.BALANCER }.size)
-        assertTrue(visible.none { it.remarks.startsWith("wl") })
+        assertEquals(26, servers.size)
         // The list runs in the panel's own order: the seven singles as the configs
-        // come, then the balancers where their configs stand (WL-2, WL-3) — not the
-        // balancers leading.
-        assertEquals(
-            listOf("🇪🇪WL-2", "🇫🇮 WL-3"),
-            visible.takeLast(2).map { it.remarks },
-        )
-        assertTrue(visible.first().remarks.contains("Эстония"))
+        // come, the balancers where their configs stand (WL-2 mid-list, WL-3 later)
+        // — and the members they pick between right where theirs do, trailing them.
+        assertEquals("🇪🇪WL-2", all.drop(7).first().remarks)
+        assertEquals("wlv-7", all.last().remarks)
+        assertTrue(all.first().remarks.contains("Эстония"))
+    }
+
+    @Test
+    fun `aggregator-first bodies name their servers by the solo configs`() {
+        // The panel shape: the pick-everything aggregator leads the array, the
+        // servers' own configs trail it. The aggregator's copy holds the place, but a
+        // server with a config of its own is named by that config — no "auto-" group
+        // labels in the list. A member no solo config ever names keeps the group's tag.
+        val england = single
+            .replace("🇩🇪 Германия #3", "🇬🇧 Англия")
+            .replace("1.2.3.4", "1.2.3.5")
+        val profiles = ConfigParser.parse("[$balanced,$single,$england]")!!
+        assertEquals(3, profiles.size)
+        val servers = profiles.filter { it.type != ProfileType.BALANCER }
+        assertTrue(servers.any { it.remarks == "🇩🇪 Германия #3" })
+        assertTrue(servers.any { it.remarks == "🇬🇧 Англия" })
+        assertTrue(servers.none { it.remarks.startsWith("auto-") })
+    }
+
+    @Test
+    fun `a pick-everything balancer keeps its members in the list`() {
+        // The mealkitty shape: one config, every outbound a member of the single
+        // balancer its routing sends everything to. The members are every server the
+        // panel ships — the balancer is a pick over them, not a replacement for them.
+        val body = """
+            {
+              "routing": {
+                "rules": [ { "type": "field", "network": "tcp,udp", "balancerTag": "Super_Balancer" } ],
+                "balancers": [ { "tag": "Super_Balancer", "selector": ["proxy"], "strategy": { "type": "leastLoad" } } ]
+              },
+              "outbounds": [
+                {
+                  "tag": "proxy",
+                  "protocol": "vless",
+                  "settings": { "vnext": [ { "address": "1.2.3.8", "port": 443, "users": [ { "id": "00000000-1111-2222-3333-444444444444", "encryption": "none" } ] } ] },
+                  "streamSettings": { "network": "grpc", "grpcSettings": { "serviceName": "vless-grpc" }, "security": "reality", "realitySettings": { "serverName": "okmarket.example.org", "publicKey": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC", "shortId": "00000000" } }
+                },
+                {
+                  "tag": "proxy-2",
+                  "protocol": "vless",
+                  "settings": { "vnext": [ { "address": "1.2.3.9", "port": 443, "users": [ { "id": "00000000-1111-2222-3333-444444444444", "encryption": "none" } ] } ] },
+                  "streamSettings": { "network": "grpc", "grpcSettings": { "serviceName": "vless-grpc" }, "security": "reality", "realitySettings": { "serverName": "bitrix.example.org", "publicKey": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD", "shortId": "a1b2c3d4" } }
+                },
+                { "tag": "direct", "protocol": "freedom" },
+                { "tag": "block", "protocol": "blackhole" }
+              ]
+            }
+        """
+        val profiles = ConfigParser.parse(body)!!
+        assertEquals(3, profiles.size)
+        val balancer = profiles.single { it.type == ProfileType.BALANCER }
+        assertEquals("Super", balancer.remarks)
+        assertEquals("leastload", balancer.balancerStrategy)
+        assertEquals(2, balancer.balancerMemberKeys.size)
+        // Both members parse and stand beside the balancer, pingable and pickable.
+        assertEquals(2, profiles.count { it.type == ProfileType.VLESS })
     }
 
 }

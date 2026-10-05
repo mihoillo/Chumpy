@@ -255,13 +255,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             selectedSubscriptionId
                 .flatMapLatest { id ->
-                    // The balancer's own members never stand in the screen's list: they
-                    // are its internals — the pick, not the picked. The rows stay in the
-                    // store untouched, where connect resolves them by linkKey; only the
-                    // showing of them is taken away. The standalone group's id is a
-                    // label for the manual profiles' null bucket.
+                    // Balancers and their members stand together: the balancer is the
+                    // panel's pick-over-servers, the servers it picks between are still
+                    // the user's to choose by hand — hiding the members made whole
+                    // subscriptions collapse to their balancer rows (the members ARE
+                    // every server, in the pick-everything group most panels ship).
+                    // The standalone group's id is a label for the manual profiles' null
+                    // bucket.
                     repository.profilesOf(id?.takeUnless { it == STANDALONE_SUBSCRIPTION_ID })
-                        .map { it.hidingBalancerMembers() }
                 }
                 .combine(connection) { profiles, conn ->
                     val selected = profiles.firstOrNull { it.id == conn.selectedProfileId }
@@ -287,21 +288,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
         }
-    }
-
-    /**
-     * The list without the balancers' members: a member is the balancer's internal — the
-     * panel's pick-over-servers is meant to stand in the list alone, one entry to tap
-     * instead of the N it picks between. Members of no balancer (or of none that survived
-     * parsing) still stand on their own; balancers always do.
-     */
-    private fun List<ProfileEntity>.hidingBalancerMembers(): List<ProfileEntity> {
-        val memberKeys = asSequence()
-            .filter { it.type == ProfileType.BALANCER }
-            .flatMap { it.balancerMemberKeys.asSequence() }
-            .toSet()
-        if (memberKeys.isEmpty()) return this
-        return filter { it.type == ProfileType.BALANCER || it.linkKey !in memberKeys }
     }
 
     init {

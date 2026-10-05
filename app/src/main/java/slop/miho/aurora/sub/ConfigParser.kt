@@ -17,8 +17,9 @@ import slop.miho.aurora.db.computeLinkKey
  *
  * An array usually holds one config per server — named by the config's "remarks" — plus
  * a few aggregator configs whose outbounds repeat the same servers under "auto-"/"bypass-"
- * group labels. The individual configs come first and win; the aggregators only fill
- * servers that never appear on their own, so no server lands twice under two names.
+ * group labels. Place in the array decides place in the list; the name, though, always
+ * comes from the server's own config when it has one, so no server lands under a group
+ * label or twice under two names.
  *
  * Both settings dialects are read: the classic nested one (vnext/servers with a users
  * list inside) and the core's own flat one ([slop.miho.aurora.xray.OutboundBuilder]'s),
@@ -79,23 +80,37 @@ object ConfigParser {
         // The list runs in the panel's own order — the configs as they come, one entry
         // each: a single config hands its named server over right where it stands, an
         // aggregator's balancers stand where the config stands with its members riding
-        // behind them (hidden in the servers list, kept in the store). A server the
-        // panel names twice — once alone, once inside an aggregator — keeps its first
-        // place and its first name.
+        // behind them. A server the panel names twice — once alone, once inside an
+        // aggregator — keeps its first place; the name, though, always comes from the
+        // server's own config: the aggregator's copy carries the group's tag ("auto-…",
+        // "proxy-2"), a label about the group, not the server.
+        val soloNames = HashMap<String, String>()
+        for (bundle in bundles) {
+            if (bundle.entries.size == 1) {
+                val (tag, profile) = bundle.entries.first()
+                soloNames.putIfAbsent(profile.computeLinkKey(), bundle.prefix.ifEmpty { tag })
+            }
+        }
         val seen = HashSet<String>()
         val seenBalancers = HashSet<String>()
         val profiles = ArrayList<ProfileEntity>()
         for (bundle in bundles) {
             if (bundle.entries.size == 1) {
                 val (tag, profile) = bundle.entries.first()
-                val named = profile.copy(remarks = bundle.prefix.ifEmpty { tag })
-                if (seen.add(named.computeLinkKey())) profiles.add(named)
+                val key = profile.computeLinkKey()
+                if (seen.add(key)) {
+                    val named = profile.copy(remarks = soloNames[key] ?: bundle.prefix.ifEmpty { tag })
+                    profiles.add(named)
+                }
             } else if (bundle.entries.size > 1) {
                 for (balancer in balancersOf(bundle)) {
                     if (seenBalancers.add(balancer.computeLinkKey())) profiles.add(balancer)
                 }
                 for ((_, profile) in bundle.entries) {
-                    if (seen.add(profile.computeLinkKey())) profiles.add(profile)
+                    val key = profile.computeLinkKey()
+                    if (seen.add(key)) {
+                        profiles.add(profile.copy(remarks = soloNames[key] ?: profile.remarks))
+                    }
                 }
             }
         }
@@ -146,7 +161,7 @@ object ConfigParser {
             val name = when {
                 bundle.prefix.isNotEmpty() && multiple -> "${bundle.prefix} ($shortTag)"
                 bundle.prefix.isNotEmpty() -> bundle.prefix
-                else -> tagName.ifEmpty { "Balancer" }
+                else -> shortTag
             }
             ProfileEntity(id = "", subscriptionId = null, type = ProfileType.BALANCER).copy(
                 remarks = name,
