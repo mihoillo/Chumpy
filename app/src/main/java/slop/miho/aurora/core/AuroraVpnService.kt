@@ -678,11 +678,19 @@ class AuroraVpnService : VpnService() {
      */
     private fun notifyInterrupted(reason: String) {
         val manager = getSystemService(NotificationManager::class.java) ?: return
+        // The channel must speak: a fall is worth interrupting the screen for, so the
+        // importance is HIGH — heads-up, the banner over whatever the user is doing. A
+        // channel already on the device keeps its importance forever, though, so one
+        // left quieter by an older build is deleted and recreated loud.
+        val existing = manager.getNotificationChannel(ALERT_CHANNEL_ID)
+        if (existing != null && existing.importance < NotificationManager.IMPORTANCE_HIGH) {
+            manager.deleteNotificationChannel(ALERT_CHANNEL_ID)
+        }
         manager.createNotificationChannel(
             NotificationChannel(
                 ALERT_CHANNEL_ID,
                 getString(R.string.notif_channel_alerts),
-                NotificationManager.IMPORTANCE_DEFAULT,
+                NotificationManager.IMPORTANCE_HIGH,
             ).apply {
                 setShowBadge(false)
                 description = getString(R.string.notif_channel_alerts_desc)

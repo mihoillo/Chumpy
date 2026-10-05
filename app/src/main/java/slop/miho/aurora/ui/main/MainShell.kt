@@ -1,5 +1,6 @@
 package slop.miho.aurora.ui.main
 
+import android.Manifest
 import android.net.VpnService
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -106,6 +107,19 @@ fun MainShell(viewModel: MainViewModel) {
     // Connect regardless of the result: if permission was denied the core reports it as an error.
     val vpnPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         viewModel.connect()
+    }
+    // The notifications permission rides the first config's landing: the tunnel's falls
+    // speak through the alert, and a fresh install on 13+ hears nothing without it. The
+    // view model asked-or-not bookkeeping lives below the dialog — a decline is the
+    // user's answer, not an invitation to ask again.
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+    val notificationsAsk by viewModel.notificationsAsk.collectAsStateWithLifecycle()
+    LaunchedEffect(notificationsAsk) {
+        if (notificationsAsk) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {

@@ -99,6 +99,13 @@ data class UiSettings(
     /** Whether the home screen's exit IP chip reads "Hidden"; flipped by tapping the chip. */
     val hideIp: Boolean = false,
 
+    /**
+     * Whether the notifications permission was asked for already: the ask rides the
+     * moment the first config lands, and a decline never comes back — a permission
+     * prompt on every launch is how an app earns its own uninstall.
+     */
+    val notificationsPermissionAsked: Boolean = false,
+
     // The Happ panel's client fingerprint every subscription fetch goes out with (see
     // slop.miho.aurora.sub.HappSpoof): on out of the box, the fields starting whole —
     // the device's honest defaults and a generated identity the panel keeps seeing.
@@ -229,6 +236,7 @@ object SettingsStore {
             grayscaleOffline = prefs.getBoolean(KEY_GRAYSCALE_OFFLINE, false),
             hapticFeedback = prefs.getBoolean(KEY_HAPTIC, true),
             hideIp = prefs.getBoolean(KEY_HIDE_IP, false),
+            notificationsPermissionAsked = prefs.getBoolean(KEY_NOTIFICATIONS_ASKED, false),
             happSpoof = prefs.getBoolean(KEY_HAPP_SPOOF, true),
             happAppVersion = prefs.getString(KEY_HAPP_APP_VERSION, null).orEmpty()
                 .ifBlank { HappSpoof.DEFAULT_APP_VERSION },
@@ -287,6 +295,7 @@ object SettingsStore {
             .putBoolean(KEY_GRAYSCALE_OFFLINE, settings.grayscaleOffline)
             .putBoolean(KEY_HAPTIC, settings.hapticFeedback)
             .putBoolean(KEY_HIDE_IP, settings.hideIp)
+            .putBoolean(KEY_NOTIFICATIONS_ASKED, settings.notificationsPermissionAsked)
             .putBoolean(KEY_HAPP_SPOOF, settings.happSpoof)
             .putString(KEY_HAPP_APP_VERSION, settings.happAppVersion)
             .putString(KEY_HAPP_OS, settings.happOs)
@@ -356,6 +365,7 @@ object SettingsStore {
     private const val KEY_HAPTIC = "haptic_feedback"
     private const val KEY_SIMPLE_TRANSITIONS = "simple_transitions"
     private const val KEY_HIDE_IP = "hide_ip"
+    private const val KEY_NOTIFICATIONS_ASKED = "notifications_permission_asked"
 
     // The Happ fingerprint keys, all one global block.
     private const val KEY_HAPP_SPOOF = "happ_spoof"

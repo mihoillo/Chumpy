@@ -1,6 +1,7 @@
 package slop.miho.aurora.ui
 
 import android.app.Application
+import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -130,6 +131,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateSettings(transform: (UiSettings) -> UiSettings) {
         SettingsStore.update(app, transform)
+    }
+
+    /**
+     * One-shot: the first config just landed, and the tunnel's falls speak through the
+     * alert — on 13+ that needs the notifications permission, asked right there, once,
+     * and never again after a decline.
+     */
+    private val _notificationsAsk = MutableStateFlow(false)
+    val notificationsAsk: StateFlow<Boolean> = _notificationsAsk.asStateFlow()
+
+    private fun maybeAskNotifications() {
+        if (_notificationsAsk.value) return
+        // Only the FIRST config earns the ask: an app that already has servers has
+        // already had its moment. The value is the pre-add snapshot — Room's own flow
+        // catches up to the insert later, off this coroutine's beat.
+        if (subscriptions.value.isNotEmpty()) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (settings.value.notificationsPermissionAsked) return
+        // Asked is asked: the flag goes down before the dialog even shows, so a decline —
+        // or a process death mid-dialog — is the user's final word, not an invitation.
+        updateSettings { it.copy(notificationsPermissionAsked = true) }
+        _notificationsAsk.value = true
     }
 
     /** Connection preferences: selection, routing mode, test URL, per-app bypass. */
@@ -437,6 +460,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .onSuccess { sub ->
                     ConnectionStore.update(app) { it.copy(selectedSubscriptionId = sub.id) }
                     _servers.update { it.copy(error = null) }
+                    maybeAskNotifications()
                     onDone(null)
                 }
                 .onFailure { error ->
@@ -513,6 +537,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             it.copy(selectedSubscriptionId = STANDALONE_SUBSCRIPTION_ID, selectedProfileId = null)
                         }
                         _servers.update { it.copy(error = null) }
+                        maybeAskNotifications()
                     }
                     onDone(if (count == 0) app.getString(R.string.import_nothing_new) else null)
                 }
