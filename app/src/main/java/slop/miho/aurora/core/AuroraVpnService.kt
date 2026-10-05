@@ -56,7 +56,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * the other VPN without revoking this one and keeping prepare() null, is caught by the
  * same poll's other question: a VPN routing this app is never this app's own — the app
  * is excluded from its own tunnel — so a VPN transport on the active network falls the
- * tunnel too.
+ * tunnel too. That fall is soft on the interface: the fd stays, because this ROM removes
+ * the foreign VPN together with ours the moment our own interface dies — the interface
+ * retires at the next connect instead, never on the fall.
  */
 class AuroraVpnService : VpnService() {
     companion object {
@@ -67,6 +69,16 @@ class AuroraVpnService : VpnService() {
         /** The interrupted-tunnel alert's own channel and slot — never the running one's. */
         private const val ALERT_CHANNEL_ID = "aurora-alerts"
         private const val ALERT_NOTIFICATION_ID = 2
+
+        /**
+         * The TUN interface a soft fall left standing. A foreign VPN holding the system
+         * cannot be torn down together with ours — this ROM removes the newcomer when the
+         * authorized VPN's own interface dies — so the fd outlives the service instead,
+         * retiring at the next connect or with the process. Companion-level on purpose:
+         * the service may die long before either happens.
+         */
+        @Volatile
+        private var keptTun: ParcelFileDescriptor? = null
 
         /**
          * How long a handover waits before its re-dial: switches flap — a Wi-Fi reconnect
@@ -194,10 +206,17 @@ class AuroraVpnService : VpnService() {
      */
     private val authorizationCheck: Runnable = Runnable {
         worker.execute {
-            if (!watching) return@execute
-            if (XrayCore.isRunning && (prepare(this) != null || foreignVpnHoldsTheDefault())) {
+            if (!watching || !XrayCore.isRunning) return@execute
+            // The foreign VPN is asked first: while it holds the system, prepare() keeps
+            // answering null on this ROM, and it is our own interface teardown — not the
+            // consent — that would take the newcomer down with us.
+            val foreign = foreignVpnHoldsTheDefault()
+            if (foreign || prepare(this) != null) {
                 Log.w(TAG, "The VPN authorization is gone — or another VPN holds the default — and onRevoke never came; stopping")
-                stopVpn(getString(R.string.notif_interrupted_revoked))
+                // keepTun on the foreign case: the fall is soft on the interface, so the
+                // other VPN's service is left standing — the alert is how the user learns,
+                // not collateral damage.
+                stopVpn(getString(R.string.notif_interrupted_revoked), keepTun = foreign)
             } else {
                 mainHandler.postDelayed(authorizationCheck, AUTHORIZATION_CHECK_MILLIS)
             }
@@ -329,6 +348,9 @@ class AuroraVpnService : VpnService() {
                     XrayCore.stopLoop()
                     XrayCore.startLoop(config, XrayCore.currentTunFd())?.let { throw it }
                 } else {
+                    // The interface a soft fall kept standing retires here, right before
+                    // its replacement — never standing alone, never mid-fall.
+                    closeKeptTun()
                     val tun = establishTun() ?: throw IllegalStateException(getString(R.string.error_tun_creation))
                     tunInterface = tun
                     XrayCore.startLoop(config, tun.fd)?.let { throw it }
@@ -352,7 +374,13 @@ class AuroraVpnService : VpnService() {
         }
     }
 
-    private fun stopVpn(interruptionReason: String? = null) {
+    /**
+     * [keepTun] is the soft fall — for the foreign-VPN takeover, where this ROM removes
+     * the newcomer's VPN together with ours the moment our own interface dies. The
+     * interface stands down without dying: nothing routes into it anymore, the core has
+     * stopped, only the fd stays, retiring at the next connect or with the process.
+     */
+    private fun stopVpn(interruptionReason: String? = null, keepTun: Boolean = false) {
         // The watch goes first: no handover may schedule behind a stop, and one already
         // waiting must die with it — nothing brings the tunnel back from the dead.
         stopTunnelWatch()
@@ -368,7 +396,12 @@ class AuroraVpnService : VpnService() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 Thread.sleep(100)
-                closeTun()
+                if (keepTun) {
+                    keptTun = tunInterface
+                    tunInterface = null
+                } else {
+                    closeTun()
+                }
             } finally {
                 XrayCore.publish(TunnelStatus(TunnelState.DOWN))
                 if (interruptionReason != null) {
@@ -537,6 +570,15 @@ class AuroraVpnService : VpnService() {
         } catch (_: Exception) {
         }
         tunInterface = null
+    }
+
+    /** Retires the interface a soft fall left standing; its teardown is ours to own. */
+    private fun closeKeptTun() {
+        try {
+            keptTun?.close()
+        } catch (_: Exception) {
+        }
+        keptTun = null
     }
 
     private fun describe(e: Exception): String =
