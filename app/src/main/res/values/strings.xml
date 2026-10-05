@@ -157,7 +157,7 @@
     <string name="trusted_count">Don\'t route on %d networks</string>
     <string name="trusted_stand_down">Trusted network — traffic goes direct</string>
     <string name="connection_auto_reconnect">Auto-reconnect</string>
-    <string name="connection_auto_reconnect_on">Network changes re-dial, system restarts connect</string>
+    <string name="connection_auto_reconnect_on">The tunnel comes back on its own wherever it fell</string>
     <string name="connection_auto_reconnect_off">A fall waits for the alert\'s Reconnect</string>
     <string name="trusted_permission_title">Location access</string>
     <string name="trusted_permission_text">Android only shares Wi-Fi names with apps that have location access. Grant it to pick the network you\'re on; networks added by hand stay visible either way.</string>
@@ -251,6 +251,8 @@
     <string name="notif_interrupted_title">Connection interrupted</string>
     <string name="notif_interrupted_revoked">Another VPN took over this one.</string>
     <string name="notif_interrupted_auto">Another VPN took over this one — Aurora reconnects when it steps aside.</string>
+    <string name="notif_reconnected_title">Connection restored</string>
+    <string name="notif_reconnected_text">Aurora brought the tunnel back by itself.</string>
     <string name="notif_interrupted_network">The network under the tunnel changed.</string>
     <string name="notif_interrupted_off">The tunnel is down — Aurora will not bring it back on its own.</string>
     <string name="notif_action_reconnect">Reconnect</string>
