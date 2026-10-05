@@ -1024,6 +1024,27 @@ fun ConnectionScreen(
                     },
                 )
             },
+            {
+                // The system's own demand for the VPN — the always-on restart, the
+                // resurrection after the core process died — is the only start nobody
+                // asked for. Off (the default), a fall stands and the alert's Reconnect
+                // is the way back; on, the tunnel comes back by itself.
+                ToggleRow(
+                    title = stringResource(R.string.connection_auto_reconnect),
+                    supporting = stringResource(
+                        if (connection.autoReconnect) {
+                            R.string.connection_auto_reconnect_on
+                        } else {
+                            R.string.connection_auto_reconnect_off
+                        },
+                    ),
+                    icon = R.drawable.ic_renew,
+                    checked = connection.autoReconnect,
+                    onChange = { enabled ->
+                        onChangeConnection { it.copy(autoReconnect = enabled) }
+                    },
+                )
+            },
         )
         // The Happ spoof's own block, between the carrying and the measuring. The header
         // carries two rows of its own, separated by the fold rows' own 2dp seam: the

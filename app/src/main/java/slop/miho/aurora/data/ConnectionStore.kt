@@ -28,6 +28,13 @@ data class ConnectionSettings(
     val trustedWifiSsids: Set<String> = emptySet(),
     /** The trusted networks' own master switch, mirroring the per-app one. */
     val trustedWifiEnabled: Boolean = true,
+    /**
+     * Whether the system's own demand for the VPN — the always-on restart, the sticky
+     * resurrection after the core process died — brings the tunnel back by itself. Off
+     * (the default): a fall stands, the alert notification's Reconnect being the way
+     * back by the user's own hand.
+     */
+    val autoReconnect: Boolean = false,
 )
 
 object ConnectionStore {
@@ -76,6 +83,7 @@ object ConnectionStore {
             perAppEnabled = prefs.getBoolean(KEY_PER_APP, true),
             trustedWifiSsids = prefs.getStringSet(KEY_TRUSTED_WIFI, null)?.toSet() ?: emptySet(),
             trustedWifiEnabled = prefs.getBoolean(KEY_TRUSTED_WIFI_ENABLED, true),
+            autoReconnect = prefs.getBoolean(KEY_AUTO_RECONNECT, false),
         )
     }
 
@@ -101,6 +109,7 @@ object ConnectionStore {
             .putString(KEY_TEST_URL, settings.delayTestUrl)
             .putBoolean(KEY_PER_APP, settings.perAppEnabled)
             .putBoolean(KEY_TRUSTED_WIFI_ENABLED, settings.trustedWifiEnabled)
+            .putBoolean(KEY_AUTO_RECONNECT, settings.autoReconnect)
             .apply()
     }
 
@@ -112,4 +121,5 @@ object ConnectionStore {
     private const val KEY_PER_APP = "per_app_enabled"
     private const val KEY_TRUSTED_WIFI = "trusted_wifi_ssids"
     private const val KEY_TRUSTED_WIFI_ENABLED = "trusted_wifi_enabled"
+    private const val KEY_AUTO_RECONNECT = "auto_reconnect"
 }

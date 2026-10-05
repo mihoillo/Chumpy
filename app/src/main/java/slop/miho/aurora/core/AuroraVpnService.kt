@@ -33,7 +33,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * the AIDL facade the UI talks to, modelled on v2rayNG's CoreVpnService. It runs in ":core"
  * next to [XrayCore], comes up as a foreground service on connect, and answers three start
  * paths with the same code: the app's connect command, the QS tile, and the system's own
- * Always-on restart (a null intent / the VpnService interface action).
+ * Always-on restart (a null intent / the VpnService interface action) — the last only when
+ * auto-reconnect says so: off, the restart is declined, the tunnel stays down and the fall
+ * notice's Reconnect is the way back.
  *
  * A connect while the tunnel is already up is a reload: the interface stays, only the core
  * loop restarts with the fresh config the UI just wrote — that is the server-switch path.
@@ -179,7 +181,7 @@ class AuroraVpnService : VpnService() {
             if (!watching) return@execute
             if (XrayCore.isRunning && prepare(this) != null) {
                 Log.w(TAG, "The VPN authorization is gone and onRevoke never came; stopping")
-                stopVpn(interrupted = true)
+                stopVpn(getString(R.string.notif_interrupted_revoked))
             } else {
                 mainHandler.postDelayed(authorizationCheck, AUTHORIZATION_CHECK_MILLIS)
             }
@@ -231,6 +233,15 @@ class AuroraVpnService : VpnService() {
         ensureForeground()
         // Always-on restarts from the OS deliver the VpnService interface action, or null.
         val systemVpnStart = intent == null || intent.action == VpnService.SERVICE_INTERFACE
+        if (systemVpnStart && !ConnectionStore.current(this).autoReconnect) {
+            // The system wants its VPN back — the always-on engine's restart, the sticky
+            // resurrection after the core process died — but nobody asked for it.
+            // Auto-reconnect off: the tunnel stays down, and the alert's Reconnect is
+            // the way back by the user's own hand.
+            Log.i(TAG, "System restart declined: auto-reconnect is off")
+            stopVpn(getString(R.string.notif_interrupted_off))
+            return START_NOT_STICKY
+        }
         val action = if (systemVpnStart) ACTION_CONNECT else intent?.action
         when (action) {
             ACTION_DISCONNECT -> stopVpn()
@@ -244,7 +255,7 @@ class AuroraVpnService : VpnService() {
         // falls the way v2rayNG's does — down, now, and said out loud, the alert's
         // Reconnect being the way back.
         Log.w(TAG, "VPN revoked")
-        stopVpn(interrupted = true)
+        stopVpn(getString(R.string.notif_interrupted_revoked))
     }
 
     override fun onDestroy() {
@@ -310,7 +321,7 @@ class AuroraVpnService : VpnService() {
         }
     }
 
-    private fun stopVpn(interrupted: Boolean = false) {
+    private fun stopVpn(interruptionReason: String? = null) {
         // The watch goes first: no handover may schedule behind a stop, and one already
         // waiting must die with it — nothing brings the tunnel back from the dead.
         stopTunnelWatch()
@@ -329,8 +340,8 @@ class AuroraVpnService : VpnService() {
                 closeTun()
             } finally {
                 XrayCore.publish(TunnelStatus(TunnelState.DOWN))
-                if (interrupted) {
-                    notifyInterrupted(getString(R.string.notif_interrupted_revoked))
+                if (interruptionReason != null) {
+                    notifyInterrupted(interruptionReason)
                 }
             }
         }
