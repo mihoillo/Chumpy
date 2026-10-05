@@ -49,11 +49,14 @@ import java.util.concurrent.atomic.AtomicInteger
  * auto-reconnect off, stops the tunnel as any fall does, the alert saying the network
  * changed; a fall the re-dial cannot mend — and the revoke another VPN's arrival brings —
  * stops the tunnel and says so out loud: an alert notification with a Reconnect button
- * of its own. The
- * revoke is also asked for directly, every few seconds while the tunnel runs: prepare()
- * answers null exactly while this app is the system's VPN of record, so a ROM that never
- * delivers onRevoke — a dead tunnel the state machine still calls up — falls the same
- * way, seconds late at worst.
+ * of its own. The revoke is also asked for directly, every few seconds while the tunnel
+ * runs: prepare() answers null exactly while this app is the system's VPN of record, so
+ * a ROM that never delivers onRevoke — a dead tunnel the state machine still calls
+ * up — falls the same way, seconds late at worst. And a ROM that goes further, granting
+ * the other VPN without revoking this one and keeping prepare() null, is caught by the
+ * same poll's other question: a VPN routing this app is never this app's own — the app
+ * is excluded from its own tunnel — so a VPN transport on the active network falls the
+ * tunnel too.
  */
 class AuroraVpnService : VpnService() {
     companion object {
@@ -161,6 +164,10 @@ class AuroraVpnService : VpnService() {
     @Volatile
     private var watching = false
 
+    /** The watch's own handle on the connectivity service, for the default's transports. */
+    @Volatile
+    private var connectivityManager: ConnectivityManager? = null
+
     /**
      * Bumped every time the watch stops: a re-dial from an older watch drops instead of
      * bringing a stopped tunnel back — nothing resurrects the VPN after a revoke.
@@ -177,17 +184,37 @@ class AuroraVpnService : VpnService() {
      * VPN was granted, or the user revoked in settings — and the ROM never told
      * [onRevoke] about it: the tunnel stands dead with the state machine still calling
      * it up. It falls here instead, the same way: stopped, and said out loud.
+     *
+     * The same poll asks one more thing the ROM may lie about: whether a VPN *other than
+     * this one* now routes this app. The app stands outside its own tunnel (the core's
+     * sockets must not loop back in), so a VPN seen carrying us is never ours — another
+     * VPN took the system over, and a ROM that grants it without revoking us and keeps
+     * prepare() answering null leaves the tunnel just as dead, just as silently. The
+     * active network's own transports say it straight, consent or no consent.
      */
     private val authorizationCheck: Runnable = Runnable {
         worker.execute {
             if (!watching) return@execute
-            if (XrayCore.isRunning && prepare(this) != null) {
-                Log.w(TAG, "The VPN authorization is gone and onRevoke never came; stopping")
+            if (XrayCore.isRunning && (prepare(this) != null || foreignVpnHoldsTheDefault())) {
+                Log.w(TAG, "The VPN authorization is gone — or another VPN holds the default — and onRevoke never came; stopping")
                 stopVpn(getString(R.string.notif_interrupted_revoked))
             } else {
                 mainHandler.postDelayed(authorizationCheck, AUTHORIZATION_CHECK_MILLIS)
             }
         }
+    }
+
+    /**
+     * Whether a VPN other than this one routes this app's traffic now — the app is
+     * excluded from its own tunnel, so a VPN transport on the active network means the
+     * carrier is someone else's.
+     */
+    @Suppress("DEPRECATION")
+    private fun foreignVpnHoldsTheDefault(): Boolean {
+        val connectivity = connectivityManager ?: return false
+        val active = connectivity.activeNetwork ?: return false
+        val caps = connectivity.getNetworkCapabilities(active) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
     }
 
     /**
@@ -414,6 +441,7 @@ class AuroraVpnService : VpnService() {
     private fun startTunnelWatch() {
         if (watching) return
         val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
+        connectivityManager = connectivity
         try {
             connectivity.requestNetwork(
                 NetworkRequest.Builder()
@@ -442,6 +470,7 @@ class AuroraVpnService : VpnService() {
         watchGeneration.incrementAndGet()
         upstream = null
         watchSeeded = false
+        connectivityManager = null
         if (!watching) return
         watching = false
         try {
