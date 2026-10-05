@@ -52,6 +52,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -59,6 +61,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -1029,9 +1032,27 @@ fun ConnectionScreen(
         // working spoof sits compact, two rows tall, and the fingerprint's seven fields
         // ride folded behind the doorway, one row each, editable whatever the toggle
         // says. Enabling the spoof closes the fold: the identity is set, the block goes
-        // quiet. The regenerator leads the fold's list, a fresh identity one deliberate
-        // tap above the strings it rewrites.
+        // quiet. The regenerator leads the fold's list: the tap asks first, the
+        // dialog's confirm rewires the identity over the strings it rewrites.
         var happOpen by rememberSaveable { mutableStateOf(false) }
+        // A fresh identity is one tap away on a whole-row button — too easy to trip.
+        // The tap asks first; the dialog's confirm is the deliberate tap the fold's
+        // comment means.
+        var happRegenPending by rememberSaveable { mutableStateOf(false) }
+        if (happRegenPending) {
+            HappRegenerateDialog(
+                onConfirm = {
+                    happRegenPending = false
+                    onChangeSettings {
+                        it.copy(
+                            happUserId = slop.miho.aurora.sub.HappSpoof.randomUserId(),
+                            happHwid = slop.miho.aurora.sub.HappSpoof.randomHwid(),
+                        )
+                    }
+                },
+                onDismiss = { happRegenPending = false },
+            )
+        }
         FoldingGroup(
             expanded = happOpen,
             headerRows = listOf(
@@ -1054,14 +1075,7 @@ fun ConnectionScreen(
             rows = listOf(
                 {
                     HappRegenerateRow(
-                        onRegenerate = {
-                            onChangeSettings {
-                                it.copy(
-                                    happUserId = slop.miho.aurora.sub.HappSpoof.randomUserId(),
-                                    happHwid = slop.miho.aurora.sub.HappSpoof.randomHwid(),
-                                )
-                            }
-                        },
+                        onRegenerate = { happRegenPending = true },
                     )
                 },
                 {
@@ -1578,10 +1592,48 @@ private fun EditSpoofStringsRow(
 }
 
 /**
- * The regenerator, the fold's first row: a fresh identity is a deliberate tap — the
- * toggle's own square tile, now trailing a row of its own over the strings it
- * rewrites. Awake whatever the toggle says: new strings are worth picking before the
- * spoof ever rides.
+ * The regenerate confirmation: the row is one whole-row tap, and a fresh identity is
+ * not what a stray tap should buy — the panel the spoof rides to sees a brand-new
+ * user on a brand-new device, and the old one is not coming back. The confirm carries
+ * the error color, the delete dialog's own mark of no-way-back.
+ */
+@Composable
+private fun HappRegenerateDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                painter = painterResource(R.drawable.ic_renew),
+                contentDescription = null,
+                tint = colors.error,
+            )
+        },
+        title = { Text(stringResource(R.string.happ_regenerate_title)) },
+        text = { Text(stringResource(R.string.happ_regenerate_text)) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
+            ) {
+                Text(stringResource(R.string.happ_regenerate_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.subscription_cancel))
+            }
+        },
+    )
+}
+
+/**
+ * The regenerator, the fold's first row: the row asks, the dialog does — a fresh
+ * identity is a deliberate tap, not a stray one on a whole-row button. Awake whatever
+ * the toggle says: new strings are worth picking before the spoof ever rides.
  */
 @Composable
 private fun HappRegenerateRow(

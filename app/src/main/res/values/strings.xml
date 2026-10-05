@@ -77,6 +77,9 @@
     <string name="happ_user_id">User ID</string>
     <string name="happ_hwid">HWID</string>
     <string name="happ_regenerate">Regenerate identity</string>
+    <string name="happ_regenerate_title">Regenerate the identity?</string>
+    <string name="happ_regenerate_text">A new user ID and hardware ID take the old one\'s place — the panels will see a fresh device they have never met, and the current identity is gone for good.</string>
+    <string name="happ_regenerate_confirm">Regenerate</string>
 
     <!-- Welcome (first run) -->
     <string name="welcome_title">Hello, stranger!</string>
