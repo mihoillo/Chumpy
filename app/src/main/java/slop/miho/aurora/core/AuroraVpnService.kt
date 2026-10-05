@@ -45,9 +45,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * network the system's own request names, and a switch — cellular to Wi-Fi, a Wi-Fi's own
  * reconnect — strands them on the network that went away, where a cheap ROM's radios leave
  * them half-open: writes sink in, nothing comes back, the state machine still calling the
- * tunnel up. A handover re-dials the core onto whatever now carries the traffic; a fall
- * the re-dial cannot mend — and the revoke another VPN's arrival brings — stops the tunnel
- * and says so out loud: an alert notification with a Reconnect button of its own. The
+ * tunnel up. A handover re-dials the core onto whatever now carries the traffic — or, with
+ * auto-reconnect off, stops the tunnel as any fall does, the alert saying the network
+ * changed; a fall the re-dial cannot mend — and the revoke another VPN's arrival brings —
+ * stops the tunnel and says so out loud: an alert notification with a Reconnect button
+ * of its own. The
  * revoke is also asked for directly, every few seconds while the tunnel runs: prepare()
  * answers null exactly while this app is the system's VPN of record, so a ROM that never
  * delivers onRevoke — a dead tunnel the state machine still calls up — falls the same
@@ -233,7 +235,9 @@ class AuroraVpnService : VpnService() {
         ensureForeground()
         // Always-on restarts from the OS deliver the VpnService interface action, or null.
         val systemVpnStart = intent == null || intent.action == VpnService.SERVICE_INTERFACE
-        if (systemVpnStart && !ConnectionStore.current(this).autoReconnect) {
+        // The flag read off the file, not this process's prefs cache: the UI wrote it,
+        // and the cache never saw that write.
+        if (systemVpnStart && !ConnectionStore.autoReconnectFresh(this)) {
             // The system wants its VPN back — the always-on engine's restart, the sticky
             // resurrection after the core process died — but nobody asked for it.
             // Auto-reconnect off: the tunnel stays down, and the alert's Reconnect is
@@ -350,8 +354,20 @@ class AuroraVpnService : VpnService() {
     /**
      * Starts the handover's re-dial after the debounce; a watch that stopped meanwhile
      * drops its own timer's callback by the generation check.
+     *
+     * Auto-reconnect decides what a handover is: on, the re-dial — silent, the tunnel
+     * never noticing; off, a fall like any other — the old network's sockets are dead,
+     * the tunnel stops instead of re-dialing onto whatever now carries the traffic, and
+     * the alert's Reconnect is the way back. That covers the other VPN's arrival too: its
+     * network reads as the new one under the tunnel, so with the toggle off the tunnel
+     * falls and says so instead of quietly chaining itself through the newcomer.
      */
     private fun scheduleHandover() {
+        if (!ConnectionStore.autoReconnectFresh(this)) {
+            Log.i(TAG, "The network under the tunnel changed; auto-reconnect is off, falling")
+            stopVpn(getString(R.string.notif_interrupted_network))
+            return
+        }
         val generation = watchGeneration.get()
         mainHandler.removeCallbacksAndMessages(null)
         mainHandler.postDelayed({

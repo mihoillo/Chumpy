@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import slop.miho.aurora.xray.RoutingMode
 import slop.miho.aurora.xray.XrayConfigBuilder
+import java.io.File
 
 /**
  * Connection preferences — the selected subscription and profile, the routing mode and
@@ -63,6 +64,24 @@ object ConnectionStore {
      * writes a new one.
      */
     fun current(context: Context): ConnectionSettings = read(context)
+
+    /**
+     * The auto-reconnect flag read straight off the prefs *file*, not this process's
+     * SharedPreferences cache — which never sees the UI process's writes. The flag rules
+     * the mid-flight decisions (a handover re-dials or falls by it), so it must be the
+     * value the user last set, not the one this process loaded at birth. Absent from the
+     * file, it is the default: off.
+     */
+    fun autoReconnectFresh(context: Context): Boolean {
+        val dataDir = context.applicationInfo.dataDir ?: return false
+        val file = File(dataDir, "shared_prefs/$PREFS.xml")
+        if (!file.isFile) return false
+        return try {
+            file.readText().contains("<boolean name=\"$KEY_AUTO_RECONNECT\" value=\"true\"")
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     private fun read(context: Context): ConnectionSettings {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
