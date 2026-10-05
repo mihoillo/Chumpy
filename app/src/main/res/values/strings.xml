@@ -26,7 +26,10 @@
     <!-- Servers -->
     <string name="servers_total">Servers: %1$d</string>
     <string name="servers_online">Reachable: %1$d</string>
-    <string name="servers_balancer_members">%1$d servers</string>
+    <plurals name="servers_balancer_members">
+        <item quantity="one">%1$d server</item>
+        <item quantity="other">%1$d servers</item>
+    </plurals>
     <string name="servers_balancer_random">random</string>
     <string name="servers_balancer_round_robin">round robin</string>
     <string name="servers_balancer_least_ping">least ping</string>
@@ -54,7 +57,10 @@
     <string name="subscription_choose">Choose subscription</string>
     <string name="subscription_collapse">Collapse</string>
     <string name="subscription_bw_percent">%1$d%%</string>
-    <string name="subscription_days_remaining">%1$d/30 days remaining</string>
+    <plurals name="subscription_days_remaining">
+        <item quantity="one">%1$d/30 day remaining</item>
+        <item quantity="other">%1$d/30 days remaining</item>
+    </plurals>
     <string name="subscription_days_infinite">∞ days remaining</string>
     <string name="subscription_hours_left">%1$d h left</string>
     <string name="subscription_expired">expired</string>
@@ -150,11 +156,17 @@
     <string name="settings_test_url_hint">Fetched through every server to measure the real ping</string>
     <string name="per_app_title">Per-app proxy</string>
     <string name="per_app_hint">Don\'t route selected apps</string>
-    <string name="per_app_count">Don\'t route %d apps</string>
+    <plurals name="per_app_count">
+        <item quantity="one">Don\'t route %1$d app</item>
+        <item quantity="other">Don\'t route %1$d apps</item>
+    </plurals>
     <string name="per_app_disabled">Disabled</string>
     <string name="trusted_title">Trusted WiFis</string>
     <string name="trusted_hint">Don\'t route on trusted networks</string>
-    <string name="trusted_count">Don\'t route on %d networks</string>
+    <plurals name="trusted_count">
+        <item quantity="one">Don\'t route on %1$d network</item>
+        <item quantity="other">Don\'t route on %1$d networks</item>
+    </plurals>
     <string name="trusted_stand_down">Trusted network — traffic goes direct</string>
     <string name="connection_auto_reconnect">Auto-reconnect</string>
     <string name="connection_auto_reconnect_on">The tunnel comes back on its own wherever it fell</string>

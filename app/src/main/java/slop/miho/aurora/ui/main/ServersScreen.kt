@@ -83,6 +83,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1460,7 +1461,7 @@ private fun daysTitle(expireEpochSeconds: Long): String? {
     val daysLeft = secondsLeft / 86_400
     return when {
         daysLeft > 365 -> stringResource(R.string.subscription_days_infinite)
-        daysLeft >= 1 -> stringResource(R.string.subscription_days_remaining, daysLeft)
+        daysLeft >= 1 -> pluralStringResource(R.plurals.subscription_days_remaining, daysLeft.toInt(), daysLeft.toInt())
         secondsLeft > 0 -> stringResource(R.string.subscription_hours_left, secondsLeft / 3_600)
         else -> stringResource(R.string.subscription_expired)
     }
@@ -1515,7 +1516,7 @@ private fun formatBytes(bytes: Long): String {
         value /= 1024.0
         unit++
     }
-    return String.format(java.util.Locale.US, "%.1f %s", value, units[unit])
+    return String.format(java.util.Locale.getDefault(), "%.1f %s", value, units[unit])
 }
 
 /**
@@ -1764,8 +1765,9 @@ private fun ServerRow(
                     text = if (profile.type == ProfileType.BALANCER) {
                         // The balancer's own line: how wide it picks, and how.
                         listOfNotNull(
-                            stringResource(
-                                R.string.servers_balancer_members,
+                            pluralStringResource(
+                                R.plurals.servers_balancer_members,
+                                profile.balancerMemberKeys.size,
                                 profile.balancerMemberKeys.size,
                             ),
                             balancerStrategyLabel(profile),

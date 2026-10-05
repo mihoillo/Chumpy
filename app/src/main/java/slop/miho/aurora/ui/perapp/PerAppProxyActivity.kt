@@ -76,6 +76,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -354,14 +355,15 @@ private fun AppsPage(
             toggle = {
                 MasterSwitchRow(
                     title = stringResource(R.string.per_app_title),
-                    supporting = stringResource(
-                        when {
-                            !enabled -> R.string.per_app_disabled
-                            bypassed.isEmpty() -> R.string.per_app_hint
-                            else -> R.string.per_app_count
-                        },
-                        if (bypassed.isEmpty()) 1 else bypassed.size,
-                    ),
+                    supporting = when {
+                        !enabled -> stringResource(R.string.per_app_disabled)
+                        bypassed.isEmpty() -> stringResource(R.string.per_app_hint)
+                        else -> pluralStringResource(
+                            R.plurals.per_app_count,
+                            bypassed.size,
+                            bypassed.size,
+                        )
+                    },
                     enabled = enabled,
                     onChange = onToggleEnabled,
                 )
@@ -467,14 +469,15 @@ private fun NetworksPage(
             toggle = {
                 MasterSwitchRow(
                     title = stringResource(R.string.trusted_title),
-                    supporting = stringResource(
-                        when {
-                            !enabled -> R.string.per_app_disabled
-                            trusted.isEmpty() -> R.string.trusted_hint
-                            else -> R.string.trusted_count
-                        },
-                        if (trusted.isEmpty()) 1 else trusted.size,
-                    ),
+                    supporting = when {
+                        !enabled -> stringResource(R.string.per_app_disabled)
+                        trusted.isEmpty() -> stringResource(R.string.trusted_hint)
+                        else -> pluralStringResource(
+                            R.plurals.trusted_count,
+                            trusted.size,
+                            trusted.size,
+                        )
+                    },
                     enabled = enabled,
                     onChange = onToggleEnabled,
                 )

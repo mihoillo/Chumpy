@@ -87,6 +87,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -1000,7 +1001,11 @@ fun ConnectionScreen(
                     supporting = when {
                         !connection.perAppEnabled -> stringResource(R.string.per_app_disabled)
                         connection.bypassedApps.isEmpty() -> stringResource(R.string.per_app_hint)
-                        else -> stringResource(R.string.per_app_count, connection.bypassedApps.size)
+                        else -> pluralStringResource(
+                            R.plurals.per_app_count,
+                            connection.bypassedApps.size,
+                            connection.bypassedApps.size,
+                        )
                     },
                     icon = R.drawable.ic_apps,
                     target = slop.miho.aurora.ui.perapp.PerAppProxyActivity::class.java,
@@ -1012,7 +1017,11 @@ fun ConnectionScreen(
                     supporting = when {
                         !connection.trustedWifiEnabled -> stringResource(R.string.per_app_disabled)
                         connection.trustedWifiSsids.isEmpty() -> stringResource(R.string.trusted_hint)
-                        else -> stringResource(R.string.trusted_count, connection.trustedWifiSsids.size)
+                        else -> pluralStringResource(
+                            R.plurals.trusted_count,
+                            connection.trustedWifiSsids.size,
+                            connection.trustedWifiSsids.size,
+                        )
                     },
                     icon = R.drawable.ic_wifi,
                     target = slop.miho.aurora.ui.perapp.PerAppProxyActivity::class.java,

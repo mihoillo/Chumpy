@@ -501,7 +501,7 @@ private fun WeekChartCard(week: List<DailyTraffic>, modifier: Modifier = Modifie
                             rx = day.rx,
                             tx = day.tx,
                             maxTotal = maxTotal,
-                            label = day.date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.US),
+                            label = day.date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -665,11 +665,11 @@ private fun formatBytes(bytes: Long): String {
     }
 }
 
-/** One decimal below ten, none above it: 3.1 MB, 12 MB. Pinned to the dot, whatever the
- *  device's locale says — the UI is English-only. */
+/** One decimal below ten, none above it: 3.1 MB, 12 MB. Follows the app locale,
+ *  so Russian sees its comma (3,1 MB) like a native would write it. */
 private fun trimDecimal(value: Double): String =
     if (value < 10.0) {
-        String.format(java.util.Locale.US, "%.1f", value)
+        String.format(java.util.Locale.getDefault(), "%.1f", value)
     } else {
         ceil(value).toInt().toString()
     }

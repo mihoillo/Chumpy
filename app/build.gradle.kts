@@ -105,7 +105,9 @@ android {
     }
 
     androidResources {
-        localeFilters += "en"
+        // English is the default; ru is the one translation. Per-app language
+        // selection lives in the system settings (locales_config.xml).
+        localeFilters += listOf("en", "ru")
     }
 }
 
