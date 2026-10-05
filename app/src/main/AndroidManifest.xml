@@ -3,6 +3,11 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Watching the network under the tunnel, v2rayNG's way: the physical default
+         network is asked for by request (CHANGE_NETWORK_STATE, a normal permission
+         granted at install), and its changes hand the core over to a re-dial. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <!-- The short haptic pokes on the settings buttons go through the Vibrator directly. -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- The VPN runs as a specialUse foreground service (as v2rayNG does). -->

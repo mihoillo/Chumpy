@@ -8,9 +8,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.StrictMode
 import android.util.Log
@@ -20,6 +26,7 @@ import slop.miho.aurora.data.ConnectionStore
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The VPN itself: one service that is both the VpnService (it owns the TUN descriptor) and
@@ -30,12 +37,32 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * A connect while the tunnel is already up is a reload: the interface stays, only the core
  * loop restarts with the fresh config the UI just wrote — that is the server-switch path.
+ *
+ * The same reload, silent and invisible, answers the network handovering under the tunnel
+ * (v2rayNG's NetworkMonitor, its shape kept): the core's outbound sockets ride the physical
+ * network the system's own request names, and a switch — cellular to Wi-Fi, a Wi-Fi's own
+ * reconnect — strands them on the network that went away, where a cheap ROM's radios leave
+ * them half-open: writes sink in, nothing comes back, the state machine still calling the
+ * tunnel up. A handover re-dials the core onto whatever now carries the traffic; a fall
+ * the re-dial cannot mend — and the revoke another VPN's arrival brings — stops the tunnel
+ * and says so out loud: an alert notification with a Reconnect button of its own.
  */
 class AuroraVpnService : VpnService() {
     companion object {
         private const val TAG = "Aurora/VpnService"
         private const val CHANNEL_ID = "aurora-core"
         private const val NOTIFICATION_ID = 1
+
+        /** The interrupted-tunnel alert's own channel and slot — never the running one's. */
+        private const val ALERT_CHANNEL_ID = "aurora-alerts"
+        private const val ALERT_NOTIFICATION_ID = 2
+
+        /**
+         * How long a handover waits before its re-dial: switches flap — a Wi-Fi reconnect
+         * bounces the underlying network around — and every flap restarts the wait, so a
+         * storm folds into one re-dial (v2rayNG's own debounce).
+         */
+        private const val HANDOVER_DEBOUNCE_MILLIS = 1_000L
 
         const val ACTION_CONNECT = "slop.miho.aurora.core.CONNECT"
         const val ACTION_DISCONNECT = "slop.miho.aurora.core.DISCONNECT"
@@ -94,11 +121,68 @@ class AuroraVpnService : VpnService() {
         }
     }
 
+    // Read from the connectivity callbacks' thread as well as the worker — the watch's
+    // underlying-networks declaration asks whether the interface stands.
+    @Volatile
     private var tunInterface: ParcelFileDescriptor? = null
 
     /** All VPN setup/teardown runs here; concurrent commands are collapsed by the lock. */
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "vpn-worker") }
     private val starting = AtomicBoolean(false)
+
+    /**
+     * The physical network the tunnel last rode, as the system's own request names it —
+     * null from [onLost] until the next [onAvailable]. [Volatile][Volatile] because the
+     * connectivity callbacks arrive off this service's threads.
+     */
+    @Volatile
+    private var upstream: Network? = null
+
+    /** Whether the watch's first report already named the network we are on. */
+    @Volatile
+    private var watchSeeded = false
+
+    @Volatile
+    private var watching = false
+
+    /**
+     * Bumped every time the watch stops: a re-dial from an older watch drops instead of
+     * bringing a stopped tunnel back — nothing resurrects the VPN after a revoke.
+     */
+    private val watchGeneration = AtomicInteger(0)
+
+    /** The handover timer's own looper; only ever holds re-dials waiting out the debounce. */
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * Watches the network that carries the tunnel, v2rayNG's way: the plain
+     * registerDefaultNetworkCallback would report the VPN's own interface as the default
+     * network the moment it stands up, so the physical network is requested by its
+     * capabilities instead — the request asks for THE default network, not every network
+     * that fits (and CHANGE_NETWORK_STATE is what lets it be made).
+     */
+    private val networkWatch = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            val previous = upstream
+            upstream = network
+            // Declare what carries the VPN: the system's picture of the tunnel — its
+            // meteredness above all — follows the real network, not the one that died.
+            if (tunInterface != null) setUnderlyingNetworks(arrayOf(network))
+            if (!watchSeeded) {
+                // The registration's own first report names the network we started on.
+                watchSeeded = true
+                return
+            }
+            // A change — or a network come back from a total loss, the Wi-Fi-only
+            // reconnect that never bounces through cellular — hands the core over.
+            if (previous != network) scheduleHandover()
+        }
+
+        override fun onLost(network: Network) {
+            if (network != upstream) return
+            upstream = null
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -124,13 +208,16 @@ class AuroraVpnService : VpnService() {
     }
 
     override fun onRevoke() {
-        // The system took the VPN away (revoked, or another VPN took over).
+        // The system took the VPN away (revoked, or another VPN took over): the tunnel
+        // falls the way v2rayNG's does — down, now, and said out loud, the alert's
+        // Reconnect being the way back.
         Log.w(TAG, "VPN revoked")
-        stopVpn()
+        stopVpn(interrupted = true)
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        stopNetworkWatch()
         closeTun()
         cancelNotification()
     }
@@ -142,6 +229,8 @@ class AuroraVpnService : VpnService() {
         }
         XrayCore.publish(TunnelStatus(TunnelState.CONNECTING))
         worker.execute {
+            // A new attempt supersedes whatever fall the last one announced.
+            cancelAlert()
             try {
                 // A trusted Wi-Fi carries the traffic itself: the tunnel stands down, the
                 // status line saying why instead of an error.
@@ -170,9 +259,12 @@ class AuroraVpnService : VpnService() {
                     XrayCore.startLoop(config, tun.fd)?.let { throw it }
                 }
                 XrayCore.publish(TunnelStatus(TunnelState.UP))
+                // The watch rides with the running tunnel: handovers under it re-dial it.
+                startNetworkWatch()
                 ensureForeground()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to bring the tunnel up", e)
+                stopNetworkWatch()
                 XrayCore.stopLoop()
                 closeTun()
                 XrayCore.publish(TunnelStatus(TunnelState.DOWN, describe(e)))
@@ -184,7 +276,13 @@ class AuroraVpnService : VpnService() {
         }
     }
 
-    private fun stopVpn() {
+    private fun stopVpn(interrupted: Boolean = false) {
+        // The watch goes first: no handover may schedule behind a stop, and one already
+        // waiting must die with it — nothing brings the tunnel back from the dead.
+        stopNetworkWatch()
+        // A stop retires the fall notice too: the tunnel is down by the user's own hand,
+        // not fallen; the next connect is a tap in the app, not a rescue.
+        cancelAlert()
         XrayCore.publish(TunnelStatus(TunnelState.DISCONNECTING))
         worker.execute {
             try {
@@ -197,7 +295,91 @@ class AuroraVpnService : VpnService() {
                 closeTun()
             } finally {
                 XrayCore.publish(TunnelStatus(TunnelState.DOWN))
+                if (interrupted) {
+                    notifyInterrupted(getString(R.string.notif_interrupted_revoked))
+                }
             }
+        }
+    }
+
+    /**
+     * Starts the handover's re-dial after the debounce; a watch that stopped meanwhile
+     * drops its own timer's callback by the generation check.
+     */
+    private fun scheduleHandover() {
+        val generation = watchGeneration.get()
+        mainHandler.removeCallbacksAndMessages(null)
+        mainHandler.postDelayed({
+            if (generation == watchGeneration.get() && XrayCore.isRunning) {
+                worker.execute { redialCore(generation) }
+            }
+        }, HANDOVER_DEBOUNCE_MILLIS)
+        Log.i(TAG, "The network under the tunnel changed; re-dialing in ${HANDOVER_DEBOUNCE_MILLIS}ms")
+    }
+
+    /**
+     * The handover re-dial itself, v2rayNG's reload: silent — the interface, the
+     * notification, the status line all stay, the core loop restarts and every outbound
+     * dials on the network that now carries the traffic. The generation check is the
+     * ownership check: a watch that stopped between the timer and here drops this, and
+     * nothing resurrects a stopped tunnel. A re-dial that cannot mend the tunnel brings
+     * it down properly and says so — the alert's Reconnect is the way back.
+     */
+    private fun redialCore(generation: Int) {
+        if (generation != watchGeneration.get() || !XrayCore.isRunning) return
+        try {
+            XrayCore.stopLoop()
+            val config = CoreConfigFile.readConfig(this)
+                ?: throw IllegalStateException(getString(R.string.error_no_config))
+            XrayCore.startLoop(config, XrayCore.currentTunFd())?.let { throw it }
+            Log.i(TAG, "The core re-dialed onto the network now under it")
+        } catch (e: Exception) {
+            Log.e(TAG, "The handover re-dial failed", e)
+            XrayCore.stopLoop()
+            closeTun()
+            XrayCore.publish(TunnelStatus(TunnelState.DOWN, describe(e)))
+            notifyInterrupted(describe(e))
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
+    /** Begins watching the network under the running tunnel; idempotent. */
+    private fun startNetworkWatch() {
+        if (watching) return
+        val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
+        try {
+            connectivity.requestNetwork(
+                NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+                    .build(),
+                networkWatch,
+            )
+            watching = true
+            upstream = null
+            watchSeeded = false
+        } catch (e: Exception) {
+            Log.w(TAG, "Requesting the default network failed; handovers go unwatched", e)
+        }
+    }
+
+    /**
+     * Stops the watch: the pending re-dial dies with the timer, the generation moves so
+     * one already on the worker drops, and the tracked network is forgotten. Idempotent,
+     * and safe from every teardown path.
+     */
+    private fun stopNetworkWatch() {
+        mainHandler.removeCallbacksAndMessages(null)
+        watchGeneration.incrementAndGet()
+        upstream = null
+        watchSeeded = false
+        if (!watching) return
+        watching = false
+        try {
+            getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(networkWatch)
+        } catch (_: Exception) {
+            // The system already forgot the callback — the watch is down either way.
         }
     }
 
@@ -346,5 +528,54 @@ class AuroraVpnService : VpnService() {
 
     private fun cancelNotification() {
         getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
+    }
+
+    /**
+     * The fall notice: the tunnel stood and fell — another VPN took the tunnel away, or a
+     * handover's re-dial could not bring it back — and the line under the title says which.
+     * Reconnect is the row's action: the connect path in one tap, no app opening. Its own
+     * channel, one that speaks, unlike the running service's silent one; a stop or a new
+     * connect attempt retires it.
+     */
+    private fun notifyInterrupted(reason: String) {
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        manager.createNotificationChannel(
+            NotificationChannel(
+                ALERT_CHANNEL_ID,
+                getString(R.string.notif_channel_alerts),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                setShowBadge(false)
+                description = getString(R.string.notif_channel_alerts_desc)
+            },
+        )
+        val reconnect = PendingIntent.getForegroundService(
+            this,
+            2,
+            Intent(this, AuroraVpnService::class.java).setAction(ACTION_CONNECT),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        manager.notify(
+            ALERT_NOTIFICATION_ID,
+            Notification.Builder(this, ALERT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_tile_on)
+                .setContentTitle(getString(R.string.notif_interrupted_title))
+                .setContentText(reason)
+                .setContentIntent(reconnect)
+                .setAutoCancel(true)
+                .addAction(
+                    Notification.Action.Builder(
+                        Icon.createWithResource(this, R.drawable.ic_power),
+                        getString(R.string.notif_action_reconnect),
+                        reconnect,
+                    ).build(),
+                )
+                .build(),
+        )
+    }
+
+    /** Retires the fall notice: a stop by the user's own hand, or a new attempt. */
+    private fun cancelAlert() {
+        getSystemService(NotificationManager::class.java)?.cancel(ALERT_NOTIFICATION_ID)
     }
 }

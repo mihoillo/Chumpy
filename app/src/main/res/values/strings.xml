@@ -243,6 +243,11 @@
     <string name="notif_profile_unknown">unknown server</string>
     <string name="notif_action_disconnect">Disconnect</string>
     <string name="notif_separator">•</string>
+    <string name="notif_channel_alerts">Tunnel alerts</string>
+    <string name="notif_channel_alerts_desc">A running tunnel that fell</string>
+    <string name="notif_interrupted_title">Connection interrupted</string>
+    <string name="notif_interrupted_revoked">Another VPN took over this one.</string>
+    <string name="notif_action_reconnect">Reconnect</string>
     <string name="error_no_config">No server selected</string>
     <string name="error_vpn_not_authorized">VPN permission was not granted</string>
     <string name="error_tun_creation">Couldn\'t create the VPN interface. Is another VPN set to always-on?</string>
