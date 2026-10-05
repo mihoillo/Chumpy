@@ -141,12 +141,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _notificationsAsk = MutableStateFlow(false)
     val notificationsAsk: StateFlow<Boolean> = _notificationsAsk.asStateFlow()
 
-    private fun maybeAskNotifications() {
+    private fun maybeAskNotifications(firstConfigEver: Boolean) {
         if (_notificationsAsk.value) return
-        // Only the FIRST config earns the ask: an app that already has servers has
-        // already had its moment. The value is the pre-add snapshot — Room's own flow
-        // catches up to the insert later, off this coroutine's beat.
-        if (subscriptions.value.isNotEmpty()) return
+        // The "first ever" was captured BEFORE the insert: Room's own flow can report
+        // the new row before the add's own callback runs, and the ask rides an insert
+        // into an empty app, not one that raced a collector.
+        if (!firstConfigEver) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         if (settings.value.notificationsPermissionAsked) return
         // Asked is asked: the flag goes down before the dialog even shows, so a decline —
@@ -154,6 +154,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateSettings { it.copy(notificationsPermissionAsked = true) }
         _notificationsAsk.value = true
     }
+
+    /** Whether nothing exists yet — the ask rides only the very first config's landing. */
+    private fun appIsEmpty(): Boolean =
+        subscriptions.value.isEmpty() && manualProfileCount.value == 0
 
     /** Connection preferences: selection, routing mode, test URL, per-app bypass. */
     val connection: StateFlow<ConnectionSettings> = ConnectionStore.settings(app)
@@ -455,12 +459,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             addManualProfiles(trimmed, onDone)
             return
         }
+        val firstConfigEver = appIsEmpty()
         viewModelScope.launch {
             repository.addSubscription(trimmed, name)
                 .onSuccess { sub ->
                     ConnectionStore.update(app) { it.copy(selectedSubscriptionId = sub.id) }
                     _servers.update { it.copy(error = null) }
-                    maybeAskNotifications()
+                    maybeAskNotifications(firstConfigEver)
                     onDone(null)
                 }
                 .onFailure { error ->
@@ -527,6 +532,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Manual import: a link, a WireGuard .conf body, a raw config, or a list of links. */
     fun addManualProfiles(text: String, onDone: (String?) -> Unit) {
+        val firstConfigEver = appIsEmpty()
         viewModelScope.launch {
             repository.addManualProfiles(text)
                 .onSuccess { count ->
@@ -537,7 +543,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             it.copy(selectedSubscriptionId = STANDALONE_SUBSCRIPTION_ID, selectedProfileId = null)
                         }
                         _servers.update { it.copy(error = null) }
-                        maybeAskNotifications()
+                        maybeAskNotifications(firstConfigEver)
                     }
                     onDone(if (count == 0) app.getString(R.string.import_nothing_new) else null)
                 }

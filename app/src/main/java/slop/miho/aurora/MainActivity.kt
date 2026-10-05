@@ -1,9 +1,12 @@
 package slop.miho.aurora
 
+import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.SizeTransform
@@ -14,6 +17,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,6 +36,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: MainViewModel = viewModel()
             val settings by viewModel.settings.collectAsStateWithLifecycle()
+            // The notifications permission rides the first config's landing — asked once,
+            // ever. The ask belongs to the activity, not the shell: a fresh install adds
+            // its first config from the welcome screen, where the shell is not yet alive.
+            val notificationPermission = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission(),
+            ) { }
+            val notificationsAsk by viewModel.notificationsAsk.collectAsStateWithLifecycle()
+            LaunchedEffect(notificationsAsk) {
+                if (notificationsAsk) {
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
             AuroraTheme(settings = settings) {
 
                 Surface(color = MaterialTheme.colorScheme.surface) {
