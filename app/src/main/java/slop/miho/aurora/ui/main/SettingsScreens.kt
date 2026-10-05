@@ -1024,11 +1024,13 @@ fun ConnectionScreen(
                     },
                 )
             },
+        )
+        // The tunnel's own afterlife, apart from what it carries: whether a fall gets back
+        // up on its own. Off (the default), the fall stands and the alert's Reconnect is
+        // the way back by the user's own hand; on, the answer is immediate — the climb
+        // back begins the moment the fall finishes, the notice edited to the outcome.
+        SettingsGroup(
             {
-                // The system's own demand for the VPN — the always-on restart, the
-                // resurrection after the core process died — is the only start nobody
-                // asked for. Off (the default), a fall stands and the alert's Reconnect
-                // is the way back; on, the tunnel comes back by itself.
                 ToggleRow(
                     title = stringResource(R.string.connection_auto_reconnect),
                     supporting = stringResource(
