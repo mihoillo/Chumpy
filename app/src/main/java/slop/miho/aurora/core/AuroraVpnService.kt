@@ -45,7 +45,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * them half-open: writes sink in, nothing comes back, the state machine still calling the
  * tunnel up. A handover re-dials the core onto whatever now carries the traffic; a fall
  * the re-dial cannot mend — and the revoke another VPN's arrival brings — stops the tunnel
- * and says so out loud: an alert notification with a Reconnect button of its own.
+ * and says so out loud: an alert notification with a Reconnect button of its own. The
+ * revoke is also asked for directly, every few seconds while the tunnel runs: prepare()
+ * answers null exactly while this app is the system's VPN of record, so a ROM that never
+ * delivers onRevoke — a dead tunnel the state machine still calls up — falls the same
+ * way, seconds late at worst.
  */
 class AuroraVpnService : VpnService() {
     companion object {
@@ -63,6 +67,14 @@ class AuroraVpnService : VpnService() {
          * storm folds into one re-dial (v2rayNG's own debounce).
          */
         private const val HANDOVER_DEBOUNCE_MILLIS = 1_000L
+
+        /**
+         * How often the authorization is re-asked while the tunnel runs. prepare() answers
+         * null exactly while this app is the system's VPN of record, so a ROM that never
+         * delivers onRevoke leaves a dead VPN claiming to be up for at most this long —
+         * and no longer.
+         */
+        private const val AUTHORIZATION_CHECK_MILLIS = 5_000L
 
         const val ACTION_CONNECT = "slop.miho.aurora.core.CONNECT"
         const val ACTION_DISCONNECT = "slop.miho.aurora.core.DISCONNECT"
@@ -151,8 +163,28 @@ class AuroraVpnService : VpnService() {
      */
     private val watchGeneration = AtomicInteger(0)
 
-    /** The handover timer's own looper; only ever holds re-dials waiting out the debounce. */
+    /** The handover timer's own looper; holds re-dials and authorization checks only. */
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * The authorization self-check: prepare() is a pure query, no dialog, and it answers
+     * null exactly while this app is the system's VPN of record. A non-null answer while
+     * the loop runs means the authorization was pulled out from under us — another app's
+     * VPN was granted, or the user revoked in settings — and the ROM never told
+     * [onRevoke] about it: the tunnel stands dead with the state machine still calling
+     * it up. It falls here instead, the same way: stopped, and said out loud.
+     */
+    private val authorizationCheck: Runnable = Runnable {
+        worker.execute {
+            if (!watching) return@execute
+            if (XrayCore.isRunning && prepare(this) != null) {
+                Log.w(TAG, "The VPN authorization is gone and onRevoke never came; stopping")
+                stopVpn(interrupted = true)
+            } else {
+                mainHandler.postDelayed(authorizationCheck, AUTHORIZATION_CHECK_MILLIS)
+            }
+        }
+    }
 
     /**
      * Watches the network that carries the tunnel, v2rayNG's way: the plain
@@ -217,7 +249,7 @@ class AuroraVpnService : VpnService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        stopNetworkWatch()
+        stopTunnelWatch()
         closeTun()
         cancelNotification()
     }
@@ -236,6 +268,7 @@ class AuroraVpnService : VpnService() {
                 // status line saying why instead of an error.
                 val connection = ConnectionStore.current(this)
                 if (connection.trustedWifiEnabled && currentWifiSsid() in connection.trustedWifiSsids) {
+                    stopTunnelWatch()
                     XrayCore.publish(
                         TunnelStatus(TunnelState.DOWN, getString(R.string.trusted_stand_down)),
                     )
@@ -259,12 +292,13 @@ class AuroraVpnService : VpnService() {
                     XrayCore.startLoop(config, tun.fd)?.let { throw it }
                 }
                 XrayCore.publish(TunnelStatus(TunnelState.UP))
-                // The watch rides with the running tunnel: handovers under it re-dial it.
-                startNetworkWatch()
+                // The guards ride with the running tunnel: handovers under it re-dial it,
+                // and the authorization check catches the revoke a ROM never reports.
+                startTunnelWatch()
                 ensureForeground()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to bring the tunnel up", e)
-                stopNetworkWatch()
+                stopTunnelWatch()
                 XrayCore.stopLoop()
                 closeTun()
                 XrayCore.publish(TunnelStatus(TunnelState.DOWN, describe(e)))
@@ -279,7 +313,7 @@ class AuroraVpnService : VpnService() {
     private fun stopVpn(interrupted: Boolean = false) {
         // The watch goes first: no handover may schedule behind a stop, and one already
         // waiting must die with it — nothing brings the tunnel back from the dead.
-        stopNetworkWatch()
+        stopTunnelWatch()
         // A stop retires the fall notice too: the tunnel is down by the user's own hand,
         // not fallen; the next connect is a tap in the app, not a rescue.
         cancelAlert()
@@ -335,6 +369,7 @@ class AuroraVpnService : VpnService() {
             Log.i(TAG, "The core re-dialed onto the network now under it")
         } catch (e: Exception) {
             Log.e(TAG, "The handover re-dial failed", e)
+            stopTunnelWatch()
             XrayCore.stopLoop()
             closeTun()
             XrayCore.publish(TunnelStatus(TunnelState.DOWN, describe(e)))
@@ -344,8 +379,12 @@ class AuroraVpnService : VpnService() {
         }
     }
 
-    /** Begins watching the network under the running tunnel; idempotent. */
-    private fun startNetworkWatch() {
+    /**
+     * Begins the guards that ride with the running tunnel: the network watch that hands
+     * the core over, and the authorization self-check that catches the revoke a ROM
+     * never reports. Idempotent.
+     */
+    private fun startTunnelWatch() {
         if (watching) return
         val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
         try {
@@ -359,17 +398,19 @@ class AuroraVpnService : VpnService() {
             watching = true
             upstream = null
             watchSeeded = false
+            mainHandler.removeCallbacks(authorizationCheck)
+            mainHandler.postDelayed(authorizationCheck, AUTHORIZATION_CHECK_MILLIS)
         } catch (e: Exception) {
             Log.w(TAG, "Requesting the default network failed; handovers go unwatched", e)
         }
     }
 
     /**
-     * Stops the watch: the pending re-dial dies with the timer, the generation moves so
-     * one already on the worker drops, and the tracked network is forgotten. Idempotent,
-     * and safe from every teardown path.
+     * Stops the guards: the pending re-dial and the authorization check die with their
+     * timers, the generation moves so a re-dial already on the worker drops, and the
+     * tracked network is forgotten. Idempotent, and safe from every teardown path.
      */
-    private fun stopNetworkWatch() {
+    private fun stopTunnelWatch() {
         mainHandler.removeCallbacksAndMessages(null)
         watchGeneration.incrementAndGet()
         upstream = null
