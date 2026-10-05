@@ -1,6 +1,10 @@
 package slop.miho.aurora.xray
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -63,6 +67,9 @@ object XrayConfigBuilder {
      * root-level observatory, which the builder emits with them.
      */
     private val OBSERVING_STRATEGIES = setOf("leastping", "leastload")
+
+    /** The parser for the panel's carried routing rules; malformed ones are skipped. */
+    private val lenientJson = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /**
      * The document the VPN service hands to startLoop alongside the TUN descriptor.
@@ -173,7 +180,15 @@ object XrayConfigBuilder {
                 )
             },
         )
-        put("routing", routing(mode, balanced = balancerMembers.isNotEmpty(), strategy = strategy))
+        put(
+            "routing",
+            routing(
+                mode,
+                balanced = balancerMembers.isNotEmpty(),
+                strategy = strategy,
+                profileRules = profile.routingRules,
+            )
+        )
         if (strategy in OBSERVING_STRATEGIES && balancerMembers.isNotEmpty()) {
             // The observing strategies need a probe source: one root-level observatory
             // over the members, probing the delay-test URL the user's own settings
@@ -249,7 +264,12 @@ object XrayConfigBuilder {
         )
     }
 
-    private fun routing(mode: RoutingMode, balanced: Boolean, strategy: String) = buildJsonObject {
+    private fun routing(
+        mode: RoutingMode,
+        balanced: Boolean,
+        strategy: String,
+        profileRules: String,
+    ) = buildJsonObject {
         put("domainStrategy", "AsIs")
         if (balanced) {
             put(
@@ -309,6 +329,11 @@ object XrayConfigBuilder {
                     put("domain", buildJsonArray { add(JsonPrimitive("geosite:private")) })
                     put("outboundTag", DIRECT_TAG)
                 }
+                // The panel's own rules, next to ours: bypass lists, ad and QUIC blocks,
+                // torrent direct — the routing the config the profile came from carried,
+                // the balancer's whole point in the panel's terms. Targets rewritten onto
+                // this session's tags; the fall-through stays ours.
+                panelRules(profileRules, balanced).forEach { add(it) }
                 if (balanced) {
                     // The catch-all rides the balancer: whatever the bypass rules let
                     // through, the core picks the member for — at random, by ping or by
@@ -333,6 +358,43 @@ object XrayConfigBuilder {
             },
         )
     }
+
+    /**
+     * The panel's routing rules rewritten onto this session's tags, BetterExclave's
+     * rewriteProfileRouteTarget: direct-ish targets go to the session's freedom, block-ish
+     * to its blackhole, and everything the panel aimed at a proxy or balancer tag funnels
+     * to the one outbound that exists here — the balancer when the session runs one, the
+     * proxy otherwise. A rule that carries none of these (a tag the panel invented) lands
+     * on the same funnel rather than pointing at nothing.
+     */
+    private fun panelRules(profileRules: String, balanced: Boolean): List<JsonObject> {
+        if (profileRules.isBlank()) return emptyList()
+        val rules = try {
+            (lenientJson.parseToJsonElement(profileRules) as? JsonArray)
+                ?.filterIsInstance<JsonObject>()
+        } catch (_: Exception) {
+            null
+        } ?: return emptyList()
+        return rules.map { rule ->
+            val target = rule.string("outboundTag") ?: rule.string("balancerTag") ?: ""
+            val rewritten = rule.toMutableMap()
+            rewritten.remove("outboundTag")
+            rewritten.remove("balancerTag")
+            when (target.trim().lowercase()) {
+                "direct", "freedom", "bypass" -> rewritten["outboundTag"] = JsonPrimitive(DIRECT_TAG)
+                "block", "blackhole" -> rewritten["outboundTag"] = JsonPrimitive(BLOCK_TAG)
+                else -> if (balanced) {
+                    rewritten["balancerTag"] = JsonPrimitive(BALANCER_TAG)
+                } else {
+                    rewritten["outboundTag"] = JsonPrimitive(PROXY_TAG)
+                }
+            }
+            JsonObject(rewritten)
+        }
+    }
+
+    private fun JsonObject.string(key: String): String? =
+        (this[key] as? JsonPrimitive)?.contentOrNull
 
     /**
      * The member tags: the first member is the plain proxy tag — the default outbound a

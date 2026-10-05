@@ -158,6 +158,57 @@ class XrayConfigBuilderTest {
         assertEquals(listOf("proxy", "direct", "block"), tags)
     }
 
+    @Test
+    fun `the panel's routing rules ride the session, rewritten onto its tags`() {
+        // The panel shape as the parser carries it: RU bypass, an ad block, a
+        // balancer-tagged rule and a case-mixed direct — targets rewritten here.
+        val panelRules = """
+            [
+              { "type": "field", "domain": ["domain:vk.ru", "domain:yandex.ru"], "outboundTag": "direct" },
+              { "type": "field", "domain": ["domain:googlesyndication.com"], "outboundTag": "block" },
+              { "type": "field", "network": "udp", "port": "50000-65535", "balancerTag": "panel-VPN" },
+              { "type": "field", "ip": ["203.0.113.0/24"], "outboundTag": "DIRECT" }
+            ]
+        """.trimIndent()
+        val balancer = profile.copy(
+            id = "9",
+            type = ProfileType.BALANCER,
+            remarks = "Автовыбор",
+            balancerStrategy = "random",
+            routingRules = panelRules,
+        )
+        val members = listOf(profile, profile.copy(id = "2", server = "second.example.com"))
+        val rules = rulesOf(XrayConfigBuilder.buildFull(balancer, RoutingMode.GLOBAL, members))
+
+        // Every carried rule keeps its effective fields and lands before the catch-all.
+        assertEquals(8, rules.size)
+        rules.take(7).forEach { rule ->
+            val scalar = rule.keys.any { it == "port" || it == "network" }
+            val arrayMatchers = rule.keys - "type" - "outboundTag" - "balancerTag" - "port" - "network"
+            assertTrue("rule has no matcher fields", scalar || arrayMatchers.isNotEmpty())
+        }
+        val ru = rules.first { it["domain"]?.jsonArray?.firstOrNull()?.jsonPrimitive?.content == "domain:vk.ru" }
+        assertEquals("direct", ru["outboundTag"]!!.jsonPrimitive.content)
+        val ads = rules.first { it["domain"]?.jsonArray?.firstOrNull()?.jsonPrimitive?.content == "domain:googlesyndication.com" }
+        assertEquals("block", ads["outboundTag"]!!.jsonPrimitive.content)
+        // The panel's own direct spelling, any case, still lands on the session's.
+        val ipDirect = rules.first { it["ip"]?.jsonArray?.firstOrNull()?.jsonPrimitive?.content == "203.0.113.0/24" }
+        assertEquals("direct", ipDirect["outboundTag"]!!.jsonPrimitive.content)
+        // What the panel aimed at its balancer funnels to this session's one; the
+        // session's catch-all stays the last rule, the funnel never past it.
+        val funnel = rules.first { it["port"]?.jsonPrimitive?.content == "50000-65535" }
+        assertEquals("balancer", funnel["balancerTag"]!!.jsonPrimitive.content)
+        assertEquals("balancer", rules.last()["balancerTag"]!!.jsonPrimitive.content)
+
+        // A plain session funnels the same rule onto the proxy instead.
+        val soloRules = rulesOf(
+            XrayConfigBuilder.buildFull(profile.copy(routingRules = panelRules), RoutingMode.GLOBAL)
+        )
+        assertTrue(soloRules.none { it.containsKey("balancerTag") })
+        val soloFunnel = soloRules.first { it["port"]?.jsonPrimitive?.content == "50000-65535" }
+        assertEquals("proxy", soloFunnel["outboundTag"]!!.jsonPrimitive.content)
+    }
+
     private fun rulesOf(config: String) =
         Json.parseToJsonElement(config)
             .jsonObject["routing"]!!.jsonObject["rules"]!!.jsonArray

@@ -2,6 +2,7 @@ package slop.miho.aurora.sub
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -47,6 +48,7 @@ object ConfigParser {
         val prefix: String,
         val entries: List<Pair<String, ProfileEntity>>,
         val balancerSpecs: List<JsonObject>,
+        val routingRules: String,
     )
 
     /** The profiles found in a raw-config body, deduplicated; null when it is not one. */
@@ -74,6 +76,7 @@ object ConfigParser {
                     outboundToProfile(outbound)?.let { outbound.str("tag").orEmpty() to it }
                 },
                 balancerSpecs = config.obj("routing")?.array("balancers")?.arrayOfObjects().orEmpty(),
+                routingRules = routingRulesOf(config),
             )
         }
 
@@ -99,17 +102,27 @@ object ConfigParser {
                 val (tag, profile) = bundle.entries.first()
                 val key = profile.computeLinkKey()
                 if (seen.add(key)) {
-                    val named = profile.copy(remarks = soloNames[key] ?: bundle.prefix.ifEmpty { tag })
+                    val named = profile.copy(
+                        remarks = soloNames[key] ?: bundle.prefix.ifEmpty { tag },
+                        routingRules = bundle.routingRules,
+                    )
                     profiles.add(named)
                 }
             } else if (bundle.entries.size > 1) {
                 for (balancer in balancersOf(bundle)) {
-                    if (seenBalancers.add(balancer.computeLinkKey())) profiles.add(balancer)
+                    if (seenBalancers.add(balancer.computeLinkKey())) {
+                        profiles.add(balancer.copy(routingRules = bundle.routingRules))
+                    }
                 }
                 for ((_, profile) in bundle.entries) {
                     val key = profile.computeLinkKey()
                     if (seen.add(key)) {
-                        profiles.add(profile.copy(remarks = soloNames[key] ?: profile.remarks))
+                        profiles.add(
+                            profile.copy(
+                                remarks = soloNames[key] ?: profile.remarks,
+                                routingRules = bundle.routingRules,
+                            )
+                        )
                     }
                 }
             }
@@ -323,6 +336,76 @@ object ConfigParser {
     }
 
     // ------------------------------------------------------------------ JSON plumbing
+
+    /**
+     * The routing rules worth carrying, as a raw JSON array: the panel's own intent for
+     * its servers — bypass lists, ad and QUIC blocks, torrent direct — rewritten onto
+     * the session's tags at build time. BetterExclave's profileRoutingRules, the same
+     * filtering: a rule must have a target (an outbound or balancer tag) and a matcher
+     * (a bare target with no matcher would swallow everything), and the network matcher
+     * only counts when it names one protocol — "tcp,udp" is the panel's catch-all, and
+     * the fall-through is ours to aim anyway. The "outbound" alias some panels spell
+     * becomes "outboundTag" so the build-side rewrite sees one key.
+     */
+    private fun routingRulesOf(config: JsonObject): String {
+        val raw = config.obj("routing")?.array("rules")?.arrayOfObjects().orEmpty()
+        val carried = raw.mapNotNull { rule ->
+            val type = rule.str("type")?.trim()?.lowercase().orEmpty()
+            if (type.isNotEmpty() && type != "field") return@mapNotNull null
+            // The "outbound" alias some panels spell folds into "outboundTag" so the
+            // build-side rewrite has one key to read.
+            val outboundTarget = rule.str("outboundTag")?.trim()?.ifBlank { null }
+                ?: rule.str("outbound")?.trim()?.ifBlank { null }
+            val balancerTarget = rule.str("balancerTag")?.trim()?.ifBlank { null }
+            if (outboundTarget == null && balancerTarget == null) return@mapNotNull null
+
+            val matchers = HashMap<String, JsonElement>()
+            matchers["type"] = JsonPrimitive("field")
+            fun strings(vararg keys: String, into: String) {
+                for (key in keys) {
+                    val values = when (val element = rule[key]) {
+                        is JsonArray -> element.filterIsInstance<JsonPrimitive>()
+                            .mapNotNull { it.contentOrNull?.trim()?.ifBlank { null } }
+                        is JsonPrimitive -> listOfNotNull(
+                            element.contentOrNull?.trim()?.ifBlank { null }
+                        )
+                        else -> emptyList()
+                    }
+                    if (values.isNotEmpty()) {
+                        matchers[into] = JsonArray(values.map { JsonPrimitive(it) })
+                        return
+                    }
+                }
+            }
+            strings("domain", "domains", into = "domain")
+            strings("ip", "ips", into = "ip")
+            strings("source", into = "source")
+            strings("protocol", into = "protocol")
+            fun scalar(key: String, into: String, transform: (String) -> String? = { it }) {
+                rule.str(key)?.trim()?.let { transform(it) }?.ifBlank { null }?.let { value ->
+                    matchers[into] = JsonPrimitive(value)
+                }
+            }
+            scalar("port", "port")
+            scalar("sourcePort", "sourcePort")
+            scalar("attrs", "attrs")
+            // One protocol only; "tcp,udp" is a catch-all, not a matcher.
+            scalar("network", "network") {
+                when (it.lowercase()) {
+                    "tcp" -> "tcp"
+                    "udp" -> "udp"
+                    else -> null
+                }
+            }
+            if (matchers.size == 1) return@mapNotNull null
+
+            if (outboundTarget != null) matchers["outboundTag"] = JsonPrimitive(outboundTarget)
+            else matchers["balancerTag"] = JsonPrimitive(balancerTarget!!)
+            JsonObject(matchers)
+        }
+        if (carried.isEmpty()) return ""
+        return JsonArray(carried).toString()
+    }
 
     private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 

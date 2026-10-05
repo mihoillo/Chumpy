@@ -107,6 +107,15 @@ data class ProfileEntity(
     /** The members' linkKeys, newline-joined; resolved against the subscription's rows. */
     val balancerMembers: String = "",
 
+    // Routing (profiles imported from raw configs).
+    /**
+     * The routing rules the panel's own config carried, as a raw JSON array — BetterExclave's
+     * profileRoutingRules. The panel's intent for its servers: bypass lists, ad and QUIC
+     * blocks, BT direct. Rewritten onto this session's tags at build time; empty when the
+     * config carried nothing usable.
+     */
+    val routingRules: String = "",
+
     // Measurements.
     /** The last real ping through the core, in millis; null when never measured. */
     val testDelayMillis: Long? = null,

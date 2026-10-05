@@ -1,5 +1,9 @@
 package slop.miho.aurora.sub
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -386,6 +390,73 @@ class ConfigParserTest {
         assertEquals(2, balancer.balancerMemberKeys.size)
         // Both members parse and stand beside the balancer, pingable and pickable.
         assertEquals(2, profiles.count { it.type == ProfileType.VLESS })
+    }
+
+    /**
+     * The routing rules the panel's config carried, as the parser filters them: the
+     * matcherless direct catch-all and the "tcp,udp" balancer catch-all — which would
+     * otherwise swallow everything — stay out; the "outbound" alias folds into
+     * "outboundTag"; what keeps a matcher and a target rides every profile from the
+     * config, the balancer included.
+     */
+    @Test
+    fun `a config's routing rules ride its profiles, filtered`() {
+        val body = """
+            {
+              "remarks": "🇪🇺 Автовыбор",
+              "routing": {
+                "rules": [
+                    { "type": "field", "protocol": ["bittorrent"], "outboundTag": "direct" },
+                    { "type": "field", "outboundTag": "direct" },
+                    { "ip": ["203.0.113.0/24"], "outbound": "BLOCK" },
+                    { "type": "field", "domain": ["domain:vk.ru", "domain:yandex.ru"], "outboundTag": "direct" },
+                    { "type": "field", "network": "tcp,udp", "balancerTag": "panel-VPN" },
+                    { "type": "field", "network": "udp", "port": "443,853", "outboundTag": "block" }
+                ],
+                "balancers": [ { "tag": "panel-VPN", "selector": ["proxy"], "strategy": { "type": "leastPing" } } ]
+              },
+              "outbounds": [
+                {
+                  "tag": "proxy",
+                  "protocol": "vless",
+                  "settings": { "vnext": [ { "address": "1.2.3.4", "port": 443, "users": [ { "id": "00000000-1111-2222-3333-444444444444", "encryption": "none" } ] } ] },
+                  "streamSettings": { "network": "tcp", "security": "reality", "realitySettings": { "serverName": "pl4.example.org", "publicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "shortId": "0000000000000000", "fingerprint": "edge" } }
+                },
+                {
+                  "tag": "proxy-2",
+                  "protocol": "vless",
+                  "settings": { "vnext": [ { "address": "1.2.3.5", "port": 443, "users": [ { "id": "00000000-1111-2222-3333-444444444444", "encryption": "none" } ] } ] },
+                  "streamSettings": { "network": "tcp", "security": "reality", "realitySettings": { "serverName": "pl4.example.org", "publicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "shortId": "0000000000000000", "fingerprint": "edge" } }
+                }
+              ]
+            }
+        """.trimIndent()
+        val profiles = ConfigParser.parse(body)!!
+        val rules = Json.parseToJsonElement(
+            profiles.first { it.type == ProfileType.VLESS }.routingRules
+        ).jsonArray.map { it.jsonObject }
+        val balancerRules = Json.parseToJsonElement(
+            profiles.first { it.type == ProfileType.BALANCER }.routingRules
+        ).jsonArray.map { it.jsonObject }
+
+        // The BT rule, the ip block, the RU bypass and the QUIC block survive — the
+        // matcherless direct and the "tcp,udp" catch-alls stay out — on the balancer too.
+        assertEquals(4, rules.size)
+        assertEquals(4, balancerRules.size)
+        assertTrue(rules.any { rule ->
+            val protocols = rule["protocol"]?.jsonArray.orEmpty().map { it.jsonPrimitive.content }
+            protocols == listOf("bittorrent") && rule["outboundTag"]?.jsonPrimitive?.content == "direct"
+        })
+        val ru = rules.first { rule -> rule["domain"]?.jsonArray.orEmpty().isNotEmpty() }
+        assertEquals(listOf("domain:vk.ru", "domain:yandex.ru"), ru["domain"]!!.jsonArray.map { it.jsonPrimitive.content })
+        assertEquals("direct", ru["outboundTag"]?.jsonPrimitive?.content)
+        // The "outbound" alias became "outboundTag", the original target kept verbatim —
+        // the build-side rewrite is what lowercases it.
+        val blocked = rules.first { rule -> rule["ip"]?.jsonArray.orEmpty().isNotEmpty() }
+        assertEquals("BLOCK", blocked["outboundTag"]?.jsonPrimitive?.content)
+        // The catch-alls never made it in.
+        assertTrue(rules.none { it.containsKey("balancerTag") })
+        assertTrue(rules.none { it["network"]?.jsonPrimitive?.content == "tcp,udp" })
     }
 
 }

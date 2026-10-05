@@ -77,7 +77,7 @@ abstract class ProfileDao {
  */
 @Database(
     entities = [SubscriptionEntity::class, ProfileEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AuroraDatabase : RoomDatabase() {
@@ -120,6 +120,16 @@ abstract class AuroraDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE subscriptions DROP COLUMN happLocale")
                 db.execSQL("ALTER TABLE subscriptions DROP COLUMN happUserId")
                 db.execSQL("ALTER TABLE subscriptions DROP COLUMN happHwid")
+            }
+        }
+
+        /**
+         * v4: the panel's own routing rules, carried on every profile imported from a
+         * raw config — the balancers' bypass semantics ride on them.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE profiles ADD COLUMN routingRules TEXT NOT NULL DEFAULT ''")
             }
         }
     }
