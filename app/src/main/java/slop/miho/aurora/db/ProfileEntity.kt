@@ -116,6 +116,14 @@ data class ProfileEntity(
      */
     val routingRules: String = "",
 
+    /**
+     * BetterExclave's hidden: the row is the balancer's internal, not a server to show —
+     * an aggregator config's outbounds, all of them, the moment the config's balancer
+     * survives. The row stays in the store (the balancer's members resolve by linkKey;
+     * a solo config naming the same server un-hides it), only the list omits it.
+     */
+    val hidden: Boolean = false,
+
     // Measurements.
     /** The last real ping through the core, in millis; null when never measured. */
     val testDelayMillis: Long? = null,

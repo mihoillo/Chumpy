@@ -142,19 +142,22 @@ class ConfigParserTest {
     fun `aggregator copies of individually-named servers stay out`() {
         val profiles = ConfigParser.parse("[$single,$aggregator]")
         // Germany is named by its individual config's remarks; England only exists in
-        // the aggregator, so it joins under its group tag.
+        // the aggregator, so it joins under the bundle's "remarks tag" label.
         assertEquals(2, profiles!!.size)
         val germany = profiles.first { it.server == "1.2.3.4" }
         assertEquals("🇩🇪 Германия #3", germany.remarks)
         val england = profiles.first { it.server == "1.2.3.5" }
-        assertEquals("auto-🇬🇧 Англия", england.remarks)
+        assertEquals("🇪🇺⚡️ Автовыбор auto-🇬🇧 Англия", england.remarks)
     }
 
     @Test
     fun `a lone aggregator still hands over its servers`() {
         val profiles = ConfigParser.parse(aggregator)
         assertEquals(2, profiles!!.size)
-        assertEquals(setOf("auto-🇩🇪 Германия #3", "auto-🇬🇧 Англия"), profiles.map { it.remarks }.toSet())
+        assertEquals(
+            setOf("🇪🇺⚡️ Автовыбор auto-🇩🇪 Германия #3", "🇪🇺⚡️ Автовыбор auto-🇬🇧 Англия"),
+            profiles.map { it.remarks }.toSet(),
+        )
     }
 
     @Test
@@ -245,13 +248,19 @@ class ConfigParserTest {
         // normalized to what the core switches on.
         assertEquals("Автовыбор", balancer.remarks)
         assertEquals("leastping", balancer.balancerStrategy)
-        // The members ride as linkKeys and resolve to the servers the array carries —
-        // including the one the single config named first, deduped into one row.
+        // The balancer's own row stands in the list, its config's outbounds do not:
+        // they are filed away hidden — the member the single config already named stays
+        // visible under that name, the one only the aggregator carries rides its label.
+        assertTrue(balancer.hidden.not())
         val keys = balancer.balancerMemberKeys.toSet()
         assertEquals(2, keys.size)
-        val servers = profiles.filter { it.type != ProfileType.BALANCER }
-        assertTrue(servers.any { it.computeLinkKey() in keys && it.remarks == "🇩🇪 Германия #3" })
-        assertTrue(servers.any { it.computeLinkKey() in keys && it.remarks == "auto-🇬🇧 Англия" })
+        val germany = profiles.first { it.server == "1.2.3.4" }
+        assertEquals("🇩🇪 Германия #3", germany.remarks)
+        assertTrue(germany.hidden.not())
+        val england = profiles.first { it.server == "1.2.3.5" }
+        assertEquals("Автовыбор auto-🇬🇧 Англия", england.remarks)
+        assertTrue(england.hidden)
+        assertTrue(profiles.filter { it.type != ProfileType.BALANCER }.all { it.computeLinkKey() in keys })
     }
 
     @Test
@@ -310,54 +319,62 @@ class ConfigParserTest {
     }
 
     @Test
-    fun `the real panelsub payload parses and its members stand`() {
+    fun `the real panelsub payload files its aggregator members away hidden`() {
         val body = javaClass.getResourceAsStream("/panelsub.json")!!
             .readBytes().decodeToString()
         val parsed = ConfigParser.parse(body)!!
         val balancers = parsed.filter { it.type == ProfileType.BALANCER }
         println("BALANCERS: " + balancers.map { "${it.remarks} -> ${it.balancerStrategy}, members=${it.balancerMemberKeys.size}" })
         val servers = parsed.filter { it.type != ProfileType.BALANCER }
-        println("SERVERS: " + servers.size + " " + servers.map { it.remarks })
-        // The store stamps linkKeys the way the repository does — one pass, the parse's
-        // own order kept. Balancers and their members stand together now: the members
-        // are the servers the balancer picks between, still the user's to choose by
-        // hand — a pick-everything group is most of what a panel ships.
+        println("SERVERS: " + servers.size + " " + servers.map { "${it.remarks}${if (it.hidden) " [hidden]" else ""}" })
+        // The store keeps everything — the balancers' members resolve by linkKey at
+        // connect — but the list shows only what the panel means as rows: the seven
+        // singles and the two group rows. The wly/wlv plumbing stays filed away.
         val all = parsed.mapIndexed { i, p -> p.copy(linkKey = p.computeLinkKey(), order = i.toLong()) }
-        println("ALL: " + all.map { it.remarks })
+        val listed = all.filter { it.hidden.not() }
+        println("LISTED: " + listed.map { it.remarks })
         // The third balancer (WL-1) is all-hysteria outbounds — a protocol this core
         // does not speak — so parsing drops it whole; its members never stand anywhere.
         assertEquals(2, balancers.size)
         assertEquals(26, servers.size)
+        // Every stored server is one of the seven named singles or a hidden member.
+        assertEquals(19, servers.count { it.hidden })
+        assertEquals(9, listed.size)
+        assertTrue(listed.none { it.hidden })
         // The list runs in the panel's own order: the seven singles as the configs
-        // come, the balancers where their configs stand (WL-2 mid-list, WL-3 later)
-        // — and the members they pick between right where theirs do, trailing them.
-        assertEquals("🇪🇪WL-2", all.drop(7).first().remarks)
-        assertEquals("wlv-7", all.last().remarks)
+        // come, the two balancers where their configs stand.
+        assertEquals("Эстония #1", listed.first().remarks.takeLast(10))
+        assertEquals(listOf("🇪🇪WL-2", "🇫🇮 WL-3"), listed.filter { it.type == ProfileType.BALANCER }.map { it.remarks })
         assertTrue(all.first().remarks.contains("Эстония"))
+        // The stored tail is the WL-3 bundle's plumbing: its members filed away hidden
+        // under the bundle's "prefix tag" names, the group row standing among them.
+        val lastMember = all.last()
+        assertTrue(lastMember.hidden && lastMember.remarks.endsWith("wlv-7"))
     }
 
     @Test
     fun `aggregator-first bodies name their servers by the solo configs`() {
         // The panel shape: the pick-everything aggregator leads the array, the
-        // servers' own configs trail it. The aggregator's copy holds the place, but a
-        // server with a config of its own is named by that config — no "auto-" group
-        // labels in the list. A member no solo config ever names keeps the group's tag.
+        // servers' own configs trail it. The aggregator files its copies away hidden;
+        // a solo config presenting the same server un-hides the row in place, under
+        // its own name — no "auto-" group labels in the list.
         val england = single
             .replace("🇩🇪 Германия #3", "🇬🇧 Англия")
             .replace("1.2.3.4", "1.2.3.5")
         val profiles = ConfigParser.parse("[$balanced,$single,$england]")!!
         assertEquals(3, profiles.size)
         val servers = profiles.filter { it.type != ProfileType.BALANCER }
-        assertTrue(servers.any { it.remarks == "🇩🇪 Германия #3" })
-        assertTrue(servers.any { it.remarks == "🇬🇧 Англия" })
+        assertTrue(servers.any { it.remarks == "🇩🇪 Германия #3" && it.hidden.not() })
+        assertTrue(servers.any { it.remarks == "🇬🇧 Англия" && it.hidden.not() })
         assertTrue(servers.none { it.remarks.startsWith("auto-") })
     }
 
     @Test
-    fun `a pick-everything balancer keeps its members in the list`() {
+    fun `a pick-everything balancer files its members away hidden`() {
         // The mealkitty shape: one config, every outbound a member of the single
-        // balancer its routing sends everything to. The members are every server the
-        // panel ships — the balancer is a pick over them, not a replacement for them.
+        // balancer its routing sends everything to. The outbounds are the group's
+        // plumbing, not servers to show — stored hidden, resolved by linkKey at
+        // connect, and the list shows the one row the panel means: the group.
         val body = """
             {
               "routing": {
@@ -388,8 +405,12 @@ class ConfigParserTest {
         assertEquals("Super", balancer.remarks)
         assertEquals("leastload", balancer.balancerStrategy)
         assertEquals(2, balancer.balancerMemberKeys.size)
-        // Both members parse and stand beside the balancer, pingable and pickable.
-        assertEquals(2, profiles.count { it.type == ProfileType.VLESS })
+        // Both members are stored — the balancer's linkKey resolution needs them — but
+        // filed away hidden: the list carries the group row alone.
+        val members = profiles.filter { it.type == ProfileType.VLESS }
+        assertEquals(2, members.size)
+        assertTrue(members.all { it.hidden })
+        assertTrue(balancer.hidden.not())
     }
 
     /**

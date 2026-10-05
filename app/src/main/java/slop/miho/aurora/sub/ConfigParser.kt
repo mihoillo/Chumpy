@@ -80,48 +80,56 @@ object ConfigParser {
             )
         }
 
-        // The list runs in the panel's own order — the configs as they come, one entry
-        // each: a single config hands its named server over right where it stands, an
-        // aggregator's balancers stand where the config stands with its members riding
-        // behind them. A server the panel names twice — once alone, once inside an
-        // aggregator — keeps its first place; the name, though, always comes from the
-        // server's own config: the aggregator's copy carries the group's tag ("auto-…",
-        // "proxy-2"), a label about the group, not the server.
-        val soloNames = HashMap<String, String>()
-        for (bundle in bundles) {
-            if (bundle.entries.size == 1) {
-                val (tag, profile) = bundle.entries.first()
-                soloNames.putIfAbsent(profile.computeLinkKey(), bundle.prefix.ifEmpty { tag })
-            }
-        }
-        val seen = HashSet<String>()
+        // The list runs in the panel's own order — the configs as they come, a group row
+        // standing where its config stands, its internals riding behind it hidden.
+        //
+        // The panel's own semantics, BetterExclave's: an array element IS one profile —
+        // named by its "remarks" — and when that element's routing carries a surviving
+        // balancer, its outbounds are the balancer's internals, not servers to show:
+        // they are stored hidden (the balancer's members resolve by linkKey, and a solo
+        // config naming the same server un-hides its row) and only the group row stands.
+        // A server filed away hidden that a later config presents on its own is un-hidden
+        // in place, named by that config — the group's tag is a label about the group,
+        // not the server.
         val seenBalancers = HashSet<String>()
+        val emitted = HashMap<String, Int>()
         val profiles = ArrayList<ProfileEntity>()
         for (bundle in bundles) {
-            if (bundle.entries.size == 1) {
-                val (tag, profile) = bundle.entries.first()
+            val balancers = balancersOf(bundle)
+            for (balancer in balancers) {
+                if (seenBalancers.add(balancer.computeLinkKey())) {
+                    profiles.add(balancer.copy(routingRules = bundle.routingRules))
+                }
+            }
+            val internal = balancers.isNotEmpty()
+            // BetterExclave's naming: one proxy in the config takes the remarks alone —
+            // six configs would otherwise show as six "proxy" rows — more ride the
+            // remarks and the tag together.
+            val singleProxy = bundle.entries.size == 1
+            for ((tag, profile) in bundle.entries) {
                 val key = profile.computeLinkKey()
-                if (seen.add(key)) {
-                    val named = profile.copy(
-                        remarks = soloNames[key] ?: bundle.prefix.ifEmpty { tag },
-                        routingRules = bundle.routingRules,
-                    )
-                    profiles.add(named)
-                }
-            } else if (bundle.entries.size > 1) {
-                for (balancer in balancersOf(bundle)) {
-                    if (seenBalancers.add(balancer.computeLinkKey())) {
-                        profiles.add(balancer.copy(routingRules = bundle.routingRules))
+                val index = emitted[key]
+                if (index == null) {
+                    val name = when {
+                        singleProxy -> bundle.prefix.ifEmpty { tag }
+                        bundle.prefix.isNotEmpty() && tag.isNotEmpty() -> "${bundle.prefix} $tag"
+                        else -> tag
                     }
-                }
-                for ((_, profile) in bundle.entries) {
-                    val key = profile.computeLinkKey()
-                    if (seen.add(key)) {
-                        profiles.add(
-                            profile.copy(
-                                remarks = soloNames[key] ?: profile.remarks,
-                                routingRules = bundle.routingRules,
-                            )
+                    emitted[key] = profiles.size
+                    profiles.add(
+                        profile.copy(
+                            remarks = name,
+                            routingRules = bundle.routingRules,
+                            hidden = internal,
+                        )
+                    )
+                } else if (!internal) {
+                    val filed = profiles[index]
+                    if (filed.hidden) {
+                        profiles[index] = filed.copy(
+                            hidden = false,
+                            remarks = bundle.prefix.ifEmpty { tag },
+                            routingRules = bundle.routingRules,
                         )
                     }
                 }

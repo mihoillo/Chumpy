@@ -255,14 +255,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             selectedSubscriptionId
                 .flatMapLatest { id ->
-                    // Balancers and their members stand together: the balancer is the
-                    // panel's pick-over-servers, the servers it picks between are still
-                    // the user's to choose by hand — hiding the members made whole
-                    // subscriptions collapse to their balancer rows (the members ARE
-                    // every server, in the pick-everything group most panels ship).
+                    // The balancer's internals — the outbounds of a config whose routing
+                    // carries a surviving balancer — stay in the store (the balancer's
+                    // members resolve by linkKey at connect) but never stand in the
+                    // list: they are the group's plumbing, its parameters, not servers
+                    // to pick from. A config presenting the same server on its own
+                    // un-hides the row on the parser's side.
                     // The standalone group's id is a label for the manual profiles' null
                     // bucket.
                     repository.profilesOf(id?.takeUnless { it == STANDALONE_SUBSCRIPTION_ID })
+                        .map { rows -> rows.filterNot { it.hidden } }
                 }
                 .combine(connection) { profiles, conn ->
                     val selected = profiles.firstOrNull { it.id == conn.selectedProfileId }

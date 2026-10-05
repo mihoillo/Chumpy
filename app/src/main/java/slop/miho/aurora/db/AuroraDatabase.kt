@@ -77,7 +77,7 @@ abstract class ProfileDao {
  */
 @Database(
     entities = [SubscriptionEntity::class, ProfileEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AuroraDatabase : RoomDatabase() {
@@ -130,6 +130,16 @@ abstract class AuroraDatabase : RoomDatabase() {
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE profiles ADD COLUMN routingRules TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * v5: the hidden flag — an aggregator config's outbounds are the balancer's
+         * internals, stored but never listed.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE profiles ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
             }
         }
     }
