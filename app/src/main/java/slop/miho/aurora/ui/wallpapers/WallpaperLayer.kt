@@ -40,6 +40,7 @@ import slop.miho.aurora.core.TunnelState
 import slop.miho.aurora.data.DimTone
 import slop.miho.aurora.data.WallpaperPalette
 import slop.miho.aurora.data.WallpaperRegistry
+import slop.miho.aurora.ui.theme.LocalDarkTheme
 import slop.miho.aurora.ui.theme.LocalUiSettings
 import slop.miho.aurora.ui.theme.backdropScheme
 import java.io.File
@@ -300,6 +301,27 @@ internal fun scrimColor(tone: DimTone): Color {
         DimTone.LIGHT -> lightSurface
         DimTone.DARK -> darkSurface
     }
+}
+
+/**
+ * The darkness side of the bare text's scheme over the wallpaper. Wherever the backdrop's
+ * light follows the theme — no picture at all, or the scrim tone on auto — the text follows
+ * it too. A pinned tone anchors the look instead: the dimmed picture pays no attention to
+ * theme flips, and the text now matches it, taking the tone's own side and staying there.
+ * The user's own flip ([UiSettings.wallpaperTextDark], tapped on the wallpapers preview)
+ * still applies on top of whichever base, and being the opposite of it, a tap always lands
+ * on visibly different colors whatever the theme or the tone.
+ */
+@Composable
+internal fun wallpaperBareTextDark(): Boolean {
+    val settings = LocalUiSettings.current
+    val base = when {
+        !LocalHasWallpaper.current -> LocalDarkTheme.current
+        settings.wallpaperDimTone == DimTone.AUTO -> LocalDarkTheme.current
+        settings.wallpaperDimTone == DimTone.LIGHT -> false
+        else -> true
+    }
+    return settings.wallpaperTextDark != base
 }
 
 /** Decodes the picked image, downscaled so a camera shot doesn't eat memory.

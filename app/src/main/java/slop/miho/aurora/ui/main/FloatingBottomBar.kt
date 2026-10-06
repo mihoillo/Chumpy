@@ -86,7 +86,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import slop.miho.aurora.R
-import slop.miho.aurora.ui.theme.LocalDarkTheme
 import slop.miho.aurora.ui.theme.LocalUiSettings
 import slop.miho.aurora.ui.theme.backdropScheme
 import slop.miho.aurora.ui.wallpapers.LocalBarCanFade
@@ -95,6 +94,7 @@ import slop.miho.aurora.ui.wallpapers.LocalBarUnderlay
 import slop.miho.aurora.ui.wallpapers.LocalHasWallpaper
 import slop.miho.aurora.ui.wallpapers.scrimColor
 import slop.miho.aurora.ui.wallpapers.LocalSurfaceOpacity
+import slop.miho.aurora.ui.wallpapers.wallpaperBareTextDark
 
 private val BarHeight = 64.dp
 private val BarVerticalPadding = 12.dp
@@ -523,16 +523,14 @@ private fun RowScope.ClassicBarButton(
 }
 
 /**
- * The classic bar's item colors on Home: no indicator, and the roles Home's bare text wears —
- * the theme's own scheme until the user flips the text, the one opposite to it after (the
- * flip is a tap on the preview's text, and it must change the color whatever the theme).
- * The active item takes the title's primary, the rest the greeting's quieter variant.
+ * The classic bar's item colors on Home: no indicator, and the roles Home's bare text wears
+ * (see [wallpaperBareTextDark] — the theme's side wherever the backdrop follows it, a pinned
+ * tone's own side otherwise, the user's flip the opposite of either). The active item takes
+ * the title's primary, the rest the greeting's quieter variant.
  */
 @Composable
 private fun homeBarItemColors(): NavigationBarItemColors {
-    val scheme = backdropScheme(
-        darkTheme = LocalUiSettings.current.wallpaperTextDark != LocalDarkTheme.current,
-    )
+    val scheme = backdropScheme(darkTheme = wallpaperBareTextDark())
     return NavigationBarItemDefaults.colors(
         selectedIconColor = scheme.primary,
         selectedTextColor = scheme.primary,

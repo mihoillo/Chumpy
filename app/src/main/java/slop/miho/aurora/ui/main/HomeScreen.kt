@@ -93,10 +93,10 @@ import slop.miho.aurora.data.UiSettings
 import slop.miho.aurora.data.Accent
 import slop.miho.aurora.data.FlagStyle
 import slop.miho.aurora.ui.theme.AuroraTheme
-import slop.miho.aurora.ui.theme.LocalDarkTheme
 import slop.miho.aurora.ui.theme.LocalUiSettings
 import slop.miho.aurora.ui.theme.backdropScheme
 import slop.miho.aurora.ui.wallpapers.ReportBarCoverage
+import slop.miho.aurora.ui.wallpapers.wallpaperBareTextDark
 import slop.miho.aurora.ui.wallpapers.withSurfaceOpacity
 import java.util.Calendar
 import kotlin.math.PI
@@ -155,12 +155,10 @@ fun HomeScreen(
     // Text lying bare on the background — the title and the greeting, the cards are exempt —
     // recolors into the backdrop scheme's own roles, but only when the user says so: the flip
     // is theirs, tapped on the wallpapers preview, never an automatic too-dark guess. The
-    // flipped look is the scheme opposite to the theme the app is in — the dark one over a
-    // light app, the light one over a dark app — so the tap always lands on visibly
-    // different colors; picking the dark scheme outright would change nothing in a dark app.
-    val textScheme = backdropScheme(
-        darkTheme = LocalUiSettings.current.wallpaperTextDark != LocalDarkTheme.current,
-    )
+    // base is the theme wherever the backdrop's light follows it — no picture, or the scrim
+    // tone on auto — but a pinned tone anchors the look: the text takes the tone's own side
+    // and stays there through theme flips, as the dimmed picture behind it does.
+    val textScheme = backdropScheme(darkTheme = wallpaperBareTextDark())
     val titleColor by animateColorAsState(
         targetValue = textScheme.primary,
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),

@@ -434,7 +434,6 @@ fun WallpaperScreen(
                             wallpaperSelected = wallpaperSelected,
                             importError = importError,
                             dim = settings.wallpaperDim,
-                            textDark = settings.wallpaperTextDark,
                             onToggleText = {
                                 onSettings { it.copy(wallpaperTextDark = !it.wallpaperTextDark) }
                             },
@@ -609,7 +608,6 @@ private fun WallpaperPreviewPage(
     wallpaperSelected: Boolean,
     importError: String?,
     dim: Float,
-    textDark: Boolean,
     onToggleText: () -> Unit,
     onDim: (Float) -> Unit,
     onPick: () -> Unit,
@@ -617,14 +615,13 @@ private fun WallpaperPreviewPage(
 ) {
     val colors = MaterialTheme.colorScheme
     // Text lying bare on the background — the title and the greeting, the cards are exempt —
-    // recolors into the backdrop scheme's own roles when the user flips it by tapping the text
-    // right here: no automatic too-dark guess, the choice is theirs. The flipped look is the
-    // scheme opposite to the theme the app is in, so the tap always visibly changes the color
-    // — the dark scheme outright would be a no-op in a dark app. The flip itself works only
-    // on this page — the same text on the home screen just reads.
-    val textScheme = backdropScheme(
-        darkTheme = textDark != LocalDarkTheme.current,
-    )
+    // recolors into the backdrop scheme's own roles when the user flips it by tapping the
+    // text right here: no automatic too-dark guess, the choice is theirs. The base is the
+    // one the home screen's own bare text wears (see wallpaperBareTextDark) — the theme
+    // wherever the backdrop follows it, a pinned tone's own side otherwise — so what this
+    // preview shows is exactly what Home will. The flip itself works only on this page —
+    // the same text on the home screen just reads.
+    val textScheme = backdropScheme(darkTheme = wallpaperBareTextDark())
     val motion = MaterialTheme.motionScheme
     val titleColor by animateColorAsState(
         targetValue = textScheme.primary,
