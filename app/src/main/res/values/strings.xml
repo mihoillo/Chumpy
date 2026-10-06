@@ -134,7 +134,7 @@
     <string name="settings_wallpapers">Wallpapers</string>
     <string name="settings_wallpapers_hint">The backdrop behind the app</string>
     <string name="settings_navbar_blur">Navigation bar blur</string>
-    <string name="settings_navbar_blur_hint">Away from Home the bar frosts whatever is behind it</string>
+    <string name="settings_navbar_blur_hint">The bar frosts whatever is behind it</string>
     <string name="settings_navbar_blur_intensity">How dense and blurry the bar gets</string>
     <string name="settings_classic_navbar">Classic navigation bar</string>
     <string name="settings_classic_navbar_hint">A full-width bar along the bottom instead of floating pills</string>

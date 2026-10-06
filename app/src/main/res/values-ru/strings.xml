@@ -117,7 +117,7 @@
     <string name="settings_accent_mono">Монохром</string>
     <string name="settings_accent_rainbow">Радужный</string>
     <string name="settings_slow_animations">Медленные анимации</string>
-    <string name="settings_slow_animations_hint">Пружины мягче, всё движется неторопливее</string>
+    <string name="settings_slow_animations_hint">Движения становятся плавнее, слегка пружинее</string>
     <string name="settings_simple_transitions">Простые переходы</string>
     <string name="settings_simple_transitions_hint">Лучше для слабых устройств</string>
     <string name="settings_haptic_feedback">Виброотклик</string>
@@ -131,8 +131,8 @@
     <string name="settings_icon_themed">Тематическая</string>
     <string name="settings_wallpapers">Обои</string>
     <string name="settings_wallpapers_hint">Фон позади приложения</string>
-    <string name="settings_navbar_blur">Размытие панели навигации</string>
-    <string name="settings_navbar_blur_hint">Вдали от Главной панель матирует то, что позади неё</string>
+    <string name="settings_navbar_blur">Размытие навигационной панели</string>
+    <string name="settings_navbar_blur_hint">Делает панель более стеклянной</string>
     <string name="settings_navbar_blur_intensity">Насколько плотной и размытой становится панель</string>
     <string name="settings_classic_navbar">Классическая панель навигации</string>
     <string name="settings_classic_navbar_hint">Полная полоса внизу вместо плавающих пилюль</string>
@@ -171,8 +171,8 @@
     </plurals>
     <string name="trusted_stand_down">Доверенная сеть — трафик идёт напрямую</string>
     <string name="connection_auto_reconnect">Автопереподключение</string>
-    <string name="connection_auto_reconnect_on">Туннель сам возвращается, где бы ни упал</string>
-    <string name="connection_auto_reconnect_off">Упав, туннель ждёт кнопки «Переподключить» в уведомлении</string>
+    <string name="connection_auto_reconnect_on">Туннель сам поднимается, где бы ни упал</string>
+    <string name="connection_auto_reconnect_off">Когда туннель упадёт, мы просто отправим уведомление</string>
     <string name="trusted_permission_title">Доступ к местоположению</string>
     <string name="trusted_permission_text">Android показывает названия Wi-Fi только приложениям с доступом к местоположению. Предоставьте его, чтобы выбрать текущую сеть; добавленные вручную сети видны и без него.</string>
     <string name="trusted_permission_grant">Предоставить доступ</string>
@@ -211,20 +211,20 @@
     <string name="wallpapers_title">Предпросмотр обоев</string>
     <string name="wallpapers_greeting">Ну как ощущается?</string>
     <string name="wallpapers_greeting_empty">Самое время выбрать обои!</string>
-    <string name="wallpapers_pick">Выбрать изображение обоев</string>
+    <string name="wallpapers_pick">Выберите изображение</string>
     <string name="wallpapers_pick_change">Сменить изображение обоев</string>
     <string name="wallpapers_delete">Убрать обои</string>
     <string name="wallpapers_move_hint">Удерживайте обои, чтобы переместить их</string>
     <string name="wallpapers_text_hint">Нажмите на текст, чтобы сменить его цвет</string>
     <string name="wallpapers_done">Готово</string>
     <string name="wallpapers_dim_tone">Цвет затемнения</string>
-    <string name="wallpapers_dim_tone_hint">Оттенок шторки поверх обоев</string>
-    <string name="wallpapers_blur_hint">Насколько обои размываются вдали от Главной</string>
+    <string name="wallpapers_dim_tone_hint">Оттенок затемнения обоев</string>
+    <string name="wallpapers_blur_hint">Сила размытия обоев вне Главной</string>
     <string name="wallpapers_opacity_hint">Насколько прозрачны карточки и меню</string>
-    <string name="wallpapers_zoom">Масштаб обоев</string>
-    <string name="wallpapers_zoom_hint">Обои слегка отдаляются от Главной и возвращаются обратно</string>
+    <string name="wallpapers_zoom">Сдвиг обоев</string>
+    <string name="wallpapers_zoom_hint">Обои слегка сдвигаются, когда уходите с Главной</string>
     <string name="wallpapers_grayscale">Чёрно-белые при отключении</string>
-    <string name="wallpapers_grayscale_hint">Пока VPN выключен, обои теряют цвет</string>
+    <string name="wallpapers_grayscale_hint">Пока туннель отключён, обои становятся монохромными</string>
     <string name="wallpapers_import_failed">Не удалось установить обои: %1$s</string>
     <string name="wallpapers_import_not_image">файл не является изображением</string>
     <string name="wallpapers_import_too_large">изображение слишком большое</string>
