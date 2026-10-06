@@ -68,9 +68,9 @@
     <string name="subscription_unlimited">безлимит</string>
     <string name="subscription_updated_at">Обновлена в %1$s</string>
     <string name="subscription_updated_ago">Обновлена %1$s назад</string>
-    <string name="subscription_delete_title">Удалить эту подписку?</string>
-    <string name="subscription_delete_text">«%1$s» и все её серверы будут удалены из Aurora.</string>
-    <string name="subscription_delete_confirm">Удалить</string>
+    <string name="config_delete_title">Удалить этот конфиг?</string>
+    <string name="config_delete_text">«%1$s» будет удалён из Aurora.</string>
+    <string name="config_delete_confirm">Удалить</string>
 
     <string name="happ_title">Маскировка под Happ</string>
     <string name="happ_active">Включено</string>

@@ -68,9 +68,9 @@
     <string name="subscription_unlimited">unlimited</string>
     <string name="subscription_updated_at">Updated at %1$s</string>
     <string name="subscription_updated_ago">Updated %1$s ago</string>
-    <string name="subscription_delete_title">Delete this subscription?</string>
-    <string name="subscription_delete_text">\"%1$s\" and all of its servers will be removed from Aurora.</string>
-    <string name="subscription_delete_confirm">Delete</string>
+    <string name="config_delete_title">Delete this config?</string>
+    <string name="config_delete_text">\"%1$s\" will be removed from Aurora.</string>
+    <string name="config_delete_confirm">Delete</string>
 
     <string name="happ_title">Spoof as Happ</string>
     <string name="happ_active">Enabled</string>

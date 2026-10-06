@@ -115,7 +115,6 @@ import slop.miho.aurora.ui.components.PrideFlagIcon
 import slop.miho.aurora.ui.components.SubmitFieldRow
 import slop.miho.aurora.ui.components.splitLeadingFlag
 import slop.miho.aurora.ui.components.splitLeadingPrideFlag
-import slop.miho.aurora.ui.components.rememberHapticDeniedKicks
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.components.rememberHapticSoftPoke
 import slop.miho.aurora.ui.components.WavyPullToRefreshBox
@@ -147,7 +146,7 @@ fun ServersScreen(
     onPing: () -> Unit,
     onSelectSubscription: (String) -> Unit,
     onAddSubscription: (url: String, name: String?, onDone: (String?) -> Unit) -> Unit,
-    onDeleteSubscription: (String) -> Unit,
+    onDeleteManualProfile: (String) -> Unit,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -166,7 +165,7 @@ fun ServersScreen(
     }
 
     // One dialog at a time: the delete question a long press on a subscription row asks.
-    var deleteTarget by remember { mutableStateOf<SubscriptionEntity?>(null) }
+    var configDeleteTarget by remember { mutableStateOf<ProfileEntity?>(null) }
 
     // Rows sit under the floating bar while the list outgrows the screen.
     val listState = rememberLazyListState()
@@ -253,7 +252,6 @@ fun ServersScreen(
                                     dropdownOpen = false
                                     if (id != selectedSubscription?.id) onSelectSubscription(id)
                                 },
-                                onDeleteRequest = { deleteTarget = it },
                             )
                         }
                     }
@@ -271,6 +269,7 @@ fun ServersScreen(
                                 flagStyle = flagStyle,
                                 tunnelUp = tunnelUp,
                                 onSelect = onSelect,
+                                onDelete = { configDeleteTarget = it },
                             )
                         }
                         // The catcher over the out-of-play list: no ripple, no press —
@@ -294,14 +293,14 @@ fun ServersScreen(
         }
     }
 
-    deleteTarget?.let { subscription ->
-        DeleteSubscriptionDialog(
-            subscription = subscription,
+    configDeleteTarget?.let { profile ->
+        DeleteConfigDialog(
+            profile = profile,
             onConfirm = {
-                onDeleteSubscription(subscription.id)
-                deleteTarget = null
+                onDeleteManualProfile(profile.id)
+                configDeleteTarget = null
             },
-            onDismiss = { deleteTarget = null },
+            onDismiss = { configDeleteTarget = null },
         )
     }
 }
@@ -768,8 +767,7 @@ private fun UpdateButton(
  * The unfolded subscription list: one row per subscription — the servers' own segmented
  * container, Surface подложки, cookie-marked pick and all — with the "add subscription"
  * row closing the list off, one of the rows itself, its icon on the square backing the
- * card's tile wears. A long press on a row asks the heavier question: deleting that
- * subscription and everything it brought in.
+ * card's tile wears. The rows only switch: the delete question is not asked here.
  */
 @Composable
 private fun SubscriptionDropdown(
@@ -783,7 +781,6 @@ private fun SubscriptionDropdown(
     onAddUrlChange: (String) -> Unit,
     onAdd: (url: String, onDone: (String?) -> Unit) -> Unit,
     onSelect: (String) -> Unit,
-    onDeleteRequest: (SubscriptionEntity) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -853,7 +850,6 @@ private fun SubscriptionDropdown(
                     R.drawable.ic_database
                 },
                 onClick = { onSelect(subscription.id) },
-                onLongClick = { onDeleteRequest(subscription) },
                 shape = RoundedCornerShape(
                     topStart = if (first) outerTop else innerTop,
                     topEnd = if (first) outerTop else innerTop,
@@ -1137,10 +1133,9 @@ private fun AddSubscriptionRow(
  * One subscription in the unfolded list: the server row's own anatomy, copied — the
  * [Surface] подложка with the segmented shape, the [ListItem] inside it, the 40dp
  * leading tile whose round backdrop morphs into the pick's cookie, the name and the
- * update stamp in the headline, what the panel reports in the supporting slot. A long
- * press is the delete question.
+ * update stamp in the headline, what the panel reports in the supporting slot. A tap
+ * switches, nothing more — the delete question is not this row's to ask.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SubscriptionRow(
     subscription: SubscriptionEntity,
@@ -1148,13 +1143,11 @@ private fun SubscriptionRow(
     week: List<DailyTraffic>,
     icon: Int,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
     shape: Shape,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
-    val kicks = rememberHapticDeniedKicks()
     val containerColor by animateColorAsState(
         targetValue = (if (selected) colors.primaryContainer else colors.surfaceContainer)
             .copy(alpha = LocalSurfaceOpacity.current),
@@ -1195,17 +1188,12 @@ private fun SubscriptionRow(
                 // one even block, no short planks in the middle of it.
                 .heightIn(min = 72.dp)
                 .clip(shape)
-                .combinedClickable(
+                .clickable(
                     role = Role.Button,
-                    onClick = {
-                        poke()
-                        onClick()
-                    },
-                    onLongClick = {
-                        kicks()
-                        onLongClick()
-                    },
-                ),
+                ) {
+                    poke()
+                    onClick()
+                },
             headlineContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -1548,6 +1536,7 @@ private fun ServerGroup(
     flagStyle: FlagStyle,
     tunnelUp: Boolean,
     onSelect: (String) -> Unit,
+    onDelete: (ProfileEntity) -> Unit,
 ) {
     if (profiles.isEmpty()) {
         ServersEmpty()
@@ -1562,6 +1551,14 @@ private fun ServerGroup(
                     flagStyle = flagStyle,
                     tunnelUp = tunnelUp,
                     onSelect = { onSelect(profile.id) },
+                    // The delete question belongs to the loose configs alone — their own
+                    // row is the only thing that owns them. A subscription's servers
+                    // answer to the subscription itself, and this row is not their place.
+                    onLongClick = if (profile.subscriptionId == null) {
+                        { onDelete(profile) }
+                    } else {
+                        null
+                    },
                     shape = shape,
                 )
             }
@@ -1621,8 +1618,10 @@ private fun ServersEmpty() {
  * One server row: the remark as the headline, the endpoint and protocol in the supporting
  * line, the last real ping after the name — the accent from [HIGH_PING_MILLIS] on — and the
  * spinning cookie marking the pick. Selectable at any time, tunnel or not; a tap that lands
- * while the tunnel is up swaps the server in place.
+ * while the tunnel is up swaps the server in place. A long press asks the delete question,
+ * and only a loose config's row ever gets one — the rest belong to their subscription.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ServerRow(
     profile: ProfileEntity,
@@ -1630,6 +1629,7 @@ private fun ServerRow(
     flagStyle: FlagStyle,
     tunnelUp: Boolean,
     onSelect: () -> Unit,
+    onLongClick: (() -> Unit)?,
     shape: Shape,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -1711,18 +1711,28 @@ private fun ServerRow(
     }
 
     Surface(
-        onClick = {
-            if (!selected) {
-                poke()
-                onSelect()
-            }
-        },
         shape = shape,
         color = containerColor,
         contentColor = contentColor,
         modifier = Modifier.fillMaxWidth(),
     ) {
         ListItem(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = {
+                        if (!selected) {
+                            poke()
+                            onSelect()
+                        }
+                    },
+                    onLongClick = {
+                        poke()
+                        onLongClick?.invoke()
+                    },
+                ),
             headlineContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -1840,7 +1850,6 @@ private fun ServerRow(
                 trailingIconColor = supportingColor,
             ),
             tonalElevation = 0.dp,
-            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -1872,13 +1881,13 @@ private fun balancerStrategyLabel(profile: ProfileEntity): String = when (profil
 }
 
 /**
- * The delete confirmation — the question a subscription row's long press asks before doing
+ * The delete confirmation — the question a loose config's row long press asks before doing
  * the one thing there is no coming back from. The confirm button carries the error color,
  * MD3's way of marking a destructive action.
  */
 @Composable
-private fun DeleteSubscriptionDialog(
-    subscription: SubscriptionEntity,
+private fun DeleteConfigDialog(
+    profile: ProfileEntity,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -1892,13 +1901,12 @@ private fun DeleteSubscriptionDialog(
                 tint = colors.error,
             )
         },
-        title = { Text(stringResource(R.string.subscription_delete_title)) },
+        title = { Text(stringResource(R.string.config_delete_title)) },
         text = {
             Text(
                 stringResource(
-                    R.string.subscription_delete_text,
-                    subscription.name.takeIf { it.isNotBlank() }
-                        ?: stringResource(R.string.subscription_none),
+                    R.string.config_delete_text,
+                    profile.remarks.takeIf { it.isNotBlank() } ?: profile.server,
                 ),
             )
         },
@@ -1907,7 +1915,7 @@ private fun DeleteSubscriptionDialog(
                 onClick = onConfirm,
                 colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
             ) {
-                Text(stringResource(R.string.subscription_delete_confirm))
+                Text(stringResource(R.string.config_delete_confirm))
             }
         },
         dismissButton = {

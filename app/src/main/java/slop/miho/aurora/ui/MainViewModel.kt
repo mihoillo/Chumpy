@@ -518,6 +518,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Deletes one loose config — the row's own long press asks for it. The pick clears
+     * with the row if it pointed there; the rest of the group stands.
+     */
+    fun deleteManualProfile(id: String) {
+        viewModelScope.launch {
+            repository.deleteManualProfile(id)
+            if (connection.value.selectedProfileId == id) {
+                ConnectionStore.update(app) { it.copy(selectedProfileId = null) }
+            }
+        }
+    }
+
     /** Switches the servers screen to another subscription. */
     fun selectSubscription(id: String) {
         if (selectedSubscriptionId.value == id) return

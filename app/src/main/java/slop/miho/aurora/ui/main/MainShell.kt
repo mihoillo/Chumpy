@@ -269,7 +269,7 @@ fun MainShell(viewModel: MainViewModel) {
             onUpdateSubscription = viewModel::updateSelectedSubscription,
             onSelectSubscription = viewModel::selectSubscription,
             onAddSubscription = viewModel::addSubscription,
-            onDeleteSubscription = viewModel::deleteSubscription,
+            onDeleteManualProfile = viewModel::deleteManualProfile,
             onToggleAutoUpdate = viewModel::setSubscriptionAutoUpdate,
             onSelect = viewModel::selectProfile,
             onConnect = {
@@ -396,7 +396,7 @@ private fun MainPagerStrip(
     onUpdateSubscription: () -> Unit,
     onSelectSubscription: (String) -> Unit,
     onAddSubscription: (url: String, name: String?, onDone: (String?) -> Unit) -> Unit,
-    onDeleteSubscription: (String) -> Unit,
+    onDeleteManualProfile: (String) -> Unit,
     onToggleAutoUpdate: (String, Boolean) -> Unit,
     onSelect: (String) -> Unit,
     onConnect: () -> Unit,
@@ -480,7 +480,7 @@ private fun MainPagerStrip(
                             onPing = onPingServers,
                             onSelectSubscription = onSelectSubscription,
                             onAddSubscription = onAddSubscription,
-                            onDeleteSubscription = onDeleteSubscription,
+                            onDeleteManualProfile = onDeleteManualProfile,
                             onSelect = onSelect,
                         )
                     }
