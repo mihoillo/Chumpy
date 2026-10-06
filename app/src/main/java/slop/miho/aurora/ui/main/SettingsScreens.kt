@@ -2057,9 +2057,11 @@ private fun OutgoingRow(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
             ) {
+                // The leaving goes first: the vibrator's binder call can sit on slow
+                // ROMs for a good while, and the handoff must never wait behind it.
+                onClick()
                 poke()
                 taps++
-                onClick()
             }
             .padding(horizontal = 16.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),

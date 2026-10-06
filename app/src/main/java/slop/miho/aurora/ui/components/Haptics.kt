@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import slop.miho.aurora.ui.theme.LocalUiSettings
@@ -19,17 +20,23 @@ import slop.miho.aurora.ui.theme.LocalUiSettings
  * tap-sized buzz (virtual key) or barely felt (the tick family), while a pulse this short
  * stays a crisp poke. Fired from click handlers, not press state — on a quick tap the press
  * state can flip up and down within a single frame and never be observed.
+ *
+ * The pulse leaves the main thread: the vibrator's binder call can sit on slow ROMs for a
+ * good while, and no tap's ripple — or launch it triggers — should freeze behind it.
  */
 @Composable
 fun rememberHapticPoke(): () -> Unit {
     val vibrator = LocalContext.current.getSystemService(Vibrator::class.java)
     val enabled = LocalUiSettings.current.hapticFeedback
+    val scope = rememberCoroutineScope()
     return remember(vibrator, enabled) {
         {
             if (enabled && vibrator?.hasVibrator() == true) {
-                vibrator.vibrate(
-                    VibrationEffect.createOneShot(POKE_MILLIS, VibrationEffect.DEFAULT_AMPLITUDE),
-                )
+                scope.launch(Dispatchers.Default) {
+                    vibrator.vibrate(
+                        VibrationEffect.createOneShot(POKE_MILLIS, VibrationEffect.DEFAULT_AMPLITUDE),
+                    )
+                }
             }
         }
     }
@@ -46,14 +53,17 @@ fun rememberHapticPoke(): () -> Unit {
 fun rememberHapticSoftPoke(): () -> Unit {
     val vibrator = LocalContext.current.getSystemService(Vibrator::class.java)
     val enabled = LocalUiSettings.current.hapticFeedback
+    val scope = rememberCoroutineScope()
     return remember(vibrator, enabled) {
         {
             if (enabled && vibrator?.hasVibrator() == true) {
                 val amplitude = if (vibrator.hasAmplitudeControl()) SOFT_POKE_AMPLITUDE
                 else VibrationEffect.DEFAULT_AMPLITUDE
-                vibrator.vibrate(
-                    VibrationEffect.createOneShot(POKE_MILLIS, amplitude),
-                )
+                scope.launch(Dispatchers.Default) {
+                    vibrator.vibrate(
+                        VibrationEffect.createOneShot(POKE_MILLIS, amplitude),
+                    )
+                }
             }
         }
     }
