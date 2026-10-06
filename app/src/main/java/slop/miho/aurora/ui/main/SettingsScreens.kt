@@ -320,10 +320,10 @@ fun InterfaceScreen(
                     ToggleRow(
                         title = stringResource(R.string.settings_slow_animations),
                         supporting = stringResource(R.string.settings_slow_animations_hint),
-                        // Low speedometer while on, the plain one while off: normal or slow,
-                        // nothing faster.
+                        // The speedometer with a 2 while on (every animation takes twice as
+                        // long), the plain one while off: normal or slow, nothing faster.
                         icon = if (settings.slowAnimations) {
-                            R.drawable.ic_speed_slow
+                            R.drawable.ic_speed_2
                         } else {
                             R.drawable.ic_speed_normal
                         },
@@ -1023,7 +1023,7 @@ fun ConnectionScreen(
                             connection.trustedWifiSsids.size,
                         )
                     },
-                    icon = R.drawable.ic_wifi,
+                    icon = R.drawable.ic_leak_add,
                     target = slop.miho.aurora.ui.perapp.PerAppProxyActivity::class.java,
                     configureIntent = {
                         putExtra(

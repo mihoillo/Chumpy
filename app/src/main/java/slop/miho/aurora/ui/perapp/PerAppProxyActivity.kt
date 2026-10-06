@@ -185,7 +185,7 @@ class PerAppProxyActivity : ComponentActivity() {
 /** The bar's destinations: the apps page and the networks page, one quick switch apart. */
 private enum class PerAppPage(override val icon: Int, override val label: Int) : PillDestination {
     APPS(R.drawable.ic_apps, R.string.per_app_title),
-    NETWORKS(R.drawable.ic_wifi, R.string.trusted_title),
+    NETWORKS(R.drawable.ic_leak_add, R.string.trusted_title),
 }
 
 /** One launchable app, icon included, loaded off the main thread. */
