@@ -190,6 +190,7 @@
     <string name="settings_about_core_not_running">остановлено</string>
     <string name="settings_about_version">Версия</string>
     <string name="settings_about_build_date">Дата сборки</string>
+    <string name="settings_about_language">Язык</string>
     <string name="settings_about_tagline">Xray-клиент, обёрнутый в Material 3 Expressive</string>
     <string name="settings_about_telegram">Телеграм-канал</string>
     <string name="settings_about_github">GitHub</string>

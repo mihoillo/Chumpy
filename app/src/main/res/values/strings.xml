@@ -188,6 +188,7 @@
     <string name="settings_about_core_not_running">stopped</string>
     <string name="settings_about_version">Version</string>
     <string name="settings_about_build_date">Build date</string>
+    <string name="settings_about_language">Language</string>
     <string name="settings_about_tagline">An Xray client wrapped in Material 3 Expressive</string>
     <string name="settings_about_telegram">Telegram channel</string>
     <string name="settings_about_telegram_handle">t.me/AuroraFragments</string>

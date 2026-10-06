@@ -2,6 +2,8 @@ package slop.miho.aurora.ui.main
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
@@ -85,6 +87,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -1953,6 +1956,19 @@ fun AboutScreen(
 
         Spacer(Modifier.height(16.dp))
 
+        // The system's own per-app language sheet — the one place a language is picked,
+        // on every screen it can be picked from. Below Android 13 the sheet doesn't
+        // exist and the row stays out with it.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            SettingsGroup(
+                {
+                    LanguageRow()
+                },
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
         SettingsGroup(
             {
                 ExternalLinkRow(
@@ -1988,6 +2004,46 @@ private fun ExternalLinkRow(
     url: String,
 ) {
     val context = LocalContext.current
+    OutgoingRow(
+        title = title,
+        supporting = supporting,
+        icon = icon,
+    ) {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+}
+
+/**
+ * The language row: the app's own current language named in its own words (English,
+ * Русский), the tap handing the choice over to the system's per-app language sheet —
+ * the app keeps no language setting of its own to drift out of step with it.
+ */
+@Composable
+private fun LanguageRow() {
+    val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
+    OutgoingRow(
+        title = stringResource(R.string.settings_about_language),
+        supporting = locale.getDisplayName(locale),
+        icon = R.drawable.ic_language,
+    ) {
+        context.startActivity(
+            Intent(
+                Settings.ACTION_APP_LOCALE_SETTINGS,
+                Uri.fromParts("package", context.packageName, null),
+            ),
+        )
+    }
+}
+
+/** The shared body of the rows that leave the app somewhere on their tap. */
+@Composable
+private fun OutgoingRow(
+    title: String,
+    supporting: String,
+    icon: Int,
+    onClick: () -> Unit,
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val poke = rememberHapticPoke()
@@ -2003,7 +2059,7 @@ private fun ExternalLinkRow(
             ) {
                 poke()
                 taps++
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                onClick()
             }
             .padding(horizontal = 16.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
