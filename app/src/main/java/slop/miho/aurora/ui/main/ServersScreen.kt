@@ -115,6 +115,7 @@ import slop.miho.aurora.ui.components.PrideFlagIcon
 import slop.miho.aurora.ui.components.SubmitFieldRow
 import slop.miho.aurora.ui.components.splitLeadingFlag
 import slop.miho.aurora.ui.components.splitLeadingPrideFlag
+import slop.miho.aurora.ui.components.rememberHapticDeniedKicks
 import slop.miho.aurora.ui.components.rememberHapticPoke
 import slop.miho.aurora.ui.components.rememberHapticSoftPoke
 import slop.miho.aurora.ui.components.WavyPullToRefreshBox
@@ -146,6 +147,7 @@ fun ServersScreen(
     onPing: () -> Unit,
     onSelectSubscription: (String) -> Unit,
     onAddSubscription: (url: String, name: String?, onDone: (String?) -> Unit) -> Unit,
+    onDeleteSubscription: (String) -> Unit,
     onDeleteManualProfile: (String) -> Unit,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -165,6 +167,7 @@ fun ServersScreen(
     }
 
     // One dialog at a time: the delete question a long press on a subscription row asks.
+    var deleteTarget by remember { mutableStateOf<SubscriptionEntity?>(null) }
     var configDeleteTarget by remember { mutableStateOf<ProfileEntity?>(null) }
 
     // Rows sit under the floating bar while the list outgrows the screen.
@@ -252,6 +255,7 @@ fun ServersScreen(
                                     dropdownOpen = false
                                     if (id != selectedSubscription?.id) onSelectSubscription(id)
                                 },
+                                onDeleteRequest = { deleteTarget = it },
                             )
                         }
                     }
@@ -301,6 +305,16 @@ fun ServersScreen(
                 configDeleteTarget = null
             },
             onDismiss = { configDeleteTarget = null },
+        )
+    }
+    deleteTarget?.let { subscription ->
+        DeleteSubscriptionDialog(
+            subscription = subscription,
+            onConfirm = {
+                onDeleteSubscription(subscription.id)
+                deleteTarget = null
+            },
+            onDismiss = { deleteTarget = null },
         )
     }
 }
@@ -767,7 +781,10 @@ private fun UpdateButton(
  * The unfolded subscription list: one row per subscription — the servers' own segmented
  * container, Surface подложки, cookie-marked pick and all — with the "add subscription"
  * row closing the list off, one of the rows itself, its icon on the square backing the
- * card's tile wears. The rows only switch: the delete question is not asked here.
+ * card's tile wears. A long press on a subscription's row asks the heavier question:
+ * deleting that subscription and everything it brought in. The loose configs' row asks
+ * nothing — it owns no subscription to delete, its members answer their own long press
+ * in the server list below.
  */
 @Composable
 private fun SubscriptionDropdown(
@@ -781,6 +798,7 @@ private fun SubscriptionDropdown(
     onAddUrlChange: (String) -> Unit,
     onAdd: (url: String, onDone: (String?) -> Unit) -> Unit,
     onSelect: (String) -> Unit,
+    onDeleteRequest: (SubscriptionEntity) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -850,6 +868,13 @@ private fun SubscriptionDropdown(
                     R.drawable.ic_database
                 },
                 onClick = { onSelect(subscription.id) },
+                // Only a real subscription's row carries the delete question; the loose
+                // configs' row has no subscription behind it to take with it.
+                onLongClick = if (subscription.id == STANDALONE_SUBSCRIPTION_ID) {
+                    null
+                } else {
+                    { onDeleteRequest(subscription) }
+                },
                 shape = RoundedCornerShape(
                     topStart = if (first) outerTop else innerTop,
                     topEnd = if (first) outerTop else innerTop,
@@ -1133,9 +1158,11 @@ private fun AddSubscriptionRow(
  * One subscription in the unfolded list: the server row's own anatomy, copied — the
  * [Surface] подложка with the segmented shape, the [ListItem] inside it, the 40dp
  * leading tile whose round backdrop morphs into the pick's cookie, the name and the
- * update stamp in the headline, what the panel reports in the supporting slot. A tap
- * switches, nothing more — the delete question is not this row's to ask.
+ * update stamp in the headline, what the panel reports in the supporting slot. A long
+ * press is the delete question — for the rows that carry one; the loose configs' row
+ * passes null and a press just falls through.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SubscriptionRow(
     subscription: SubscriptionEntity,
@@ -1143,11 +1170,13 @@ private fun SubscriptionRow(
     week: List<DailyTraffic>,
     icon: Int,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
     shape: Shape,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
+    val kicks = rememberHapticDeniedKicks()
     val containerColor by animateColorAsState(
         targetValue = (if (selected) colors.primaryContainer else colors.surfaceContainer)
             .copy(alpha = LocalSurfaceOpacity.current),
@@ -1188,12 +1217,19 @@ private fun SubscriptionRow(
                 // one even block, no short planks in the middle of it.
                 .heightIn(min = 72.dp)
                 .clip(shape)
-                .clickable(
+                .combinedClickable(
                     role = Role.Button,
-                ) {
-                    poke()
-                    onClick()
-                },
+                    onClick = {
+                        poke()
+                        onClick()
+                    },
+                    onLongClick = onLongClick?.let { handler ->
+                        {
+                            kicks()
+                            handler()
+                        }
+                    },
+                ),
             headlineContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -1916,6 +1952,53 @@ private fun DeleteConfigDialog(
                 colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
             ) {
                 Text(stringResource(R.string.config_delete_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.subscription_cancel))
+            }
+        },
+    )
+}
+
+/**
+ * The delete confirmation — the question a subscription row's long press asks before doing
+ * the one thing there is no coming back from. The confirm button carries the error color,
+ * MD3's way of marking a destructive action.
+ */
+@Composable
+private fun DeleteSubscriptionDialog(
+    subscription: SubscriptionEntity,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                painter = painterResource(R.drawable.ic_delete),
+                contentDescription = null,
+                tint = colors.error,
+            )
+        },
+        title = { Text(stringResource(R.string.subscription_delete_title)) },
+        text = {
+            Text(
+                stringResource(
+                    R.string.subscription_delete_text,
+                    subscription.name.takeIf { it.isNotBlank() }
+                        ?: stringResource(R.string.subscription_none),
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
+            ) {
+                Text(stringResource(R.string.subscription_delete_confirm))
             }
         },
         dismissButton = {
