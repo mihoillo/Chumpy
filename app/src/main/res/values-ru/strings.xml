@@ -54,7 +54,7 @@
     <string name="subscription_cancel">Отмена</string>
     <string name="subscription_url_field">Добавить по ссылке</string>
     <string name="subscription_none">Нет подписки</string>
-    <string name="subscription_choose">Выбрать подписку</string>
+    <string name="subscription_choose">Ваши подписки</string>
     <string name="subscription_collapse">Свернуть</string>
     <plurals name="subscription_days_remaining">
         <item quantity="one">Остался %1$d/30 день</item>
@@ -187,10 +187,10 @@
     <string name="settings_background_refresh_count">Автообновление подписок: %d</string>
     <string name="settings_about_core">Ядро Xray</string>
     <string name="settings_about_core_running">работает</string>
-    <string name="settings_about_core_not_running">не работает</string>
+    <string name="settings_about_core_not_running">остановлено</string>
     <string name="settings_about_version">Версия</string>
     <string name="settings_about_build_date">Дата сборки</string>
-    <string name="settings_about_tagline">Клиент на Xray с Material 3 Expressive</string>
+    <string name="settings_about_tagline">Xray-клиент, обёрнутый в Material 3 Expressive</string>
     <string name="settings_about_telegram">Телеграм-канал</string>
     <string name="settings_about_github">GitHub</string>
 
@@ -239,7 +239,7 @@
     <string name="stats_window">Последние 15 минут</string>
     <string name="stats_peak">Пик %1$s</string>
     <string name="stats_loss_warning">Слишком большие потери пакетов: %1$d%%</string>
-    <string name="stats_probes_caption">Замер каждые 15 с, усреднение по 15 с</string>
+    <string name="stats_probes_caption">Замер каждые 15 с</string>
     <string name="stats_waiting">Ждём данных…</string>
     <string name="stats_no_data">Нет данных</string>
     <string name="stats_frozen_from">Статистика с %1$s</string>

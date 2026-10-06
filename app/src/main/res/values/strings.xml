@@ -185,10 +185,10 @@
     <string name="settings_background_refresh_count">Auto-updates %d subscriptions</string>
     <string name="settings_about_core">Xray core</string>
     <string name="settings_about_core_running">running</string>
-    <string name="settings_about_core_not_running">not running</string>
+    <string name="settings_about_core_not_running">stopped</string>
     <string name="settings_about_version">Version</string>
     <string name="settings_about_build_date">Build date</string>
-    <string name="settings_about_tagline">Xray based client with Material 3 Expressive</string>
+    <string name="settings_about_tagline">An Xray client wrapped in Material 3 Expressive</string>
     <string name="settings_about_telegram">Telegram channel</string>
     <string name="settings_about_telegram_handle">t.me/AuroraFragments</string>
     <string name="settings_about_github">GitHub</string>
@@ -242,7 +242,7 @@
     <string name="stats_peak">Peak %1$s</string>
     <string name="stats_loss_percent">%1$d%%</string>
     <string name="stats_loss_warning">Packet loss too high: %1$d%%</string>
-    <string name="stats_probes_caption">A probe every 15 s, averaged per 15 s</string>
+    <string name="stats_probes_caption">A probe every 15 s</string>
     <string name="stats_waiting">Waiting for data…</string>
     <string name="stats_no_data">No data</string>
     <string name="stats_frozen_from">Stats from %1$s</string>
