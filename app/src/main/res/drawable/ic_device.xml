@@ -3,8 +3,8 @@
     android:height="24dp"
     android:viewportWidth="960"
     android:viewportHeight="960">
-    <!-- Material Symbols "smartphone", verbatim path. The symbol's Y range is -960..0,
-         shifted into the viewport by the group below. -->
+    <!-- Material Symbols Rounded "smartphone", verbatim path. The symbol's Y range
+         is -960..0, shifted into the viewport by the group below. -->
     <group android:translateY="960">
         <path
             android:fillColor="@android:color/white"

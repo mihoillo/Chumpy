@@ -3,7 +3,7 @@
     android:height="24dp"
     android:viewportWidth="960"
     android:viewportHeight="960">
-    <!-- Material Symbols "scan_delete", verbatim path. The symbol's Y range
+    <!-- Material Symbols Rounded "scan_delete", verbatim path. The symbol's Y range
          is -960..0, shifted into the viewport by the group below. -->
     <group android:translateY="960">
         <path

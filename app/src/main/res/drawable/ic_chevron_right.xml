@@ -3,11 +3,11 @@
     android:height="24dp"
     android:viewportWidth="960"
     android:viewportHeight="960">
-    <!-- Material Symbols "chevron_right", verbatim path. The symbol's Y range
+    <!-- Material Symbols Rounded "chevron_right", verbatim path. The symbol's Y range
          is -960..0, shifted into the viewport by the group below. -->
     <group android:translateY="960">
         <path
             android:fillColor="@android:color/white"
-            android:pathData="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z" />
+            android:pathData="M504-480 348-636q-11-11-11-28t11-28q11-11 28-11t28 11l184 184q6 6 8.5 13t2.5 15q0 8-2.5 15t-8.5 13L404-268q-11 11-28 11t-28-11q-11-11-11-28t11-28l156-156Z" />
     </group>
 </vector>

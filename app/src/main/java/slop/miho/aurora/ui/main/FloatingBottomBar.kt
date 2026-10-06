@@ -5,13 +5,12 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -51,7 +50,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -69,7 +67,6 @@ import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.TileMode
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
@@ -87,9 +84,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import kotlin.math.PI
 import kotlin.math.roundToInt
-import kotlin.math.sin
 import slop.miho.aurora.R
 import slop.miho.aurora.ui.theme.LocalDarkTheme
 import slop.miho.aurora.ui.theme.LocalUiSettings
@@ -238,7 +233,7 @@ fun FloatingBottomBar(
                 ) { open ->
                     ClassicBarRow {
                         if (open) {
-                            ClassicBarButton(R.drawable.ic_arrow_back_classic, R.string.nav_back) {
+                            ClassicBarButton(R.drawable.ic_arrow_back, R.string.nav_back) {
                                 onSettingsOpenChange(false)
                             }
                             ClassicBarItems(SettingsCategory.entries, selectedCategory, onCategorySelected)
@@ -259,7 +254,7 @@ fun FloatingBottomBar(
                                 colors,
                                 bare = { it == MainTab.HOME },
                             )
-                            ClassicBarButton(R.drawable.ic_settings_classic, R.string.nav_settings, colors) {
+                            ClassicBarButton(R.drawable.ic_settings, R.string.nav_settings, colors) {
                                 onSettingsOpenChange(true)
                             }
                         }
@@ -382,7 +377,7 @@ fun <T : PillDestination> SubScreenBottomBar(
         val colors = if (LocalBarCanFade.current) homeBarItemColors() else NavigationBarItemDefaults.colors()
         ClassicBar(backdrop = backdrop, modifier = modifier) {
             ClassicBarRow {
-                ClassicBarButton(R.drawable.ic_arrow_back_classic, R.string.nav_back, colors, onClick = onBack)
+                ClassicBarButton(R.drawable.ic_arrow_back, R.string.nav_back, colors, onClick = onBack)
                 ClassicBarItems(items, selected, onSelect, colors, bare)
             }
         }
@@ -493,8 +488,8 @@ private fun <T : PillDestination> RowScope.ClassicBarItems(
             // out, the icon does instead.
             icon = {
                 Icon(
-                    // The classic bar keeps the pre-Symbols icons it has always worn.
-                    painterResource(item.classicIcon),
+                    // The selected item wears the icon's filled cut, as the pill does.
+                    painterResource(if (item == selected) item.filledIcon else item.icon),
                     contentDescription = if (labeled) null else stringResource(item.label),
                 )
             },
@@ -779,43 +774,6 @@ private fun RoundBarButton(
     }
 }
 
-/**
- * The icon's select one-shot, shaped by [NavSelectMotion]: a single bouncy impulse whose
- * sine swings the icon out and back — the spring overshooting past one gives the swing a
- * small settle on the way down. [NavSelectMotion.SPIN] and [TURN] rotate (the globe a
- * little, the sun up to ninety), [WIGGLE] a narrow rock, [JUMP] grows the bars from their
- * baseline, [PULSE] a breath, [SQUASH] the sliders pressed.
- */
-private fun Modifier.navSelectLayer(
-    motion: NavSelectMotion,
-    impulse: Animatable<Float, AnimationVector1D>?,
-): Modifier = if (impulse == null) {
-    this
-} else {
-    graphicsLayer {
-        val swing = sin(impulse.value * PI).toFloat()
-        when (motion) {
-            NavSelectMotion.SPIN -> rotationZ = 45f * swing
-            NavSelectMotion.TURN -> rotationZ = 90f * swing
-            NavSelectMotion.WIGGLE -> rotationZ = 15f * swing
-            NavSelectMotion.JUMP -> {
-                transformOrigin = TransformOrigin(0.5f, 1f)
-                scaleY = 1f + 0.25f * swing
-            }
-            NavSelectMotion.PULSE -> {
-                val scale = 1f + 0.12f * swing
-                scaleX = scale
-                scaleY = scale
-            }
-            NavSelectMotion.SQUASH -> {
-                scaleX = 1f - 0.08f * swing
-                scaleY = 1f + 0.18f * swing
-            }
-            NavSelectMotion.NONE -> Unit
-        }
-    }
-}
-
 @Composable
 private fun <T : PillDestination> PillItems(
     items: List<T>,
@@ -832,10 +790,10 @@ private fun <T : PillDestination> PillItems(
         items.forEach { item ->
             PillItem(
                 icon = item.icon,
+                filledIcon = item.filledIcon,
                 label = stringResource(item.label),
                 selected = item == selected,
                 onClick = { onSelect(item) },
-                selectMotion = item.selectMotion,
             )
         }
     }
@@ -845,10 +803,10 @@ private fun <T : PillDestination> PillItems(
 @Composable
 private fun PillItem(
     icon: Int,
+    filledIcon: Int = icon,
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    selectMotion: NavSelectMotion = NavSelectMotion.NONE,
 ) {
     val motion = MaterialTheme.motionScheme
     val colors = MaterialTheme.colorScheme
@@ -879,20 +837,6 @@ private fun PillItem(
         animationSpec = motion.defaultSpatialSpec(),
         label = "tab label reveal",
     )
-    // The icon's one-shot, played whenever the pill becomes the selected one — on a tap,
-    // and on the pill's first appearance too: the selected category greets the settings
-    // unfolding over it, the selected tab greets the tabs returning from settings.
-    // The impulse is read inside the icon's layer block alone, so the one-shot animates
-    // the icon's own redraw, never the bar's recomposition.
-    val impulse = if (selectMotion != NavSelectMotion.NONE) remember { Animatable(0f) } else null
-    if (impulse != null) {
-        LaunchedEffect(selected) {
-            if (selected) {
-                impulse.snapTo(0f)
-                impulse.animateTo(1f, motion.defaultSpatialSpec())
-            }
-        }
-    }
     Row(
         modifier = Modifier
             .height(ItemHeight)
@@ -912,13 +856,21 @@ private fun PillItem(
             .padding(horizontal = (ItemHeight - 24.dp) / 2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            painter = painterResource(icon),
-            // When selected the visible label already describes the item.
-            contentDescription = if (selected) null else label,
-            tint = content,
-            modifier = Modifier.navSelectLayer(selectMotion, impulse),
-        )
+        // The selected pill's icon is its filled cut, the inactive one's the outlined —
+        // the two crossfading through the selection's own fade. Glyphs whose filled cut
+        // is the same shape simply sit still.
+        Crossfade(
+            targetState = selected,
+            animationSpec = motion.fastEffectsSpec(),
+            label = "pill icon fill",
+        ) { active ->
+            Icon(
+                painter = painterResource(if (active) filledIcon else icon),
+                // When selected the visible label already describes the item.
+                contentDescription = if (active) null else label,
+                tint = content,
+            )
+        }
         Box(
             modifier = Modifier
                 .graphicsLayer { alpha = labelReveal.coerceIn(0f, 1f) }

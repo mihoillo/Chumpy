@@ -119,8 +119,12 @@ import slop.miho.aurora.ui.theme.backdropScheme
 import kotlin.math.roundToInt
 
 /** The screen's two pages, both reachable from the bar. */
-private enum class WallpaperPage(override val icon: Int, override val label: Int) : PillDestination {
-    PREVIEW(R.drawable.ic_visibility, R.string.wallpapers_preview),
+private enum class WallpaperPage(
+    override val icon: Int,
+    override val label: Int,
+    override val filledIcon: Int = icon,
+) : PillDestination {
+    PREVIEW(R.drawable.ic_visibility, R.string.wallpapers_preview, R.drawable.ic_visibility_fill),
     SETTINGS(R.drawable.ic_tune, R.string.wallpapers_settings),
 }
 

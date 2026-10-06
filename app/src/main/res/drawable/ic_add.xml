@@ -3,11 +3,11 @@
     android:height="24dp"
     android:viewportWidth="960"
     android:viewportHeight="960">
-    <!-- Material Symbols "add", verbatim path. The symbol's Y range
+    <!-- Material Symbols Rounded "add", verbatim path. The symbol's Y range
          is -960..0, shifted into the viewport by the group below. -->
     <group android:translateY="960">
         <path
             android:fillColor="@android:color/white"
-            android:pathData="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z" />
+            android:pathData="M440-440H240q-17 0-28.5-11.5T200-480q0-17 11.5-28.5T240-520h200v-200q0-17 11.5-28.5T480-760q17 0 28.5 11.5T520-720v200h200q17 0 28.5 11.5T760-480q0 17-11.5 28.5T720-440H520v200q0 17-11.5 28.5T480-200q-17 0-28.5-11.5T440-240v-200Z" />
     </group>
 </vector>
