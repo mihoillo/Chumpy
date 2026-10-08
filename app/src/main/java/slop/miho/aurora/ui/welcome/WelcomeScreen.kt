@@ -207,6 +207,7 @@ fun WelcomeScreen(
                     value = url,
                     onValueChange = { url = it },
                     onSubmit = ::submit,
+                    loading = adding,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 ImportConfigRow(
@@ -269,7 +270,8 @@ private fun ImportConfigRow(
 /**
  * The one button, laid out like the settings' toggle rows and on the same tonal
  * backdrop: the field-and-tile pair is the shared [SubmitFieldRow] — a paste into the
- * empty field, the arrow to carry what it holds through the door.
+ * empty field, the arrow to carry what it holds through the door, and Material's loading
+ * indicator in the arrow's seat while the door is being walked through.
  */
 @Composable
 private fun WelcomeSubmitRow(
@@ -277,6 +279,7 @@ private fun WelcomeSubmitRow(
     onValueChange: (String) -> Unit,
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
+    loading: Boolean = false,
 ) {
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
@@ -287,6 +290,7 @@ private fun WelcomeSubmitRow(
             value = value,
             onValueChange = onValueChange,
             onSubmit = onSubmit,
+            loading = loading,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
     }

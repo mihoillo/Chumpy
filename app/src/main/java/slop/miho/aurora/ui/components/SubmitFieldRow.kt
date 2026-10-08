@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -60,6 +61,9 @@ fun SubmitFieldRow(
     autofocus: Boolean = false,
     /** Folds the row back — draws the cross beside the submit tile when set. */
     onClose: (() -> Unit)? = null,
+    /** The submit is in flight: the tile's arrow gives way to Material's own loading
+     *  indicator, and the tile itself stops answering until the flight is over. */
+    loading: Boolean = false,
 ) {
     val clipboard = LocalClipboardManager.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -130,13 +134,17 @@ fun SubmitFieldRow(
                 color = if (ready) colors.primary else colors.secondaryContainer,
                 contentColor = if (ready) colors.onPrimary else colors.onSecondaryContainer,
                 onClick = {
-                    poke()
-                    taps++
-                    if (ready) {
-                        onSubmit()
-                    } else {
-                        // Nothing to carry yet — the tile's own job: put the clipboard in.
-                        clipboard.getText()?.text?.trim()?.let { onValueChange(it) }
+                    // Mid-flight, the tile is taken: no paste trade, no second submit —
+                    // the loading face is the tile's whole answer until it lands.
+                    if (!loading) {
+                        poke()
+                        taps++
+                        if (ready) {
+                            onSubmit()
+                        } else {
+                            // Nothing to carry yet — the tile's own job: put the clipboard in.
+                            clipboard.getText()?.text?.trim()?.let { onValueChange(it) }
+                        }
                     }
                 },
                 modifier = Modifier
@@ -145,17 +153,36 @@ fun SubmitFieldRow(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Crossfade(
-                        targetState = ready,
+                        targetState = if (loading) {
+                            TileFace.LOADING
+                        } else if (ready) {
+                            TileFace.ARROW
+                        } else {
+                            TileFace.PASTE
+                        },
                         animationSpec = motion.defaultEffectsSpec(),
-                        label = "submit tile icon",
-                    ) { hasText ->
-                        Icon(
-                            painter = painterResource(
-                                if (hasText) R.drawable.ic_arrow_forward else R.drawable.ic_content_paste,
-                            ),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                        )
+                        label = "submit tile face",
+                    ) { face ->
+                        when (face) {
+                            TileFace.PASTE -> Icon(
+                                painter = painterResource(R.drawable.ic_content_paste),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                            TileFace.ARROW -> Icon(
+                                painter = painterResource(R.drawable.ic_arrow_forward),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                            // The carry in flight: Material's own loading indicator —
+                            // the morphing polygon spinner, Expressive's answer to the
+                            // busy button — in the arrow's seat, the tile's own content
+                            // color riding on the primary it already wears.
+                            TileFace.LOADING -> LoadingIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = colors.onPrimary,
+                            )
+                        }
                     }
                 }
             }
@@ -197,3 +224,8 @@ fun SubmitFieldRow(
         if (autofocus) focusRequester.requestFocus()
     }
 }
+
+/** What the submit tile wears: the paste it offers while the field is empty, the arrow
+ *  once it holds something to carry, or Material's loading indicator while the carry is
+ *  in flight. */
+private enum class TileFace { PASTE, ARROW, LOADING }

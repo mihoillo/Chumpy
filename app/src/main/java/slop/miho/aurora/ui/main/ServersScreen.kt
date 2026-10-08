@@ -921,6 +921,9 @@ private fun AddSubscriptionRow(
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
     val density = LocalDensity.current
+    // The add in flight: the tile wears Material's loading indicator from the submit
+    // until onDone lands, so the row answers the tap the moment it is carried out.
+    var adding by remember { mutableStateOf(false) }
     // The card's own corners out of the theme's shapes as Dp, the block's seam-riding
     // tops handed in animated — the rest are fixed: the bottom always the card's outer
     // ones, the seam between the field and the two doors always the inner ones.
@@ -1034,7 +1037,10 @@ private fun AddSubscriptionRow(
                                 value = url,
                                 onValueChange = onUrlChange,
                                 onSubmit = {
+                                    if (adding) return@SubmitFieldRow
+                                    adding = true
                                     onAdd(url.trim()) { error ->
+                                        adding = false
                                         if (error == null) {
                                             onUrlChange("")
                                             onOpenChange(false)
@@ -1042,6 +1048,7 @@ private fun AddSubscriptionRow(
                                     }
                                 },
                                 autofocus = true,
+                                loading = adding,
                                 onClose = { onOpenChange(false) },
                                 modifier = Modifier.weight(1f),
                             )
