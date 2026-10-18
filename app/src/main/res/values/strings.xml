@@ -1,6 +1,9 @@
 <resources>
     <string name="app_name" translatable="false">Aurora</string>
 
+    <!-- The build's own stage, worn as a quiet chip. -->
+    <string name="badge_alpha">Alpha</string>
+
     <!-- Greetings -->
     <string name="greeting_morning">Good morning</string>
     <string name="greeting_afternoon">Good afternoon</string>

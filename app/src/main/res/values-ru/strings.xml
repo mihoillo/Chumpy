@@ -1,4 +1,7 @@
 <resources>
+    <!-- Стадия сборки — тихая плашка рядом с именем. -->
+    <string name="badge_alpha">Альфа</string>
+
     <!-- Приветствия -->
     <string name="greeting_morning">Доброе утро</string>
     <string name="greeting_afternoon">Добрый день</string>

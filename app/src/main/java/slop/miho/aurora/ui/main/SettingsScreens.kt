@@ -111,6 +111,7 @@ import slop.miho.aurora.data.FlagStyle
 import slop.miho.aurora.data.IconVariant
 import slop.miho.aurora.data.ThemeMode
 import slop.miho.aurora.data.UiSettings
+import slop.miho.aurora.ui.components.InfoChip
 import slop.miho.aurora.ui.components.AccentRow
 import slop.miho.aurora.ui.components.CountryFlag
 import slop.miho.aurora.ui.components.RainbowFlag
@@ -1909,11 +1910,24 @@ fun AboutScreen(
                 modifier = Modifier.size(96.dp),
             )
             Spacer(Modifier.height(24.dp))
-            Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.displayMedium,
-                color = nameColor,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.displayMedium,
+                    color = nameColor,
+                )
+                // The build's own stage, worn quietly at the name's right — the same
+                // chip the info rows wear, dressed in the hero's own scheme so it sits
+                // right on the wallpaper as surely as on a plain surface.
+                InfoChip(
+                    value = stringResource(R.string.badge_alpha),
+                    container = heroScheme.surfaceContainerLow.withSurfaceOpacity(),
+                    content = heroScheme.onSurfaceVariant,
+                )
+            }
             Spacer(Modifier.height(12.dp))
             Text(
                 text = stringResource(R.string.settings_about_tagline),

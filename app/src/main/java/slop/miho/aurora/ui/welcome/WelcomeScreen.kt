@@ -57,6 +57,7 @@ import slop.miho.aurora.data.UiSettings
 import slop.miho.aurora.data.Accent
 import slop.miho.aurora.ui.components.SubmitFieldRow
 import slop.miho.aurora.ui.components.ActionTile
+import slop.miho.aurora.ui.components.InfoChip
 import slop.miho.aurora.ui.main.isSmallScreen
 import slop.miho.aurora.ui.scan.ScannerActivity
 import slop.miho.aurora.ui.theme.AuroraTheme
@@ -172,6 +173,10 @@ fun WelcomeScreen(
                         )
                         WavingHand(modifier = Modifier.size(56.dp))
                     }
+                    Spacer(Modifier.height(16.dp))
+                    // The build's own stage under the app's face — the same quiet chip
+                    // the info rows wear, saying where the build stands.
+                    InfoChip(value = stringResource(R.string.badge_alpha))
                     Spacer(Modifier.height(24.dp))
                     Text(
                         text = stringResource(R.string.welcome_title),
