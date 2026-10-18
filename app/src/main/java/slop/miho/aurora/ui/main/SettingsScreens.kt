@@ -1852,9 +1852,9 @@ private fun PlainRow(
 /**
  * The "About" page: the welcome screen's own hero turned upright — the app's mark big
  * at the top of the page, its name under it, the tagline under that — then the build's
- * own numbers, and the project's two homes. The core's version is the name and number,
- * with its run state riding behind a middle dot — the version is knowable either way, the
- * process answers from its first boot on.
+ * own numbers, and the project's two homes. The core's version is the number alone,
+ * with its run state riding beside it as a quiet pill — the version is knowable either
+ * way, the process answers from its first boot on.
  */
 @Composable
 fun AboutScreen(
@@ -1953,13 +1953,16 @@ fun AboutScreen(
             {
                 PlainRow(
                     title = stringResource(R.string.settings_about_core),
-                    supporting = buildString {
-                        coreVersion?.let { append(it).append(" · ") }
-                        append(
-                            stringResource(
+                    supporting = coreVersion,
+                    // The run state rides as the stage chip's twin — a quiet pill on
+                    // the version's own line, the process's answer from its first boot on.
+                    trailing = {
+                        InfoChip(
+                            value = stringResource(
                                 if (coreRunning) R.string.settings_about_core_running
                                 else R.string.settings_about_core_not_running,
                             ),
+                            compact = true,
                         )
                     },
                 )

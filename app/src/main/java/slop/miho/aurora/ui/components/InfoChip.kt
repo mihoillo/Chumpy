@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,8 +40,8 @@ fun InfoChip(
     animateValue: Boolean = false,
     // Set for the few chips that answer a tap (the exit IP hides itself); null keeps it inert.
     onClick: (() -> Unit)? = null,
-    // The compact cut: labelMedium on a tight pad — the inline badge that rides a value
-    // line (the version row's stage chip) without outgrowing it.
+    // The compact cut: labelMedium on a tight pad, the corners full rounds — a pill of
+    // a badge that rides a value line (the version row's stage chip) without outgrowing it.
     compact: Boolean = false,
 ) {
     val chipContent: @Composable () -> Unit = {
@@ -95,7 +96,7 @@ fun InfoChip(
             }
         }
     }
-    val shape = RoundedCornerShape(8.dp)
+    val shape = if (compact) CircleShape else RoundedCornerShape(8.dp)
     // A plain clickable rather than Surface(onClick): the clickable Surface pads itself up to
     // the 48dp minimum touch target, which made a tappable chip taller than its neighbors.
     Surface(
