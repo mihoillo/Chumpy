@@ -216,10 +216,11 @@ fun WelcomeScreen(
                     onScan = { qrScanner.launch(Intent(context, ScannerActivity::class.java)) },
                 )
                 // The build's own stage holds the page's lowest line, under the way in
-                // and everything it offers — the same quiet chip, centered like a footer.
+                // and everything it offers — the same quiet chip, set against the right
+                // edge like a page number.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
+                    horizontalArrangement = Arrangement.End,
                 ) {
                     InfoChip(value = stringResource(R.string.badge_alpha))
                 }

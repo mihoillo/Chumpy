@@ -1941,9 +1941,12 @@ fun AboutScreen(
                     title = stringResource(R.string.settings_about_version),
                     supporting = BuildConfig.VERSION_NAME,
                     // The build's own stage rides with the number it qualifies — the
-                    // same quiet chip the info rows wear, centered on the value's line.
+                    // chip's compact cut, one quiet word on the value's own line.
                     trailing = {
-                        InfoChip(value = stringResource(R.string.badge_alpha))
+                        InfoChip(
+                            value = stringResource(R.string.badge_alpha),
+                            compact = true,
+                        )
                     },
                 )
             },

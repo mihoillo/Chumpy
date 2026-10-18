@@ -39,10 +39,17 @@ fun InfoChip(
     animateValue: Boolean = false,
     // Set for the few chips that answer a tap (the exit IP hides itself); null keeps it inert.
     onClick: (() -> Unit)? = null,
+    // The compact cut: labelMedium on a tight pad — the inline badge that rides a value
+    // line (the version row's stage chip) without outgrowing it.
+    compact: Boolean = false,
 ) {
     val chipContent: @Composable () -> Unit = {
         Row(
-            modifier = Modifier.padding(start = 10.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            modifier = if (compact) {
+                Modifier.padding(start = 6.dp, end = 8.dp, top = 2.dp, bottom = 2.dp)
+            } else {
+                Modifier.padding(start = 10.dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
+            },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null) {
@@ -67,14 +74,22 @@ fun InfoChip(
                 ) { v ->
                     Text(
                         text = v,
-                        style = MaterialTheme.typography.labelLarge,
+                        style = if (compact) {
+                            MaterialTheme.typography.labelMedium
+                        } else {
+                            MaterialTheme.typography.labelLarge
+                        },
                         color = content,
                     )
                 }
             } else {
                 Text(
                     text = value,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = if (compact) {
+                        MaterialTheme.typography.labelMedium
+                    } else {
+                        MaterialTheme.typography.labelLarge
+                    },
                     color = content,
                 )
             }
