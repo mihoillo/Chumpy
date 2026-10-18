@@ -16,7 +16,6 @@
     <string name="home_state_connecting">Connecting…</string>
     <string name="home_state_disconnecting">Disconnecting…</string>
     <string name="home_ping_ms">%1$d ms</string>
-    <string name="home_value_unknown">Unknown</string>
     <string name="home_value_pending">…</string>
 
     <!-- Navigation -->
@@ -41,7 +40,6 @@
     <string name="servers_offline">can\'t ping</string>
     <string name="servers_empty_title">No servers</string>
     <string name="servers_empty_hint">Pull down to measure them, or update the subscription.</string>
-    <string name="servers_pinging">Measuring…</string>
 
     <!-- Subscriptions -->
     <string name="subscription_update_failed">Couldn\'t update the subscription: %1$s</string>
@@ -96,8 +94,6 @@
     <!-- Welcome (first run) -->
     <string name="welcome_title">Hello, stranger!</string>
     <string name="welcome_subtitle">Welcome to Aurora! Add a subscription or config to get started.</string>
-    <string name="welcome_add_failed">Couldn\'t add the subscription: %1$s</string>
-    <string name="import_failed">Couldn\'t import: %1$s</string>
     <string name="import_nothing_new">Nothing new to import</string>
 
     <!-- Settings -->
@@ -186,7 +182,6 @@
     <string name="trusted_add_confirm">Add</string>
     <string name="trusted_add_cancel">Cancel</string>
     <string name="trusted_current">Current network</string>
-    <string name="settings_subscriptions">Subscriptions</string>
     <string name="settings_background_refresh">Background refresh</string>
     <string name="settings_background_refresh_count">Auto-updates %d subscriptions</string>
     <string name="settings_about_core">Xray core</string>
@@ -234,11 +229,9 @@
     <string name="wallpapers_zoom_hint">The wallpaper slightly zooms away from Home and back</string>
     <string name="wallpapers_grayscale">Grayscale when disconnected</string>
     <string name="wallpapers_grayscale_hint">The wallpaper drains to black-and-white while the VPN is down</string>
-    <string name="wallpapers_import_failed">Couldn\'t set the wallpaper: %1$s</string>
     <string name="wallpapers_import_not_image">not an image file</string>
     <string name="wallpapers_import_too_large">the image is too large</string>
 
-    <string name="placeholder_coming_soon">Coming soon</string>
 
     <!-- Stats screen -->
     <string name="stats_traffic">Traffic</string>

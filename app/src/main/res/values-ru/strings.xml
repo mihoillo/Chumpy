@@ -14,7 +14,6 @@
     <string name="home_state_connecting">Подключение…</string>
     <string name="home_state_disconnecting">Отключение…</string>
     <string name="home_ping_ms">%1$d мс</string>
-    <string name="home_value_unknown">Неизвестно</string>
     <string name="home_value_pending">…</string>
 
     <!-- Навигация -->
@@ -41,7 +40,6 @@
     <string name="servers_offline">нет пинга</string>
     <string name="servers_empty_title">Нет серверов</string>
     <string name="servers_empty_hint">Потяните вниз, чтобы замерить пинг, или обновите подписку.</string>
-    <string name="servers_pinging">Замеряем…</string>
 
     <!-- Подписки -->
     <string name="subscription_update_failed">Не удалось обновить подписку: %1$s</string>
@@ -96,8 +94,6 @@
     <!-- Первый запуск -->
     <string name="welcome_title">Привет, незнакомец!</string>
     <string name="welcome_subtitle">Добро пожаловать в Aurora! Добавьте подписку или конфиг, чтобы начать.</string>
-    <string name="welcome_add_failed">Не удалось добавить подписку: %1$s</string>
-    <string name="import_failed">Не удалось импортировать: %1$s</string>
     <string name="import_nothing_new">Новых конфигов не найдено</string>
 
     <!-- Настройки -->
@@ -188,7 +184,6 @@
     <string name="trusted_add_confirm">Добавить</string>
     <string name="trusted_add_cancel">Отмена</string>
     <string name="trusted_current">Текущая сеть</string>
-    <string name="settings_subscriptions">Подписки</string>
     <string name="settings_background_refresh">Фоновое обновление</string>
     <string name="settings_background_refresh_count">Автообновление подписок: %d</string>
     <string name="settings_about_core">Ядро Xray</string>
@@ -232,11 +227,9 @@
     <string name="wallpapers_zoom_hint">Обои слегка сдвигаются, когда уходите с Главной</string>
     <string name="wallpapers_grayscale">Чёрно-белые при отключении</string>
     <string name="wallpapers_grayscale_hint">Пока туннель отключён, обои становятся монохромными</string>
-    <string name="wallpapers_import_failed">Не удалось установить обои: %1$s</string>
     <string name="wallpapers_import_not_image">файл не является изображением</string>
     <string name="wallpapers_import_too_large">изображение слишком большое</string>
 
-    <string name="placeholder_coming_soon">Скоро</string>
 
     <!-- Статистика -->
     <string name="stats_traffic">Трафик</string>

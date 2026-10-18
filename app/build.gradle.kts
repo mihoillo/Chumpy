@@ -138,7 +138,7 @@ dependencies {
     ksp(libs.room.compiler)
     implementation(libs.work.runtime.ktx)
 
-    // QR rendering only (com.google.zxing:core is the pure-Java encoder, no camera).
+    // The QR scanner's decoder (com.google.zxing:core is the pure-Java part, no camera).
     implementation(libs.zxing.core)
     // The QR scanner's camera: CameraX feeds the frames, zxing (above) decodes them.
     implementation(libs.androidx.camera.camera2)
