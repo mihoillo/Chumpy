@@ -173,10 +173,6 @@ fun WelcomeScreen(
                         )
                         WavingHand(modifier = Modifier.size(56.dp))
                     }
-                    Spacer(Modifier.height(16.dp))
-                    // The build's own stage under the app's face — the same quiet chip
-                    // the info rows wear, saying where the build stands.
-                    InfoChip(value = stringResource(R.string.badge_alpha))
                     Spacer(Modifier.height(24.dp))
                     Text(
                         text = stringResource(R.string.welcome_title),
@@ -219,6 +215,14 @@ fun WelcomeScreen(
                     onImport = { filePicker.launch(arrayOf("*/*")) },
                     onScan = { qrScanner.launch(Intent(context, ScannerActivity::class.java)) },
                 )
+                // The build's own stage holds the page's lowest line, under the way in
+                // and everything it offers — the same quiet chip, centered like a footer.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    InfoChip(value = stringResource(R.string.badge_alpha))
+                }
             }
         }
     }

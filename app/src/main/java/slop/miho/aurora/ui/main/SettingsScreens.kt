@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.ScrollState
@@ -1820,6 +1821,8 @@ private fun HappFieldRow(
 private fun PlainRow(
     title: String,
     supporting: String?,
+    /** Sits after the supporting text on its own line — the version row's stage chip. */
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -1831,11 +1834,17 @@ private fun PlainRow(
             style = MaterialTheme.typography.bodyLarge,
         )
         if (supporting != null) {
-            Text(
-                text = supporting,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (trailing != null) {
+                    Spacer(Modifier.width(8.dp))
+                    trailing()
+                }
+            }
         }
     }
 }
@@ -1910,24 +1919,11 @@ fun AboutScreen(
                 modifier = Modifier.size(96.dp),
             )
             Spacer(Modifier.height(24.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.displayMedium,
-                    color = nameColor,
-                )
-                // The build's own stage, worn quietly at the name's right — the same
-                // chip the info rows wear, dressed in the hero's own scheme so it sits
-                // right on the wallpaper as surely as on a plain surface.
-                InfoChip(
-                    value = stringResource(R.string.badge_alpha),
-                    container = heroScheme.surfaceContainerLow.withSurfaceOpacity(),
-                    content = heroScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.displayMedium,
+                color = nameColor,
+            )
             Spacer(Modifier.height(12.dp))
             Text(
                 text = stringResource(R.string.settings_about_tagline),
@@ -1944,6 +1940,11 @@ fun AboutScreen(
                 PlainRow(
                     title = stringResource(R.string.settings_about_version),
                     supporting = BuildConfig.VERSION_NAME,
+                    // The build's own stage rides with the number it qualifies — the
+                    // same quiet chip the info rows wear, centered on the value's line.
+                    trailing = {
+                        InfoChip(value = stringResource(R.string.badge_alpha))
+                    },
                 )
             },
             {
