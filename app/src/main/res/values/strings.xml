@@ -275,6 +275,7 @@
     <string name="notif_reconnect_failed_title">Reconnect failed</string>
     <string name="notif_interrupted_off">The tunnel is down — Aurora will not bring it back on its own.</string>
     <string name="notif_action_reconnect">Reconnect</string>
+    <string name="notif_action_disconnect_anyway">Disconnect anyway</string>
     <string name="error_no_config">No server selected</string>
     <string name="error_vpn_not_authorized">VPN permission was not granted</string>
     <string name="error_tun_creation">Couldn\'t create the VPN interface. Is another VPN set to always-on?</string>

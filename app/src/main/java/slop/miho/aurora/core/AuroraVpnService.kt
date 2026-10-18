@@ -732,7 +732,12 @@ class AuroraVpnService : VpnService() {
      * handover's re-dial could not bring it back — and the line under the title says which.
      * Reconnect is the row's action: the connect path in one tap, no app opening. Its own
      * channel, one that speaks, unlike the running service's silent one; a stop or a new
-     * connect attempt retires it.
+     * connect attempt retires it. The visitor by the side of the road: Disconnect anyway —
+     * for the user who meant to hand the VPN slot to another client — stands the tunnel
+     * down for good, the notice and any climbing back with it. A foreground-service
+     * PendingIntent, not a plain service one: the service is often already gone when the
+     * row is tapped, and only the foreground kind may be started from that far in the
+     * background — the command line turns around and stops before anything is seen.
      */
     private fun notifyInterrupted(reason: String) {
         val manager = getSystemService(NotificationManager::class.java) ?: return
@@ -741,6 +746,12 @@ class AuroraVpnService : VpnService() {
             this,
             2,
             Intent(this, AuroraVpnService::class.java).setAction(ACTION_CONNECT),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val disconnectAnyway = PendingIntent.getForegroundService(
+            this,
+            3,
+            Intent(this, AuroraVpnService::class.java).setAction(ACTION_DISCONNECT),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         manager.notify(
@@ -758,6 +769,13 @@ class AuroraVpnService : VpnService() {
                         Icon.createWithResource(this, R.drawable.ic_power),
                         getString(R.string.notif_action_reconnect),
                         reconnect,
+                    ).build(),
+                )
+                .addAction(
+                    Notification.Action.Builder(
+                        Icon.createWithResource(this, R.drawable.ic_close),
+                        getString(R.string.notif_action_disconnect_anyway),
+                        disconnectAnyway,
                     ).build(),
                 )
                 .build(),
@@ -820,7 +838,8 @@ class AuroraVpnService : VpnService() {
 
     /**
      * The failure edit: the climb back did not land, and the notice says so — the error
-     * under the title, Reconnect still its action.
+     * under the title, Reconnect still its action, Disconnect anyway beside it — the
+     * same visitor's way out as the fall notice carries.
      */
     private fun notifyReconnectFailed(reason: String) {
         val manager = getSystemService(NotificationManager::class.java) ?: return
@@ -829,6 +848,12 @@ class AuroraVpnService : VpnService() {
             this,
             2,
             Intent(this, AuroraVpnService::class.java).setAction(ACTION_CONNECT),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val disconnectAnyway = PendingIntent.getForegroundService(
+            this,
+            3,
+            Intent(this, AuroraVpnService::class.java).setAction(ACTION_DISCONNECT),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         manager.notify(
@@ -844,6 +869,13 @@ class AuroraVpnService : VpnService() {
                         Icon.createWithResource(this, R.drawable.ic_power),
                         getString(R.string.notif_action_reconnect),
                         reconnect,
+                    ).build(),
+                )
+                .addAction(
+                    Notification.Action.Builder(
+                        Icon.createWithResource(this, R.drawable.ic_close),
+                        getString(R.string.notif_action_disconnect_anyway),
+                        disconnectAnyway,
                     ).build(),
                 )
                 .build(),

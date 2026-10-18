@@ -271,6 +271,7 @@
     <string name="notif_reconnect_failed_title">Не удалось переподключиться</string>
     <string name="notif_interrupted_off">Туннель отключён — Aurora не станет поднимать его сама.</string>
     <string name="notif_action_reconnect">Переподключить</string>
+    <string name="notif_action_disconnect_anyway">Всё равно отключить</string>
     <string name="error_no_config">Сервер не выбран</string>
     <string name="error_vpn_not_authorized">Разрешение на VPN не выдано</string>
     <string name="error_tun_creation">Не удалось создать интерфейс VPN. Возможно, другой VPN настроен как постоянный?</string>
