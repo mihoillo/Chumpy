@@ -269,7 +269,6 @@
     <string name="notif_reconnected_title">Соединение восстановлено</string>
     <string name="notif_reconnected_text">Aurora сама вернула туннель.</string>
     <string name="notif_reconnect_failed_title">Не удалось переподключиться</string>
-    <string name="notif_interrupted_network">Сеть под туннелем сменилась.</string>
     <string name="notif_interrupted_off">Туннель отключён — Aurora не станет поднимать его сама.</string>
     <string name="notif_action_reconnect">Переподключить</string>
     <string name="error_no_config">Сервер не выбран</string>

@@ -273,7 +273,6 @@
     <string name="notif_reconnected_title">Connection restored</string>
     <string name="notif_reconnected_text">Aurora brought the tunnel back by itself.</string>
     <string name="notif_reconnect_failed_title">Reconnect failed</string>
-    <string name="notif_interrupted_network">The network under the tunnel changed.</string>
     <string name="notif_interrupted_off">The tunnel is down — Aurora will not bring it back on its own.</string>
     <string name="notif_action_reconnect">Reconnect</string>
     <string name="error_no_config">No server selected</string>

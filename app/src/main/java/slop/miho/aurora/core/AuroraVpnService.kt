@@ -49,11 +49,12 @@ import java.util.concurrent.atomic.AtomicInteger
  * network the system's own request names, and a switch — cellular to Wi-Fi, a Wi-Fi's own
  * reconnect — strands them on the network that went away, where a cheap ROM's radios leave
  * them half-open: writes sink in, nothing comes back, the state machine still calling the
- * tunnel up. A handover re-dials the core onto whatever now carries the traffic — or, with
- * auto-reconnect off, stops the tunnel as any fall does, the alert saying the network
- * changed; a fall the re-dial cannot mend — and the revoke another VPN's arrival brings —
- * stops the tunnel and says so out loud: an alert notification with a Reconnect button
- * of its own. The revoke is also asked for directly, every few seconds while the tunnel
+ * tunnel up. A handover re-dials the core onto whatever now carries the traffic, silently,
+ * the toggle never asked: the phone kept the tunnel alive through the switch, so the
+ * re-dial is maintenance, not a bring-back — auto-reconnect is for the phones that
+ * strangle tunnels, and on the ones that don't, the tunnel simply rides on. A fall the
+ * re-dial cannot mend — and the revoke another VPN's arrival brings — stops the tunnel
+ * and says so out loud: an alert notification with a Reconnect button of its own. The revoke is also asked for directly, every few seconds while the tunnel
  * runs: prepare() answers null exactly while this app is the system's VPN of record, so
  * a ROM that never delivers onRevoke — a dead tunnel the state machine still calls
  * up — falls the same way, seconds late at worst. And a ROM that goes further, granting
@@ -476,19 +477,15 @@ class AuroraVpnService : VpnService() {
      * Starts the handover's re-dial after the debounce; a watch that stopped meanwhile
      * drops its own timer's callback by the generation check.
      *
-     * Auto-reconnect decides what a handover is: on, the re-dial — silent, the tunnel
-     * never noticing; off, a fall like any other — the old network's sockets are dead,
-     * the tunnel stops instead of re-dialing onto whatever now carries the traffic, and
-     * the alert's Reconnect is the way back. That covers the other VPN's arrival too: its
-     * network reads as the new one under the tunnel, so with the toggle off the tunnel
-     * falls and says so instead of quietly chaining itself through the newcomer.
+     * A handover is not a fall, so the toggle has no word here: the phone carried the
+     * tunnel through the switch — the fd stands, the state machine calls the tunnel up —
+     * and the re-dial is silent maintenance, not a bring-back. Auto-reconnect is for the
+     * phones that strangle the tunnel on their own; on the ones that don't, the tunnel
+     * rides on. A foreign VPN's arrival still fires this watch first, its network reading
+     * as the new one under the tunnel — the re-dial may chain through the newcomer for a
+     * moment, and the authorization poll falls the tunnel properly within seconds of it.
      */
     private fun scheduleHandover() {
-        if (!ConnectionStore.autoReconnectFresh(this)) {
-            Log.i(TAG, "The network under the tunnel changed; auto-reconnect is off, falling")
-            stopVpn(getString(R.string.notif_interrupted_network))
-            return
-        }
         val generation = watchGeneration.get()
         mainHandler.removeCallbacksAndMessages(null)
         mainHandler.postDelayed({
