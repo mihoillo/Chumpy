@@ -1,15 +1,8 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="icon.svg">
-    <img src="icon-inverted.svg" width="160" alt="Chumpy" />
-  </picture>
-</p>
+<img src="icon.svg" width="96" alt="Chumpy" />
 
-<h1 align="center">Chumpy</h1>
+# Chumpy
 
-<p align="center">
-  Yet another Xray client for VLESS and friends — dressed in Material Design 3 Expressive.
-</p>
+Yet another Xray client for VLESS and friends — dressed in Material Design 3 Expressive.
 
 > **Alpha.** Still under development. If it crashes on you — and it might —
 > please report it in the [Issues tab](https://github.com/mihoillo/Chumpy/issues).
