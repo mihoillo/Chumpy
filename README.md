@@ -44,11 +44,6 @@
 
 Android 8.0 (API 26) or newer.
 
-## Install
-
-Per-ABI APKs (arm64-v8a, armeabi-v7a) land in the Telegram channel:
-[t.me/ChumpyXray](https://t.me/ChumpyXray).
-
 ## Building
 
 ```shell
