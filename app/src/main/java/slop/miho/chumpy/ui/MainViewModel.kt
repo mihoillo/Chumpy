@@ -175,19 +175,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val tunnelStatus: StateFlow<TunnelStatus> = tunnelClient.status
 
     init {
-        // The app filter and the trusted networks both live outside the config — the one
-        // on the TUN interface, the other at the connect gate — so a change to either
-        // asks for a full restart rather than a reload. The store itself is watched, so
-        // changes made outside updateConnection (the per-app screen writes its own) ride
-        // the same path.
+        // The app filter lives outside the config — it rides the TUN interface itself —
+        // so a change to it asks for a full restart rather than a reload. The store
+        // itself is watched, so changes made outside updateConnection (the per-app
+        // screen writes its own) ride the same path.
         var previous = connection.value
         viewModelScope.launch {
             connection.drop(1).collect { current ->
                 val bypassChanged = previous.bypassedApps != current.bypassedApps ||
                     previous.perAppEnabled != current.perAppEnabled
-                val trustedChanged = previous.trustedWifiSsids != current.trustedWifiSsids ||
-                    previous.trustedWifiEnabled != current.trustedWifiEnabled
-                if ((bypassChanged || trustedChanged) && tunnelStatus.value.state == TunnelState.UP) {
+                if (bypassChanged && tunnelStatus.value.state == TunnelState.UP) {
                     tunnelClient.disconnect()
                     applyConfigAndConnect()
                 }

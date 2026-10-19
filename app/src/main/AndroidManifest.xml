@@ -17,12 +17,6 @@
 
     <!-- The QR scanner's own; asked for only there, on first scan. -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- The trusted-networks check reads the current Wi-Fi's name; Android shares names
-         with location access only (and with the Wi-Fi state visible at all). A silent
-         declaration: the app never asks for the grant itself, so the check works only
-         when the user hands the permission over in the system settings. -->
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <!-- Package visibility (Android 11+): without declaring what we look for, the
          per-app proxy's launcher query only answers with a handful of system packages.

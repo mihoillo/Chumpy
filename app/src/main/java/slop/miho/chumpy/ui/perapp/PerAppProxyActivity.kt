@@ -37,16 +37,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.derivedStateOf
@@ -59,7 +55,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -74,7 +69,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -104,29 +98,16 @@ import slop.miho.chumpy.ui.wallpapers.LocalSurfaceOpacity
 import slop.miho.chumpy.ui.wallpapers.ReportBarCoverage
 
 /**
- * The per-app proxy and the trusted networks, two pages of one deep-dive screen in the
- * wallpapers' footsteps. The apps page is the bypass list — picked apps ignore the tunnel
- * and connect directly (v2rayNG's arrangement); the networks page is the same story for
- * Wi-Fi names — on a trusted one the tunnel stands down entirely, traffic going direct.
- * The bar carries both pages as pills, a quick switch apart; the system back gesture and
- * the bar's back button both simply finish this activity.
+ * The per-app proxy, a one-page deep-dive screen in the wallpapers' footsteps: the
+ * bypass list — picked apps ignore the tunnel and connect directly (v2rayNG's
+ * arrangement). The system back gesture and the bar's back button both simply finish
+ * this activity.
  */
 class PerAppProxyActivity : ComponentActivity() {
-    companion object {
-        /** Which page the screen opens on: [PAGE_APPS] or [PAGE_NETWORKS]. */
-        const val EXTRA_PAGE = "page"
-        const val PAGE_APPS = "apps"
-        const val PAGE_NETWORKS = "networks"
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val startPage = if (intent.getStringExtra(EXTRA_PAGE) == PAGE_NETWORKS) {
-            PerAppPage.NETWORKS
-        } else {
-            PerAppPage.APPS
-        }
         setContent {
             val ui by SettingsStore.settings(this).collectAsStateWithLifecycle()
             val connection by ConnectionStore.settings(this).collectAsStateWithLifecycle()
@@ -136,13 +117,9 @@ class PerAppProxyActivity : ComponentActivity() {
                 SystemBarsIconsDark(dark = LocalDarkTheme.current)
                 Surface(color = MaterialTheme.colorScheme.surface) {
                     PerAppProxyScreen(
-                        initialPage = startPage,
                         frost = ui.navigationBarBlur,
                         appsEnabled = connection.perAppEnabled,
                         bypassedApps = connection.bypassedApps,
-                        trustedWifiEnabled = connection.trustedWifiEnabled,
-                        savedWifiSsids = connection.savedWifiSsids,
-                        trustedWifiSsids = connection.trustedWifiSsids,
                         onToggleAppsEnabled = { enabled ->
                             ConnectionStore.update(this) { settings ->
                                 settings.copy(perAppEnabled = enabled)
@@ -157,36 +134,6 @@ class PerAppProxyActivity : ComponentActivity() {
                                 )
                             }
                         },
-                        onToggleTrustedWifiEnabled = { enabled ->
-                            ConnectionStore.update(this) { settings ->
-                                settings.copy(trustedWifiEnabled = enabled)
-                            }
-                        },
-                        onToggleTrustedWifi = { ssid ->
-                            ConnectionStore.update(this) { settings ->
-                                settings.copy(
-                                    trustedWifiSsids = settings.trustedWifiSsids.let {
-                                        if (ssid in it) it - ssid else it + ssid
-                                    },
-                                )
-                            }
-                        },
-                        onAddTrustedWifi = { ssid ->
-                            ConnectionStore.update(this) { settings ->
-                                settings.copy(
-                                    savedWifiSsids = settings.savedWifiSsids + ssid,
-                                    trustedWifiSsids = settings.trustedWifiSsids + ssid,
-                                )
-                            }
-                        },
-                        onDeleteTrustedWifi = { ssid ->
-                            ConnectionStore.update(this) { settings ->
-                                settings.copy(
-                                    savedWifiSsids = settings.savedWifiSsids - ssid,
-                                    trustedWifiSsids = settings.trustedWifiSsids - ssid,
-                                )
-                            }
-                        },
                         onBack = ::finish,
                     )
                 }
@@ -195,10 +142,9 @@ class PerAppProxyActivity : ComponentActivity() {
     }
 }
 
-/** The bar's destinations: the apps page and the networks page, one quick switch apart. */
+/** The bar's one destination, the apps page. */
 private enum class PerAppPage(override val icon: Int, override val label: Int) : PillDestination {
     APPS(R.drawable.ic_apps, R.string.per_app_title),
-    NETWORKS(R.drawable.ic_leak_add, R.string.trusted_title),
 }
 
 /** One launchable app, icon included, loaded off the main thread. */
@@ -210,23 +156,14 @@ private data class AppEntry(
 
 @Composable
 private fun PerAppProxyScreen(
-    initialPage: PerAppPage,
     frost: Boolean,
     appsEnabled: Boolean,
     bypassedApps: Set<String>,
-    trustedWifiEnabled: Boolean,
-    savedWifiSsids: Set<String>,
-    trustedWifiSsids: Set<String>,
     onToggleAppsEnabled: (Boolean) -> Unit,
     onToggleApp: (String) -> Unit,
-    onToggleTrustedWifiEnabled: (Boolean) -> Unit,
-    onToggleTrustedWifi: (String) -> Unit,
-    onAddTrustedWifi: (String) -> Unit,
-    onDeleteTrustedWifi: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var page by remember { mutableStateOf(initialPage) }
     val surface = MaterialTheme.colorScheme.surface
     // The bar's glass, the shell's own law in this window too: the pages report whether
     // their rows sit under the bar — it steps a tone up over them — and while the frost
@@ -245,23 +182,12 @@ private fun PerAppProxyScreen(
                 LocalBarCoverage provides barCoverage,
                 LocalBarUnderlay provides barUnderlay,
             ) {
-                when (page) {
-                    PerAppPage.APPS -> AppsPage(
-                        enabled = appsEnabled,
-                        bypassed = bypassedApps,
-                        onToggleEnabled = onToggleAppsEnabled,
-                        onToggle = onToggleApp,
-                    )
-                    PerAppPage.NETWORKS -> NetworksPage(
-                        enabled = trustedWifiEnabled,
-                        saved = savedWifiSsids,
-                        trusted = trustedWifiSsids,
-                        onToggleEnabled = onToggleTrustedWifiEnabled,
-                        onToggle = onToggleTrustedWifi,
-                        onAdd = onAddTrustedWifi,
-                        onDelete = onDeleteTrustedWifi,
-                    )
-                }
+                AppsPage(
+                    enabled = appsEnabled,
+                    bypassed = bypassedApps,
+                    onToggleEnabled = onToggleAppsEnabled,
+                    onToggle = onToggleApp,
+                )
             }
 
             // Content scrolls under the status bar and fades out behind this gradient, the
@@ -301,8 +227,8 @@ private fun PerAppProxyScreen(
 
         SubScreenBottomBar(
             items = PerAppPage.entries.toList(),
-            selected = page,
-            onSelect = { page = it },
+            selected = PerAppPage.APPS,
+            onSelect = { },
             onBack = onBack,
             backdrop = behindBar,
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -410,123 +336,6 @@ private fun AppsPage(
                 }
             }
         }
-    }
-}
-
-/**
- * The networks page: the trusted networks' master switch, then the page's own roster —
- * every name the user ever put on it, the trusted block riding on top and the untoggled
- * one below, the apps page's own arrangement. Nothing is detected here: the page never
- * asks the OS for the network it sits on and never asks for the location grant the name
- * would need — the check itself runs in the core, against the current network alone,
- * and works only when the grant was handed over by hand in the system settings. A long
- * press takes a name off the roster for good.
- */
-@Composable
-private fun NetworksPage(
-    enabled: Boolean,
-    saved: Set<String>,
-    trusted: Set<String>,
-    onToggleEnabled: (Boolean) -> Unit,
-    onToggle: (String) -> Unit,
-    onAdd: (String) -> Unit,
-    onDelete: (String) -> Unit,
-) {
-    // The roster's two blocks, alphabetical within each: the prefs set carries no order.
-    val trustedBlock = remember(saved, trusted) {
-        saved.filter { it in trusted }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
-    }
-    val restBlock = remember(saved, trusted) {
-        saved.filter { it !in trusted }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
-    }
-    var pendingAdd by remember { mutableStateOf(false) }
-    var pendingDelete by remember { mutableStateOf<String?>(null) }
-    // Computed here, not in the list's scope: MaterialTheme doesn't reach into it.
-    val outer = MaterialTheme.shapes.extraLarge
-    val inner = MaterialTheme.shapes.extraSmall
-
-    // The apps page's own report into the screen's bar.
-    val listState = rememberLazyListState()
-    val covered by remember(listState) {
-        derivedStateOf { listState.canScrollForward || listState.canScrollBackward }
-    }
-    val underlaid by rememberContentUnderBar(listState)
-    ReportBarCoverage(covered, underlaid = underlaid)
-
-    PagedList(
-        listState = listState,
-        pullShift = { 0.dp },
-        toggle = {
-            MasterSwitchRow(
-                title = stringResource(R.string.trusted_title),
-                supporting = when {
-                    !enabled -> stringResource(R.string.per_app_disabled)
-                    trusted.isEmpty() -> stringResource(R.string.trusted_hint)
-                    else -> pluralStringResource(
-                        R.plurals.trusted_count,
-                        trusted.size,
-                        trusted.size,
-                    )
-                },
-                enabled = enabled,
-                onChange = onToggleEnabled,
-            )
-        },
-    ) {
-        itemsIndexed(trustedBlock, key = { _, ssid -> ssid }) { index, ssid ->
-            SelectableRow(
-                headline = ssid,
-                supporting = null,
-                bypassed = true,
-                active = enabled,
-                onToggle = { onToggle(ssid) },
-                onLongPress = { pendingDelete = ssid },
-                shape = sectionShape(index, trustedBlock.lastIndex, outer, inner),
-            ) {
-                NetworkTile(bypassed = true, active = enabled)
-            }
-        }
-        if (trustedBlock.isNotEmpty() && restBlock.isNotEmpty()) {
-            item(key = "block gap") { Spacer(modifier = Modifier.height(12.dp)) }
-        }
-        itemsIndexed(restBlock, key = { _, ssid -> ssid }) { index, ssid ->
-            SelectableRow(
-                headline = ssid,
-                supporting = null,
-                bypassed = false,
-                active = enabled,
-                onToggle = { onToggle(ssid) },
-                onLongPress = { pendingDelete = ssid },
-                shape = sectionShape(index, restBlock.lastIndex, outer, inner),
-            ) {
-                NetworkTile(bypassed = false, active = enabled)
-            }
-        }
-        // The hand-add sits at the very end: the roster first, the way in below it all.
-        if (trustedBlock.isNotEmpty() || restBlock.isNotEmpty()) {
-            item(key = "add gap") { Spacer(modifier = Modifier.height(12.dp)) }
-        }
-        item(key = "add network") { AddNetworkRow(onClick = { pendingAdd = true }) }
-    }
-
-    if (pendingAdd) {
-        AddNetworkDialog(
-            onConfirm = { ssid ->
-                pendingAdd = false
-                onAdd(ssid)
-            },
-            onDismiss = { pendingAdd = false },
-        )
-    }
-    pendingDelete?.let { ssid ->
-        DeleteNetworkDialog(
-            ssid = ssid,
-            onConfirm = {
-                pendingDelete = null
-                onDelete(ssid)
-            },
-            onDismiss = { pendingDelete = null },
-        )
     }
 }
 
@@ -668,11 +477,11 @@ private fun MasterSwitchRow(
 }
 
 /**
- * One pickable row, the server row's twin: the leading slot bare — the app's own icon, or
- * a network's mark — the name with a supporting line under it. A picked entry wears the
- * accent — it stays out of the tunnel — and the tap trades the row between the two
- * states. While the master switch is off the rows all go quiet: dimmed, untappable, the
- * picks' block still sitting where it froze.
+ * One pickable row, the server row's twin: the leading slot bare — the app's own icon —
+ * the name with a supporting line under it. A picked entry wears the accent — it stays
+ * out of the tunnel — and the tap trades the row between the two states. While the
+ * master switch is off the rows all go quiet: dimmed, untappable, the picks' block
+ * still sitting where it froze.
  */
 @Composable
 private fun SelectableRow(
@@ -681,7 +490,6 @@ private fun SelectableRow(
     bypassed: Boolean,
     active: Boolean,
     onToggle: () -> Unit,
-    onLongPress: (() -> Unit)? = null,
     shape: Shape,
     leading: @Composable () -> Unit,
 ) {
@@ -713,29 +521,17 @@ private fun SelectableRow(
         label = "pickable row supporting",
     )
     Surface(
+        onClick = {
+            poke()
+            onToggle()
+        },
+        enabled = active,
         shape = shape,
         color = containerColor,
         contentColor = contentColor,
         modifier = Modifier.fillMaxWidth(),
     ) {
         ListItem(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(shape)
-                .combinedClickable(
-                    role = Role.Button,
-                    enabled = active,
-                    onClick = {
-                        poke()
-                        onToggle()
-                    },
-                    onLongClick = onLongPress?.let { handler ->
-                        {
-                            poke()
-                            handler()
-                        }
-                    },
-                ),
             headlineContent = {
                 Text(
                     text = headline,
@@ -794,168 +590,6 @@ private fun AppIcon(app: AppEntry, active: Boolean) {
         modifier = Modifier
             .size(40.dp)
             .alpha(iconAlpha),
-    )
-}
-
-/**
- * The delete confirmation — the question a network row's long press asks before taking
- * the name off the roster for good. The confirm button carries the error color, the
- * config delete's own law.
- */
-@Composable
-private fun DeleteNetworkDialog(
-    ssid: String,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                painter = painterResource(R.drawable.ic_delete),
-                contentDescription = null,
-                tint = colors.error,
-            )
-        },
-        title = { Text(stringResource(R.string.trusted_delete_title)) },
-        text = { Text(stringResource(R.string.trusted_delete_text, ssid)) },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
-            ) {
-                Text(stringResource(R.string.trusted_delete_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.subscription_cancel))
-            }
-        },
-    )
-}
-
-/**
- * The network's own tile, the server row's leading square: the mark on a 40dp tonal
- * container — the accent while trusted, the secondary otherwise, dimmed with the rest
- * while the master switch is off.
- */
-@Composable
-private fun NetworkTile(bypassed: Boolean, active: Boolean) {
-    val colors = MaterialTheme.colorScheme
-    val motion = MaterialTheme.motionScheme
-    val container by animateColorAsState(
-        targetValue = when {
-            !active -> colors.secondaryContainer.copy(alpha = 0.38f)
-            bypassed -> colors.primary
-            else -> colors.secondaryContainer
-        },
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "network tile container",
-    )
-    val content by animateColorAsState(
-        targetValue = when {
-            !active -> colors.onSecondaryContainer.copy(alpha = 0.38f)
-            bypassed -> colors.onPrimary
-            else -> colors.onSecondaryContainer
-        },
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "network tile content",
-    )
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = container,
-        contentColor = content,
-        modifier = Modifier.size(40.dp),
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                painter = painterResource(R.drawable.ic_wifi),
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-            )
-        }
-    }
-}
-
-/**
- * The hand-add row, the list's last block: the plus on the network tile's own square,
- * the network's name typed in on confirm — trusted straight away.
- */
-@Composable
-private fun AddNetworkRow(onClick: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val poke = rememberHapticPoke()
-    Surface(
-        onClick = {
-            poke()
-            onClick()
-        },
-        shape = MaterialTheme.shapes.extraLarge,
-        color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
-        contentColor = colors.onSurface,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = colors.secondaryContainer,
-                contentColor = colors.onSecondaryContainer,
-                modifier = Modifier.size(40.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_add),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
-            Text(
-                text = stringResource(R.string.trusted_add),
-                style = MaterialTheme.typography.bodyLarge,
-                color = colors.onSurface,
-            )
-        }
-    }
-}
-
-/** The hand-add dialog: a name field, "Add" answering only once it holds something. */
-@Composable
-private fun AddNetworkDialog(
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var name by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.trusted_add_title)) },
-        text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                singleLine = true,
-                label = { Text(stringResource(R.string.trusted_add_field)) },
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(name.trim()) },
-                enabled = name.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.trusted_add_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.trusted_add_cancel))
-            }
-        },
     )
 }
 

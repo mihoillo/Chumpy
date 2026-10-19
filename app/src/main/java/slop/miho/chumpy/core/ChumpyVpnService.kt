@@ -13,7 +13,6 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.VpnService
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -365,18 +364,6 @@ class ChumpyVpnService : VpnService() {
             // A new attempt supersedes whatever fall the last one announced.
             cancelAlert()
             try {
-                // A trusted Wi-Fi carries the traffic itself: the tunnel stands down, the
-                // status line saying why instead of an error.
-                val connection = ConnectionStore.current(this)
-                if (connection.trustedWifiEnabled && currentWifiSsid() in connection.trustedWifiSsids) {
-                    stopTunnelWatch()
-                    XrayCore.publish(
-                        TunnelStatus(TunnelState.DOWN, getString(R.string.trusted_stand_down)),
-                    )
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                    return@execute
-                }
                 if (prepare(this) != null) {
                     throw SecurityException(getString(R.string.error_vpn_not_authorized))
                 }
@@ -603,23 +590,6 @@ class ChumpyVpnService : VpnService() {
             }
         }
         return builder.establish()
-    }
-
-    /**
-     * The Wi-Fi the device sits on, by name. Android only shares names with apps holding
-     * the location permission (and with location itself on); anything else reads as null —
-     * an unknown network is never trusted, so the tunnel simply comes up as usual.
-     */
-    private fun currentWifiSsid(): String? = try {
-        @Suppress("DEPRECATION")
-        applicationContext.getSystemService(WifiManager::class.java)
-            ?.connectionInfo
-            ?.ssid
-            ?.removeSurrounding("\"")
-            ?.takeIf { ssid -> ssid.isNotEmpty() && ssid != "<unknown ssid>" }
-    } catch (e: Exception) {
-        Log.w(TAG, "Reading the Wi-Fi name failed", e)
-        null
     }
 
     private fun closeTun() {

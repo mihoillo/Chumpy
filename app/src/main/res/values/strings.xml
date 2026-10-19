@@ -163,24 +163,9 @@
         <item quantity="other">Don\'t route %1$d apps</item>
     </plurals>
     <string name="per_app_disabled">Disabled</string>
-    <string name="trusted_title">Trusted WiFis</string>
-    <string name="trusted_hint">Don\'t route on trusted networks</string>
-    <plurals name="trusted_count">
-        <item quantity="one">Don\'t route on %1$d network</item>
-        <item quantity="other">Don\'t route on %1$d networks</item>
-    </plurals>
-    <string name="trusted_stand_down">Trusted network — traffic goes direct</string>
     <string name="connection_auto_reconnect">Auto-reconnect</string>
     <string name="connection_auto_reconnect_on">The tunnel comes back on its own wherever it fell</string>
     <string name="connection_auto_reconnect_off">A fall waits for the alert\'s Reconnect</string>
-    <string name="trusted_delete_title">Remove this network?</string>
-    <string name="trusted_delete_text">\"%1$s\" will be removed from the list.</string>
-    <string name="trusted_delete_confirm">Remove</string>
-    <string name="trusted_add">Add network</string>
-    <string name="trusted_add_title">Add a network</string>
-    <string name="trusted_add_field">Network name (SSID)</string>
-    <string name="trusted_add_confirm">Add</string>
-    <string name="trusted_add_cancel">Cancel</string>
     <string name="settings_background_refresh">Background refresh</string>
     <string name="settings_background_refresh_count">Auto-updates %d subscriptions</string>
     <string name="settings_about_core">Xray core</string>

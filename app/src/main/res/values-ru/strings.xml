@@ -163,26 +163,9 @@
         <item quantity="other">Не проксировать %1$d приложения</item>
     </plurals>
     <string name="per_app_disabled">Выключено</string>
-    <string name="trusted_title">Доверенные Wi-Fi</string>
-    <string name="trusted_hint">Не проксировать в доверенных сетях</string>
-    <plurals name="trusted_count">
-        <item quantity="one">Не проксировать в %1$d сети</item>
-        <item quantity="few">Не проксировать в %1$d сети</item>
-        <item quantity="many">Не проксировать в %1$d сетях</item>
-        <item quantity="other">Не проксировать в %1$d сети</item>
-    </plurals>
-    <string name="trusted_stand_down">Доверенная сеть — трафик идёт напрямую</string>
     <string name="connection_auto_reconnect">Автопереподключение</string>
     <string name="connection_auto_reconnect_on">Туннель сам поднимается, где бы ни упал</string>
     <string name="connection_auto_reconnect_off">Когда туннель упадёт, мы просто отправим уведомление</string>
-    <string name="trusted_delete_title">Удалить эту сеть?</string>
-    <string name="trusted_delete_text">«%1$s» будет удалена из списка.</string>
-    <string name="trusted_delete_confirm">Удалить</string>
-    <string name="trusted_add">Добавить сеть</string>
-    <string name="trusted_add_title">Добавить сеть</string>
-    <string name="trusted_add_field">Название сети (SSID)</string>
-    <string name="trusted_add_confirm">Добавить</string>
-    <string name="trusted_add_cancel">Отмена</string>
     <string name="settings_background_refresh">Фоновое обновление</string>
     <string name="settings_background_refresh_count">Автообновление подписок: %d</string>
     <string name="settings_about_core">Ядро Xray</string>

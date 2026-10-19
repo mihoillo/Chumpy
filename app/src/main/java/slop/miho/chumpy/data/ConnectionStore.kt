@@ -26,15 +26,6 @@ data class ConnectionSettings(
     /** The per-app proxy's own master switch: off, and the whole list stops applying. */
     val perAppEnabled: Boolean = true,
     /**
-     * Every network the networks page holds — trusted and untoggled both, the page's own
-     * roster. Nothing is detected from the OS; a name lands here only by the user's hand.
-     */
-    val savedWifiSsids: Set<String> = emptySet(),
-    /** Wi-Fi names the tunnel stands down on — the roster's trusted subset. */
-    val trustedWifiSsids: Set<String> = emptySet(),
-    /** The trusted networks' own master switch, mirroring the per-app one. */
-    val trustedWifiEnabled: Boolean = true,
-    /**
      * Whether the system's own demand for the VPN — the always-on restart, the sticky
      * resurrection after the core process died — brings the tunnel back by itself. Off
      * (the default): a fall stands, the alert notification's Reconnect being the way
@@ -105,12 +96,6 @@ object ConnectionStore {
                 ?: XrayConfigBuilder.DEFAULT_TEST_URL,
             bypassedApps = prefs.getStringSet(KEY_BYPASS_APPS, null)?.toSet() ?: emptySet(),
             perAppEnabled = prefs.getBoolean(KEY_PER_APP, true),
-            // The roster: an install from before it existed starts from its trusted names —
-            // the page kept only those, so they become the whole roster, trusted as they were.
-            savedWifiSsids = prefs.getStringSet(KEY_SAVED_WIFI, null)?.toSet()
-                ?: prefs.getStringSet(KEY_TRUSTED_WIFI, null)?.toSet() ?: emptySet(),
-            trustedWifiSsids = prefs.getStringSet(KEY_TRUSTED_WIFI, null)?.toSet() ?: emptySet(),
-            trustedWifiEnabled = prefs.getBoolean(KEY_TRUSTED_WIFI_ENABLED, true),
             autoReconnect = prefs.getBoolean(KEY_AUTO_RECONNECT, false),
         )
     }
@@ -127,21 +112,10 @@ object ConnectionStore {
                 } else {
                     editor.putStringSet(KEY_BYPASS_APPS, settings.bypassedApps)
                 }
-                if (settings.savedWifiSsids.isEmpty()) {
-                    editor.remove(KEY_SAVED_WIFI)
-                } else {
-                    editor.putStringSet(KEY_SAVED_WIFI, settings.savedWifiSsids)
-                }
-                if (settings.trustedWifiSsids.isEmpty()) {
-                    editor.remove(KEY_TRUSTED_WIFI)
-                } else {
-                    editor.putStringSet(KEY_TRUSTED_WIFI, settings.trustedWifiSsids)
-                }
             }
             .putString(KEY_ROUTING, settings.routingMode.name)
             .putString(KEY_TEST_URL, settings.delayTestUrl)
             .putBoolean(KEY_PER_APP, settings.perAppEnabled)
-            .putBoolean(KEY_TRUSTED_WIFI_ENABLED, settings.trustedWifiEnabled)
             .putBoolean(KEY_AUTO_RECONNECT, settings.autoReconnect)
             .apply()
     }
@@ -152,8 +126,5 @@ object ConnectionStore {
     private const val KEY_TEST_URL = "delay_test_url"
     private const val KEY_BYPASS_APPS = "bypassed_apps"
     private const val KEY_PER_APP = "per_app_enabled"
-    private const val KEY_SAVED_WIFI = "saved_wifi_ssids"
-    private const val KEY_TRUSTED_WIFI = "trusted_wifi_ssids"
-    private const val KEY_TRUSTED_WIFI_ENABLED = "trusted_wifi_enabled"
     private const val KEY_AUTO_RECONNECT = "auto_reconnect"
 }
