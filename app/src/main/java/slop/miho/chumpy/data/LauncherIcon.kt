@@ -11,11 +11,11 @@ import android.content.pm.PackageManager
  * be a moment without a launcher entry at all.
  *
  * The choice survives updates and reboots (PackageManager remembers component states),
- * and a fresh install always starts from the manifest's default: the Aurora icon.
+ * and a fresh install always starts from the manifest's default: the Chumpy icon.
  */
 object LauncherIcon {
     private val aliases: Map<IconVariant, String> = mapOf(
-        IconVariant.AURORA to "slop.miho.chumpy.LauncherAurora",
+        IconVariant.CHUMPY to "slop.miho.chumpy.LauncherChumpy",
         IconVariant.INVERTED to "slop.miho.chumpy.LauncherInverted",
         IconVariant.THEMED to "slop.miho.chumpy.LauncherThemed",
     )

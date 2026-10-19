@@ -61,7 +61,7 @@
              PackageManager.setComponentEnabledSetting, and the picker applies the choice
              the moment it is made. -->
         <activity-alias
-            android:name=".LauncherAurora"
+            android:name=".LauncherChumpy"
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"

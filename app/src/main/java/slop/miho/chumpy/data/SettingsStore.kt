@@ -25,12 +25,12 @@ enum class ThemeMode {
 enum class FlagStyle { TWEMOJI, SYSTEM, GLOBE }
 
 /**
- * The launcher icon variant. AURORA is the flat sky-colored art on white; INVERTED swaps
+ * The launcher icon variant. CHUMPY is the flat sky-colored art on white; INVERTED swaps
  * the two; THEMED is the neutral art the system's themed icons (Android 13+) dress in the
  * monet palette — and that the app itself colors from its own accent everywhere it draws
  * (the QS tile, the picker's preview).
  */
-enum class IconVariant { AURORA, INVERTED, THEMED }
+enum class IconVariant { CHUMPY, INVERTED, THEMED }
 
 /**
  * The interface accent. ADAPTIVE follows the wallpaper (Material You, Android 12+); the rest
@@ -122,7 +122,7 @@ data class UiSettings(
     /** How the server list draws each exit's country. */
     val flagStyle: FlagStyle = FlagStyle.TWEMOJI,
     /** The launcher icon variant; see [IconVariant]. */
-    val iconVariant: IconVariant = IconVariant.AURORA,
+    val iconVariant: IconVariant = IconVariant.CHUMPY,
     /** How strongly the scrim dims the wallpaper on Home, 0 (none) to 1 (fully dark). */
     val wallpaperDim: Float = 0.4f,
     /** The scrim strength on every other screen, 0 (none) to 1 (fully dark). */
@@ -253,7 +253,7 @@ object SettingsStore {
                 .ifBlank { HappSpoof.randomHwid() },
             fontId = prefs.getString(KEY_FONT, null) ?: FontRegistry.INTER_ID,
             flagStyle = enumEntry(prefs.getString(KEY_FLAG_STYLE, null), FlagStyle.TWEMOJI),
-            iconVariant = enumEntry(prefs.getString(KEY_ICON_VARIANT, null), IconVariant.AURORA),
+            iconVariant = enumEntry(prefs.getString(KEY_ICON_VARIANT, null), IconVariant.CHUMPY),
             wallpaperDim = prefs.getFloat(KEY_WALLPAPER_DIM, 0.4f),
             wallpaperDimScreens = prefs.getFloat(KEY_WALLPAPER_DIM_SCREENS, 0.5f),
             wallpaperBlur = prefs.getFloat(KEY_WALLPAPER_BLUR, 0.25f),

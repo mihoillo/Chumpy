@@ -122,7 +122,7 @@ class QuickTileService : TileService() {
 
     /** The connected glyph in the picked variant's color. */
     private fun variantIcon(variant: IconVariant): Icon = when (variant) {
-        IconVariant.AURORA -> Icon.createWithResource(this, R.drawable.ic_tile_on)
+        IconVariant.CHUMPY -> Icon.createWithResource(this, R.drawable.ic_tile_on)
         IconVariant.INVERTED -> Icon.createWithResource(this, R.drawable.ic_tile_inverted)
         // The app's own accent, tinted onto the white glyph at runtime — the live scheme,
         // not a color baked into a resource.

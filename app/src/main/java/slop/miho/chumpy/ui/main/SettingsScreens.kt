@@ -1913,7 +1913,7 @@ fun AboutScreen(
         // grown to stand level with its own name below, the one-liner under that.
         Column(Modifier.fillMaxWidth()) {
             Icon(
-                painter = painterResource(R.drawable.ic_aurora_mark),
+                painter = painterResource(R.drawable.ic_chumpy_mark),
                 contentDescription = null,
                 tint = markColor,
                 modifier = Modifier.size(96.dp),
@@ -2111,7 +2111,7 @@ private fun OutgoingRow(
 
 /**
  * The launcher icon picker: the three variants as the icons themselves — round, the way a
- * launcher draws them, not glyph-in-a-tile like the other pickers. Aurora is the flat sky
+ * launcher draws them, not glyph-in-a-tile like the other pickers. Chumpy is the flat sky
  * art on white, Inverted swaps the two, Themed shows the app's own live scheme (the neutral
  * art over the surface, in the accent's primary). Picking one swaps the launcher entry on
  * the spot, through the activity aliases in the manifest.
@@ -2138,7 +2138,7 @@ private fun IconVariantRow(
             Text(
                 text = stringResource(
                     when (selected) {
-                        IconVariant.AURORA -> R.string.settings_icon_aurora
+                        IconVariant.CHUMPY -> R.string.settings_icon_chumpy
                         IconVariant.INVERTED -> R.string.settings_icon_inverted
                         IconVariant.THEMED -> R.string.settings_icon_themed
                     },
@@ -2187,14 +2187,14 @@ private fun IconPreviewButton(
     val motion = MaterialTheme.motionScheme
     val sky = Color(0xFF6FACED)
     val (background, art) = when (variant) {
-        IconVariant.AURORA -> Color.White to sky
+        IconVariant.CHUMPY -> Color.White to sky
         IconVariant.INVERTED -> sky to Color.White
         // The live scheme, as the QS tile and the app itself draw the themed icon.
         IconVariant.THEMED -> colors.surface to colors.primary
     }
     val label = stringResource(
         when (variant) {
-            IconVariant.AURORA -> R.string.settings_icon_aurora
+            IconVariant.CHUMPY -> R.string.settings_icon_chumpy
             IconVariant.INVERTED -> R.string.settings_icon_inverted
             IconVariant.THEMED -> R.string.settings_icon_themed
         },
@@ -2263,7 +2263,7 @@ private fun IconPreviewButton(
             Image(
                 painter = painterResource(
                     when (variant) {
-                        IconVariant.AURORA -> R.drawable.ic_launcher_foreground
+                        IconVariant.CHUMPY -> R.drawable.ic_launcher_foreground
                         // White art: shown as-is for Inverted, tinted with the live primary
                         // for Themed — the vector is the real launcher art, not a stand-in.
                         IconVariant.INVERTED -> R.drawable.ic_launcher_fg_inverted

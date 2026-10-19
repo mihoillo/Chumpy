@@ -166,7 +166,7 @@ fun WelcomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.ic_aurora_mark),
+                            painter = painterResource(R.drawable.ic_chumpy_mark),
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(56.dp),

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The app's own mark, from the root aurora.svg the user drew: the tilted diamond
-     backdrop and the aurora "A" inside it. Both paths white, meant to be tinted; the
+<!-- The app's own mark, the user's own drawing: the tilted diamond
+     backdrop and the "A" inside it. Both paths white, meant to be tinted; the
      diamond keeps its own 30% haze. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="50dp"
