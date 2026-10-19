@@ -58,7 +58,8 @@ android {
     // weight, and carrying both 64- and 32-bit copies doubles it for every device that
     // installs the wrong one. The builds are sideloaded, so the split is per file. The
     // debug build runs on the phone in hand — its invocation carries no release task, so
-    // it splits into the 64-bit file only; a release invocation splits into both.
+    // it splits into the 64-bit file only; a release invocation splits into both, plus
+    // the universal file with the two cores aboard for whoever can't tell the arms apart.
     val releaseRequested = gradle.startParameter.taskNames.any { name ->
         name.substringAfterLast(':').contains("Release", ignoreCase = true)
     }
@@ -68,7 +69,7 @@ android {
             reset()
             include("arm64-v8a")
             if (releaseRequested) include("armeabi-v7a")
-            isUniversalApk = false
+            isUniversalApk = releaseRequested
         }
     }
 
