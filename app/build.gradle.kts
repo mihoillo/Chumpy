@@ -2,6 +2,7 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -71,14 +72,36 @@ android {
         }
     }
 
+    // The app's own release key: root chumpy.keystore + keystore.properties (both gitignored),
+    // one key for both build types — a release still installs right over a debug install and
+    // keeps its data, but the signature is a real identity now, not the machine's debug
+    // certificate that Play Protect flags. A checkout without the pair falls back to the
+    // debug key, the old way.
+    val keystoreProps = rootProject.file("keystore.properties")
+    if (keystoreProps.isFile) {
+        val props = Properties().apply { keystoreProps.inputStream().use { load(it) } }
+        signingConfigs.create("release") {
+            storeFile = rootProject.file(props.getProperty("storeFile"))
+            storePassword = props.getProperty("storePassword")
+            keyAlias = props.getProperty("keyAlias")
+            keyPassword = props.getProperty("keyPassword")
+            // minSdk 26: v2 is what every device reads; v3 carries the same key for the
+            // newer verifiers. v1 (JAR signing) serves nothing below 24.
+            enableV1Signing = false
+            enableV2Signing = true
+            enableV3Signing = true
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sideload builds: signed with the local debug key, so a release installs right
-            // over a debug install (same id, same signature) and keeps its data.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+        }
+        debug {
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

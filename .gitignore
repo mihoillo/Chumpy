@@ -17,3 +17,7 @@ skills-lock.json
 # User-dropped feedback: crash logs and the builds they came from.
 feedback.md
 fedback/
+
+# The release signing key and its passwords: never leaves this machine.
+chumpy.keystore
+keystore.properties
