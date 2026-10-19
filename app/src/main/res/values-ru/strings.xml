@@ -70,10 +70,10 @@
     <string name="subscription_updated_at">Обновлена в %1$s</string>
     <string name="subscription_updated_ago">Обновлена %1$s назад</string>
     <string name="config_delete_title">Удалить этот конфиг?</string>
-    <string name="config_delete_text">«%1$s» будет удалён из Aurora.</string>
+    <string name="config_delete_text">«%1$s» будет удалён из Chumpy.</string>
     <string name="config_delete_confirm">Удалить</string>
     <string name="subscription_delete_title">Удалить эту подписку?</string>
-    <string name="subscription_delete_text">«%1$s» и все её серверы будут удалены из Aurora.</string>
+    <string name="subscription_delete_text">«%1$s» и все её серверы будут удалены из Chumpy.</string>
     <string name="subscription_delete_confirm">Удалить</string>
 
     <string name="happ_title">Маскировка под Happ</string>
@@ -93,7 +93,7 @@
 
     <!-- Первый запуск -->
     <string name="welcome_title">Привет, незнакомец!</string>
-    <string name="welcome_subtitle">Добро пожаловать в Aurora! Добавьте подписку или конфиг, чтобы начать.</string>
+    <string name="welcome_subtitle">Добро пожаловать в Chumpy! Добавьте подписку или конфиг, чтобы начать.</string>
     <string name="import_nothing_new">Новых конфигов не найдено</string>
 
     <!-- Настройки -->
@@ -260,9 +260,9 @@
     <string name="notif_interrupted_revoked">Другой VPN перехватил подключение.</string>
     <string name="notif_interrupted_auto">Другой VPN перехватил подключение. Переподключаемся…</string>
     <string name="notif_reconnected_title">Соединение восстановлено</string>
-    <string name="notif_reconnected_text">Aurora сама вернула туннель.</string>
+    <string name="notif_reconnected_text">Chumpy сама вернула туннель.</string>
     <string name="notif_reconnect_failed_title">Не удалось переподключиться</string>
-    <string name="notif_interrupted_off">Туннель отключён — Aurora не станет поднимать его сама.</string>
+    <string name="notif_interrupted_off">Туннель отключён — Chumpy не станет поднимать его сама.</string>
     <string name="notif_action_reconnect">Переподключить</string>
     <string name="notif_action_disconnect_anyway">Всё равно отключить</string>
     <string name="error_no_config">Сервер не выбран</string>

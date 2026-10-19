@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name" translatable="false">Aurora</string>
+    <string name="app_name" translatable="false">Chumpy</string>
 
     <!-- The build's own stage, worn as a quiet chip. -->
     <string name="badge_alpha">Alpha</string>
@@ -70,10 +70,10 @@
     <string name="subscription_updated_at">Updated at %1$s</string>
     <string name="subscription_updated_ago">Updated %1$s ago</string>
     <string name="config_delete_title">Delete this config?</string>
-    <string name="config_delete_text">\"%1$s\" will be removed from Aurora.</string>
+    <string name="config_delete_text">\"%1$s\" will be removed from Chumpy.</string>
     <string name="config_delete_confirm">Delete</string>
     <string name="subscription_delete_title">Delete this subscription?</string>
-    <string name="subscription_delete_text">\"%1$s\" and all of its servers will be removed from Aurora.</string>
+    <string name="subscription_delete_text">\"%1$s\" and all of its servers will be removed from Chumpy.</string>
     <string name="subscription_delete_confirm">Delete</string>
 
     <string name="happ_title">Spoof as Happ</string>
@@ -93,7 +93,7 @@
 
     <!-- Welcome (first run) -->
     <string name="welcome_title">Hello, stranger!</string>
-    <string name="welcome_subtitle">Welcome to Aurora! Add a subscription or config to get started.</string>
+    <string name="welcome_subtitle">Welcome to Chumpy! Add a subscription or config to get started.</string>
     <string name="import_nothing_new">Nothing new to import</string>
 
     <!-- Settings -->
@@ -192,9 +192,9 @@
     <string name="settings_about_language">Language</string>
     <string name="settings_about_tagline">An Xray client wrapped in Material 3 Expressive</string>
     <string name="settings_about_telegram">Telegram channel</string>
-    <string name="settings_about_telegram_handle">t.me/AuroraFragments</string>
+    <string name="settings_about_telegram_handle">t.me/ChumpyXray</string>
     <string name="settings_about_github">GitHub</string>
-    <string name="settings_about_github_handle">github.com/mihoillo/Aurora</string>
+    <string name="settings_about_github_handle">github.com/mihoillo/Chumpy</string>
 
     <!-- Fonts -->
     <string name="fonts_system">System</string>
@@ -264,9 +264,9 @@
     <string name="notif_interrupted_revoked">Another VPN took over this one.</string>
     <string name="notif_interrupted_auto">Another VPN took over this one. Reconnecting…</string>
     <string name="notif_reconnected_title">Connection restored</string>
-    <string name="notif_reconnected_text">Aurora brought the tunnel back by itself.</string>
+    <string name="notif_reconnected_text">Chumpy brought the tunnel back by itself.</string>
     <string name="notif_reconnect_failed_title">Reconnect failed</string>
-    <string name="notif_interrupted_off">The tunnel is down — Aurora will not bring it back on its own.</string>
+    <string name="notif_interrupted_off">The tunnel is down — Chumpy will not bring it back on its own.</string>
     <string name="notif_action_reconnect">Reconnect</string>
     <string name="notif_action_disconnect_anyway">Disconnect anyway</string>
     <string name="error_no_config">No server selected</string>

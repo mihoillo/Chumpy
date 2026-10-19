@@ -16,6 +16,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Aurora"
+rootProject.name = "Chumpy"
 
 include(":app")

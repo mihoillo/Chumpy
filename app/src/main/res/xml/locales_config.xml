@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Declared for Android 13+ per-app language: Settings → Apps → Aurora → Language.
+<!-- Declared for Android 13+ per-app language: Settings → Apps → Chumpy → Language.
      Anything outside this list falls back to English (the default values/). -->
 <locale-config xmlns:android="http://schemas.android.com/apk/res/android">
     <locale android:name="en" />

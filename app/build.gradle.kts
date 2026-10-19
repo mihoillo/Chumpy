@@ -11,7 +11,7 @@ plugins {
 }
 
 android {
-    namespace = "slop.miho.aurora"
+    namespace = "slop.miho.chumpy"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     // The build's own number: every invocation that assembles a release APK takes the
@@ -39,7 +39,7 @@ android {
     val builderName = System.getProperty("user.name") ?: "unknown"
 
     defaultConfig {
-        applicationId = providers.gradleProperty("auroraPackageName").get()
+        applicationId = providers.gradleProperty("chumpyPackageName").get()
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = buildNumber
