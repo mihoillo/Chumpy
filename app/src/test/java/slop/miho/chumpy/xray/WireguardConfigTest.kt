@@ -16,7 +16,7 @@ class WireguardConfigTest {
     fun `real conf builds a wireguard outbound with the secret key`() {
         val conf = """
             [Interface]
-            # Панель управления: http://10.0.0.1:8080
+            # The panel's own control page, a comment to step over
             Address = 10.0.0.3/32
             PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
             MTU = 1280

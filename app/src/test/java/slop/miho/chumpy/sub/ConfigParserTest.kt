@@ -318,38 +318,87 @@ class ConfigParserTest {
         assertTrue(profiles.all { it.server.isNotEmpty() })
     }
 
+    /** One aggregator bundle: proxy outbounds under "prefix tag" names, a balancer over them. */
+    private fun bundle(prefix: String, selector: String, strategy: String?, vararg servers: Pair<String, String>) = """
+        {
+          "remarks": "$prefix",
+          "outbounds": [
+            ${servers.joinToString(",\n            ") { (tag, address) ->
+                """
+                { "tag": "$tag", "protocol": "vless", "settings": { "vnext": [ { "address": "$address", "port": 443, "users": [ { "id": "00000000-1111-2222-3333-444444444444", "encryption": "none", "flow": "xtls-rprx-vision" } ] } ] },
+                  "streamSettings": { "network": "tcp", "security": "reality", "realitySettings": { "serverName": "pl4.example.org", "publicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "shortId": "0000000000000000", "fingerprint": "edge" } } }
+                """.trimIndent()
+            }},
+            { "tag": "direct", "protocol": "freedom", "settings": {} },
+            { "tag": "block", "protocol": "blackhole", "settings": {} }
+          ],
+          "routing": { "balancers": [ { "tag": "${selector.uppercase()}_Balancer", "selector": ["$selector"],${strategy?.let { """"strategy": { "type": "$it" }, """ } ?: ""} "fallbackTag": "" } ] }
+        }
+    """
+
+    /** A single server's own config, named by its remarks. */
+    private fun solo(name: String, address: String) = """
+        {
+          "remarks": "$name",
+          "outbounds": [
+            { "tag": "proxy", "protocol": "vless", "settings": { "vnext": [ { "address": "$address", "port": 443, "users": [ { "id": "00000000-1111-2222-3333-444444444444", "encryption": "none", "flow": "xtls-rprx-vision" } ] } ] },
+              "streamSettings": { "network": "tcp", "security": "reality", "realitySettings": { "serverName": "pl4.example.org", "publicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "shortId": "0000000000000000", "fingerprint": "edge" } } },
+            { "tag": "direct", "protocol": "freedom", "settings": {} },
+            { "tag": "block", "protocol": "blackhole", "settings": {} }
+          ]
+        }
+    """
+
+    /** A config the core cannot speak at all — hysteria outbounds, alone or in a bundle. */
+    private fun hysteriaConfig(prefix: String, vararg tags: String) = """
+        {
+          "remarks": "$prefix",
+          "outbounds": [
+            ${tags.joinToString(",\n            ") { """{ "tag": "$it", "protocol": "hysteria", "settings": {} }""" }},
+            { "tag": "direct", "protocol": "freedom", "settings": {} },
+            { "tag": "block", "protocol": "blackhole", "settings": {} }
+          ]
+        }
+    """
+
     @Test
-    fun `the real panelsub payload files its aggregator members away hidden`() {
-        val body = javaClass.getResourceAsStream("/panelsub.json")!!
-            .readBytes().decodeToString()
+    fun `a panel payload files its aggregator members away hidden`() {
+        // The panel shape, synthesized: two singles, an all-hysteria bundle, a lone
+        // hysteria config, and two balancer bundles whose members ride behind them.
+        val body = listOf(
+            solo("🇪🇪 Тестия #1", "1.2.3.4"),
+            solo("🇫🇮 Тестланд #1", "1.2.3.5"),
+            hysteriaConfig("🇪🇪TL-1", "tlh", "tlh-2", "tlh-3"),
+            hysteriaConfig("🇩🇪TL-4", "proxy"),
+            bundle("🇪🇪TL-2", "tly", "leastPing", "tly" to "1.2.3.6", "tly-2" to "1.2.3.7", "tly-3" to "1.2.3.8"),
+            bundle("🇫🇮 TL-3", "tlv", null, "tlv" to "1.2.3.9", "tlv-2" to "1.2.3.10"),
+        ).joinToString(",", "[", "]")
         val parsed = ConfigParser.parse(body)!!
         val balancers = parsed.filter { it.type == ProfileType.BALANCER }
-        println("BALANCERS: " + balancers.map { "${it.remarks} -> ${it.balancerStrategy}, members=${it.balancerMemberKeys.size}" })
         val servers = parsed.filter { it.type != ProfileType.BALANCER }
-        println("SERVERS: " + servers.size + " " + servers.map { "${it.remarks}${if (it.hidden) " [hidden]" else ""}" })
         // The store keeps everything — the balancers' members resolve by linkKey at
-        // connect — but the list shows only what the panel means as rows: the seven
-        // singles and the two group rows. The wly/wlv plumbing stays filed away.
+        // connect — but the list shows only what the panel means as rows: the two
+        // singles and the two group rows. The tly/tlv plumbing stays filed away.
         val all = parsed.mapIndexed { i, p -> p.copy(linkKey = p.computeLinkKey(), order = i.toLong()) }
         val listed = all.filter { it.hidden.not() }
-        println("LISTED: " + listed.map { it.remarks })
-        // The third balancer (WL-1) is all-hysteria outbounds — a protocol this core
-        // does not speak — so parsing drops it whole; its members never stand anywhere.
+        // The hysteria configs — the bundle and the lone one — are protocols this core
+        // does not speak, so parsing drops them whole; their members never stand anywhere.
         assertEquals(2, balancers.size)
-        assertEquals(26, servers.size)
-        // Every stored server is one of the seven named singles or a hidden member.
-        assertEquals(19, servers.count { it.hidden })
-        assertEquals(9, listed.size)
+        assertEquals(7, servers.size)
+        // Every stored server is one of the two named singles or a hidden member.
+        assertEquals(5, servers.count { it.hidden })
+        assertEquals(4, listed.size)
         assertTrue(listed.none { it.hidden })
-        // The list runs in the panel's own order: the seven singles as the configs
-        // come, the two balancers where their configs stand.
-        assertEquals("Эстония #1", listed.first().remarks.takeLast(10))
-        assertEquals(listOf("🇪🇪WL-2", "🇫🇮 WL-3"), listed.filter { it.type == ProfileType.BALANCER }.map { it.remarks })
-        assertTrue(all.first().remarks.contains("Эстония"))
-        // The stored tail is the WL-3 bundle's plumbing: its members filed away hidden
+        // The list runs in the panel's own order: the singles as the configs come, the
+        // two balancers where their configs stand.
+        assertEquals("🇪🇪 Тестия #1", listed.first().remarks)
+        assertEquals(listOf("🇪🇪TL-2", "🇫🇮 TL-3"), listed.filter { it.type == ProfileType.BALANCER }.map { it.remarks })
+        // The spelled strategy rides along; the unmarked one falls back to random.
+        assertEquals(listOf("leastping", "random"), balancers.map { it.balancerStrategy })
+        // The stored tail is the TL-3 bundle's plumbing: its members filed away hidden
         // under the bundle's "prefix tag" names, the group row standing among them.
         val lastMember = all.last()
-        assertTrue(lastMember.hidden && lastMember.remarks.endsWith("wlv-7"))
+        assertTrue(lastMember.hidden && lastMember.remarks.endsWith("tlv-2"))
     }
 
     @Test
