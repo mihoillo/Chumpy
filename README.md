@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="icon.svg" width="160" alt="Chumpy" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="icon.svg">
+    <img src="icon-inverted.svg" width="160" alt="Chumpy" />
+  </picture>
 </p>
 
 <h1 align="center">Chumpy</h1>

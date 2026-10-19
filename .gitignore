@@ -11,6 +11,7 @@ dist/
 # The icon design sources and the skills lock — root squatters the build never reads.
 *.svg
 !icon.svg
+!icon-inverted.svg
 skills-lock.json
 
 # User-dropped feedback: crash logs and the builds they came from.
