@@ -1,17 +1,12 @@
 package slop.miho.chumpy.ui.perapp
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
-import android.net.wifi.WifiManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -43,6 +38,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -53,7 +49,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -64,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -78,10 +74,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
@@ -145,6 +141,7 @@ class PerAppProxyActivity : ComponentActivity() {
                         appsEnabled = connection.perAppEnabled,
                         bypassedApps = connection.bypassedApps,
                         trustedWifiEnabled = connection.trustedWifiEnabled,
+                        savedWifiSsids = connection.savedWifiSsids,
                         trustedWifiSsids = connection.trustedWifiSsids,
                         onToggleAppsEnabled = { enabled ->
                             ConnectionStore.update(this) { settings ->
@@ -174,6 +171,22 @@ class PerAppProxyActivity : ComponentActivity() {
                                 )
                             }
                         },
+                        onAddTrustedWifi = { ssid ->
+                            ConnectionStore.update(this) { settings ->
+                                settings.copy(
+                                    savedWifiSsids = settings.savedWifiSsids + ssid,
+                                    trustedWifiSsids = settings.trustedWifiSsids + ssid,
+                                )
+                            }
+                        },
+                        onDeleteTrustedWifi = { ssid ->
+                            ConnectionStore.update(this) { settings ->
+                                settings.copy(
+                                    savedWifiSsids = settings.savedWifiSsids - ssid,
+                                    trustedWifiSsids = settings.trustedWifiSsids - ssid,
+                                )
+                            }
+                        },
                         onBack = ::finish,
                     )
                 }
@@ -195,12 +208,6 @@ private data class AppEntry(
     val icon: ImageBitmap,
 )
 
-/** One Wi-Fi network by name; [current] marks the one the device sits on. */
-private data class NetworkEntry(
-    val ssid: String,
-    val current: Boolean,
-)
-
 @Composable
 private fun PerAppProxyScreen(
     initialPage: PerAppPage,
@@ -208,11 +215,14 @@ private fun PerAppProxyScreen(
     appsEnabled: Boolean,
     bypassedApps: Set<String>,
     trustedWifiEnabled: Boolean,
+    savedWifiSsids: Set<String>,
     trustedWifiSsids: Set<String>,
     onToggleAppsEnabled: (Boolean) -> Unit,
     onToggleApp: (String) -> Unit,
     onToggleTrustedWifiEnabled: (Boolean) -> Unit,
     onToggleTrustedWifi: (String) -> Unit,
+    onAddTrustedWifi: (String) -> Unit,
+    onDeleteTrustedWifi: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -244,9 +254,12 @@ private fun PerAppProxyScreen(
                     )
                     PerAppPage.NETWORKS -> NetworksPage(
                         enabled = trustedWifiEnabled,
+                        saved = savedWifiSsids,
                         trusted = trustedWifiSsids,
                         onToggleEnabled = onToggleTrustedWifiEnabled,
                         onToggle = onToggleTrustedWifi,
+                        onAdd = onAddTrustedWifi,
+                        onDelete = onDeleteTrustedWifi,
                     )
                 }
             }
@@ -401,51 +414,33 @@ private fun AppsPage(
 }
 
 /**
- * The networks page: the trusted networks' master switch, then the Wi-Fi names the OS
- * tells us — the one the device sits on, plus whatever was added by hand; Android
- * stopped sharing the saved list itself back at 10, so those two are the whole set.
- * Names need location access; without the grant the page still works, the hand-added
- * networks and the permission's own card standing in for the list.
+ * The networks page: the trusted networks' master switch, then the page's own roster —
+ * every name the user ever put on it, the trusted block riding on top and the untoggled
+ * one below, the apps page's own arrangement. Nothing is detected here: the page never
+ * asks the OS for the network it sits on and never asks for the location grant the name
+ * would need — the check itself runs in the core, against the current network alone,
+ * and works only when the grant was handed over by hand in the system settings. A long
+ * press takes a name off the roster for good.
  */
 @Composable
 private fun NetworksPage(
     enabled: Boolean,
+    saved: Set<String>,
     trusted: Set<String>,
     onToggleEnabled: (Boolean) -> Unit,
     onToggle: (String) -> Unit,
+    onAdd: (String) -> Unit,
+    onDelete: (String) -> Unit,
 ) {
-    val context = LocalContext.current
-    var locationGranted by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_FINE_LOCATION,
-            ) == PackageManager.PERMISSION_GRANTED,
-        )
+    // The roster's two blocks, alphabetical within each: the prefs set carries no order.
+    val trustedBlock = remember(saved, trusted) {
+        saved.filter { it in trusted }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
     }
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted -> locationGranted = granted }
-
-    var refreshes by remember { mutableIntStateOf(0) }
-    var loading by remember { mutableStateOf(true) }
-    var known by remember { mutableStateOf(emptyList<NetworkEntry>()) }
-    LaunchedEffect(refreshes, locationGranted) {
-        loading = true
-        known = withContext(Dispatchers.IO) { knownNetworks(context) }
-        loading = false
+    val restBlock = remember(saved, trusted) {
+        saved.filter { it !in trusted }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
     }
-    // The picked networks' block rides on top, frozen as the page opened — the apps
-    // page's own rule. The hand-added ones surface even when the OS names none.
-    val initialTrusted = remember { trusted }
-    val entries = remember(known, trusted) {
-        (known.map { it.ssid } + trusted).distinct().map { ssid ->
-            NetworkEntry(ssid = ssid, current = known.any { it.ssid == ssid && it.current })
-        }
-    }
-    val selected = remember(entries) { entries.filter { it.ssid in initialTrusted } }
-    val rest = remember(entries) { entries.filter { it.ssid !in initialTrusted } }
     var pendingAdd by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<String?>(null) }
     // Computed here, not in the list's scope: MaterialTheme doesn't reach into it.
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.extraSmall
@@ -458,82 +453,79 @@ private fun NetworksPage(
     val underlaid by rememberContentUnderBar(listState)
     ReportBarCoverage(covered, underlaid = underlaid)
 
-    WavyPullToRefreshBox(
-        isRefreshing = loading,
-        onRefresh = { refreshes++ },
-        modifier = Modifier.fillMaxSize(),
-    ) { pullShift ->
-        PagedList(
-            listState = listState,
-            pullShift = pullShift,
-            toggle = {
-                MasterSwitchRow(
-                    title = stringResource(R.string.trusted_title),
-                    supporting = when {
-                        !enabled -> stringResource(R.string.per_app_disabled)
-                        trusted.isEmpty() -> stringResource(R.string.trusted_hint)
-                        else -> pluralStringResource(
-                            R.plurals.trusted_count,
-                            trusted.size,
-                            trusted.size,
-                        )
-                    },
-                    enabled = enabled,
-                    onChange = onToggleEnabled,
-                )
-            },
-        ) {
-            if (!locationGranted) {
-                item(key = "permission") {
-                    PermissionCard(onGrant = {
-                        permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-                    })
-                }
-                item(key = "permission gap") { Spacer(modifier = Modifier.height(12.dp)) }
+    PagedList(
+        listState = listState,
+        pullShift = { 0.dp },
+        toggle = {
+            MasterSwitchRow(
+                title = stringResource(R.string.trusted_title),
+                supporting = when {
+                    !enabled -> stringResource(R.string.per_app_disabled)
+                    trusted.isEmpty() -> stringResource(R.string.trusted_hint)
+                    else -> pluralStringResource(
+                        R.plurals.trusted_count,
+                        trusted.size,
+                        trusted.size,
+                    )
+                },
+                enabled = enabled,
+                onChange = onToggleEnabled,
+            )
+        },
+    ) {
+        itemsIndexed(trustedBlock, key = { _, ssid -> ssid }) { index, ssid ->
+            SelectableRow(
+                headline = ssid,
+                supporting = null,
+                bypassed = true,
+                active = enabled,
+                onToggle = { onToggle(ssid) },
+                onLongPress = { pendingDelete = ssid },
+                shape = sectionShape(index, trustedBlock.lastIndex, outer, inner),
+            ) {
+                NetworkTile(bypassed = true, active = enabled)
             }
-            itemsIndexed(selected, key = { _, entry -> entry.ssid }) { index, entry ->
-                SelectableRow(
-                    headline = entry.ssid,
-                    supporting = if (entry.current) stringResource(R.string.trusted_current) else null,
-                    bypassed = entry.ssid in trusted,
-                    active = enabled,
-                    onToggle = { onToggle(entry.ssid) },
-                    shape = sectionShape(index, selected.lastIndex, outer, inner),
-                ) {
-                    NetworkTile(bypassed = entry.ssid in trusted, active = enabled)
-                }
-            }
-            if (selected.isNotEmpty() && rest.isNotEmpty()) {
-                item(key = "block gap") { Spacer(modifier = Modifier.height(12.dp)) }
-            }
-            itemsIndexed(rest, key = { _, entry -> entry.ssid }) { index, entry ->
-                SelectableRow(
-                    headline = entry.ssid,
-                    supporting = if (entry.current) stringResource(R.string.trusted_current) else null,
-                    bypassed = entry.ssid in trusted,
-                    active = enabled,
-                    onToggle = { onToggle(entry.ssid) },
-                    shape = sectionShape(index, rest.lastIndex, outer, inner),
-                ) {
-                    NetworkTile(bypassed = entry.ssid in trusted, active = enabled)
-                }
-            }
-            // The hand-add sits at the very end: everything pickable first, the way in
-            // below it all.
-            if (!locationGranted || selected.isNotEmpty() || rest.isNotEmpty()) {
-                item(key = "add gap") { Spacer(modifier = Modifier.height(12.dp)) }
-            }
-            item(key = "add network") { AddNetworkRow(onClick = { pendingAdd = true }) }
         }
+        if (trustedBlock.isNotEmpty() && restBlock.isNotEmpty()) {
+            item(key = "block gap") { Spacer(modifier = Modifier.height(12.dp)) }
+        }
+        itemsIndexed(restBlock, key = { _, ssid -> ssid }) { index, ssid ->
+            SelectableRow(
+                headline = ssid,
+                supporting = null,
+                bypassed = false,
+                active = enabled,
+                onToggle = { onToggle(ssid) },
+                onLongPress = { pendingDelete = ssid },
+                shape = sectionShape(index, restBlock.lastIndex, outer, inner),
+            ) {
+                NetworkTile(bypassed = false, active = enabled)
+            }
+        }
+        // The hand-add sits at the very end: the roster first, the way in below it all.
+        if (trustedBlock.isNotEmpty() || restBlock.isNotEmpty()) {
+            item(key = "add gap") { Spacer(modifier = Modifier.height(12.dp)) }
+        }
+        item(key = "add network") { AddNetworkRow(onClick = { pendingAdd = true }) }
     }
 
     if (pendingAdd) {
         AddNetworkDialog(
             onConfirm = { ssid ->
                 pendingAdd = false
-                onToggle(ssid)
+                onAdd(ssid)
             },
             onDismiss = { pendingAdd = false },
+        )
+    }
+    pendingDelete?.let { ssid ->
+        DeleteNetworkDialog(
+            ssid = ssid,
+            onConfirm = {
+                pendingDelete = null
+                onDelete(ssid)
+            },
+            onDismiss = { pendingDelete = null },
         )
     }
 }
@@ -689,6 +681,7 @@ private fun SelectableRow(
     bypassed: Boolean,
     active: Boolean,
     onToggle: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
     shape: Shape,
     leading: @Composable () -> Unit,
 ) {
@@ -720,17 +713,29 @@ private fun SelectableRow(
         label = "pickable row supporting",
     )
     Surface(
-        onClick = {
-            poke()
-            onToggle()
-        },
-        enabled = active,
         shape = shape,
         color = containerColor,
         contentColor = contentColor,
         modifier = Modifier.fillMaxWidth(),
     ) {
         ListItem(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .combinedClickable(
+                    role = Role.Button,
+                    enabled = active,
+                    onClick = {
+                        poke()
+                        onToggle()
+                    },
+                    onLongClick = onLongPress?.let { handler ->
+                        {
+                            poke()
+                            handler()
+                        }
+                    },
+                ),
             headlineContent = {
                 Text(
                     text = headline,
@@ -758,7 +763,6 @@ private fun SelectableRow(
                 supportingColor = supportingColor,
             ),
             tonalElevation = 0.dp,
-            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -793,35 +797,43 @@ private fun AppIcon(app: AppEntry, active: Boolean) {
     )
 }
 
-/** The permission's own card, standing in for the network list until it is granted. */
+/**
+ * The delete confirmation — the question a network row's long press asks before taking
+ * the name off the roster for good. The confirm button carries the error color, the
+ * config delete's own law.
+ */
 @Composable
-private fun PermissionCard(onGrant: () -> Unit) {
+private fun DeleteNetworkDialog(
+    ssid: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
-        contentColor = colors.onSurface,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.trusted_permission_title),
-                style = MaterialTheme.typography.titleMedium,
-                color = colors.onSurface,
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                painter = painterResource(R.drawable.ic_delete),
+                contentDescription = null,
+                tint = colors.error,
             )
-            Text(
-                text = stringResource(R.string.trusted_permission_text),
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.onSurfaceVariant,
-            )
-            TextButton(onClick = onGrant) {
-                Text(stringResource(R.string.trusted_permission_grant))
+        },
+        title = { Text(stringResource(R.string.trusted_delete_title)) },
+        text = { Text(stringResource(R.string.trusted_delete_text, ssid)) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
+            ) {
+                Text(stringResource(R.string.trusted_delete_confirm))
             }
-        }
-    }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.subscription_cancel))
+            }
+        },
+    )
 }
 
 /**
@@ -1001,23 +1013,3 @@ private fun iconAtRowSize(drawable: Drawable): ImageBitmap {
 
 /** The row's 40dp of icon, plus headroom for the densest screens. */
 private const val MAX_APP_ICON_PX = 192
-
-/**
- * The Wi-Fi the device sits on, by name — the only network the OS names for a modern
- * app: the saved list went away with Android 10 (getConfiguredNetworks answers any
- * targetSdk 29+ app with an empty list, forever), and the scan names whatever happens
- * to be in range, saved or not. The current network plus the hand-added ones are the
- * whole pickable set. Needs the location permission, or the name reads as unknown.
- */
-private fun knownNetworks(context: Context): List<NetworkEntry> = try {
-    @Suppress("DEPRECATION")
-    val current = context.getSystemService(WifiManager::class.java)
-        ?.connectionInfo
-        ?.ssid
-        ?.removeSurrounding("\"")
-        ?.takeIf { ssid -> ssid.isNotEmpty() && ssid != "<unknown ssid>" }
-    listOfNotNull(current).map { ssid -> NetworkEntry(ssid = ssid, current = true) }
-} catch (e: Exception) {
-    // A missing permission or an OS that won't share reads as no networks at all.
-    emptyList()
-}
