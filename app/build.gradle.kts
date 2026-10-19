@@ -35,7 +35,7 @@ android {
     // minor release, raised on request. The third number is the build itself: the
     // ever-counting one above, starting at 76.
     val majorVersion = 0
-    val minorVersion = 3
+    val minorVersion = 4
     // Whoever runs the build signs the version with their own system username.
     val builderName = System.getProperty("user.name") ?: "unknown"
 
