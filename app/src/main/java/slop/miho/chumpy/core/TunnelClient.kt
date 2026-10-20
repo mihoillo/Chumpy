@@ -19,6 +19,7 @@ class TunnelClient(private val context: Context) {
     private val _status = MutableStateFlow(TunnelStatus())
     val status: StateFlow<TunnelStatus> = _status.asStateFlow()
 
+    @Volatile
     private var service: ITunnelService? = null
     private var bound = false
 
@@ -77,8 +78,6 @@ class TunnelClient(private val context: Context) {
         }
     }
 
-    /** The tunnel's {rx, tx} byte counters — bytes since the caller's previous query
-     *  (the core resets them on every read) — or null while not bound. */
     fun trafficBytes(): LongArray? {
         val remote = service ?: return null
         return try {
@@ -108,7 +107,7 @@ class TunnelClient(private val context: Context) {
     fun measureLiveDelay(testUrl: String): Long? {
         val remote = service ?: return null
         return try {
-            remote.measureLiveDelay(testUrl)
+            remote.measureLiveDelay(testUrl).takeIf { it >= 0 }
         } catch (_: RemoteException) {
             null
         }

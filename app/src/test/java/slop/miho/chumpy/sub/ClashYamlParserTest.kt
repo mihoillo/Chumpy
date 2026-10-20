@@ -150,7 +150,7 @@ class ClashYamlParserTest {
         // A supported entry next to an unsupported one: only the supported survives.
         val mixed = "proxies:\n$realityEntry\n" + """
             - name: hy
-              type: hysteria2
+              type: unsupported-protocol
               server: h.example.com
               port: 443
               password: hy

@@ -40,6 +40,7 @@ androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", versi
 androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camera" }
 jsr305 = "com.google.code.findbugs:jsr305:3.0.2"
 junit = "junit:junit:4.13.2"
+robolectric = "org.robolectric:robolectric:4.17"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

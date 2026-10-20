@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(notificationsAsk) {
                 if (notificationsAsk) {
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    viewModel.consumeNotificationsAsk()
                 }
             }
             ChumpyTheme(settings = settings) {

@@ -1,21 +1,18 @@
 package slop.miho.chumpy.core
 
 import android.app.PendingIntent
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
+import android.os.FileObserver
 import android.os.Handler
 import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 import slop.miho.chumpy.MainActivity
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.IconVariant
@@ -35,7 +32,7 @@ import slop.miho.chumpy.ui.theme.themedIconColor
 class QuickTileService : TileService() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var settingsObserver: FileObserver? = null
 
     // Binder threads; tile updates must happen on the main thread.
     private val callback = object : ITunnelCallback.Stub() {
@@ -45,24 +42,37 @@ class QuickTileService : TileService() {
     }
 
     override fun onStartListening() {
+        super.onStartListening()
         XrayCore.register(callback)
         // The icon variant (and, for the themed one, the accent) can flip in the UI while
         // the tile sits on screen: follow the settings live.
-        scope.launch {
-            SettingsStore.settings(this@QuickTileService).collect { updateTile() }
+        settingsObserver?.stopWatching()
+        @Suppress("DEPRECATION")
+        val observer = object : FileObserver(filesDir.absolutePath, CLOSE_WRITE or MOVED_TO) {
+            override fun onEvent(event: Int, path: String?) {
+                if (path == SettingsStore.TILE_SETTINGS_FILE) mainHandler.post { updateTile() }
+            }
         }
+        settingsObserver = observer
+        observer.startWatching()
         updateTile()
     }
 
     override fun onStopListening() {
+        settingsObserver?.stopWatching()
+        settingsObserver = null
         XrayCore.unregister(callback)
+        super.onStopListening()
     }
 
     override fun onDestroy() {
-        scope.cancel()
+        settingsObserver?.stopWatching()
+        XrayCore.unregister(callback)
+        mainHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
 
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         when (XrayCore.currentStatus().state) {
             TunnelState.UP, TunnelState.CONNECTING -> ChumpyVpnService.startDisconnect(this)
@@ -110,7 +120,7 @@ class QuickTileService : TileService() {
         // while down the shield's glyph stays crossed out in the familiar dim gray.
         tile.icon = when {
             !up -> Icon.createWithResource(this, R.drawable.ic_tile_off)
-            else -> variantIcon(SettingsStore.settings(this).value.iconVariant)
+            else -> variantIcon(SettingsStore.tileSettings(this).iconVariant)
         }
         tile.state = when {
             !hasConfig -> Tile.STATE_UNAVAILABLE
@@ -126,7 +136,7 @@ class QuickTileService : TileService() {
         IconVariant.INVERTED -> Icon.createWithResource(this, R.drawable.ic_tile_inverted)
         // The app's own accent, tinted onto the white glyph at runtime — the live scheme,
         // not a color baked into a resource.
-        IconVariant.THEMED -> themedIcon(themedIconColor(this, SettingsStore.settings(this).value))
+        IconVariant.THEMED -> themedIcon(themedIconColor(this, SettingsStore.tileSettings(this)))
     }
 
     /** The white tile glyph tinted [color]; cached, since the tile re-renders often. */

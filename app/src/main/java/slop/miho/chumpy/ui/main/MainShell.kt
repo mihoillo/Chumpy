@@ -103,9 +103,8 @@ fun MainShell(viewModel: MainViewModel) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
-    // Connect regardless of the result: if permission was denied the core reports it as an error.
-    val vpnPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        viewModel.connect()
+    val vpnPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) viewModel.connect()
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -465,9 +464,8 @@ private fun MainPagerStrip(
                         // The week rides the stats flow but only its own list is wanted
                         // here: the flow itself ticks once a second, while the week
                         // changes only on a flush — so only the page recomposes then.
-                        val week by statsFlow
-                            .map { it.week }
-                            .distinctUntilChanged()
+                        val weekFlow = remember(statsFlow) { statsFlow.map { it.week }.distinctUntilChanged() }
+                        val week by weekFlow
                             .collectAsStateWithLifecycle(initialValue = emptyList())
                         val manualCount by manualProfileCount.collectAsStateWithLifecycle()
                         ServersScreen(

@@ -2022,7 +2022,8 @@ private fun LanguageRow() {
     ) {
         context.startActivity(
             Intent(
-                Settings.ACTION_APP_LOCALE_SETTINGS,
+                if (android.os.Build.VERSION.SDK_INT >= 33) Settings.ACTION_APP_LOCALE_SETTINGS
+                else Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.fromParts("package", context.packageName, null),
             ),
         )

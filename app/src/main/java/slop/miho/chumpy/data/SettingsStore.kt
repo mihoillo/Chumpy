@@ -2,6 +2,8 @@ package slop.miho.chumpy.data
 
 import android.app.ActivityManager
 import android.content.Context
+import org.json.JSONObject
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -198,6 +200,7 @@ object SettingsStore {
     fun settings(context: Context): StateFlow<UiSettings> {
         if (!seeded) {
             settingsState.value = read(context)
+            writeTileSnapshot(context, settingsState.value)
             seeded = true
         }
         return settingsState.asStateFlow()
@@ -214,6 +217,24 @@ object SettingsStore {
     }
 
     private var seeded = false
+
+    const val TILE_SETTINGS_FILE = "ui-tile-settings.json"
+
+    fun tileSettings(context: Context): UiSettings = runCatching {
+        val json = JSONObject(AtomicSnapshot.read(File(context.filesDir, TILE_SETTINGS_FILE))
+            ?: error("No published tile settings"))
+        UiSettings(
+            iconVariant = enumEntry(json.optString(KEY_ICON_VARIANT), IconVariant.CHUMPY),
+            accent = enumEntry(json.optString(KEY_ACCENT), Accent.ADAPTIVE),
+            themeMode = enumEntry(json.optString(KEY_THEME), ThemeMode.SYSTEM),
+        )
+    }.getOrDefault(UiSettings())
+
+    private fun writeTileSnapshot(context: Context, settings: UiSettings) {
+        val json = JSONObject().put(KEY_ICON_VARIANT, settings.iconVariant.name)
+            .put(KEY_ACCENT, settings.accent.name).put(KEY_THEME, settings.themeMode.name)
+        AtomicSnapshot.write(File(context.filesDir, TILE_SETTINGS_FILE), json.toString())
+    }
 
     private fun read(context: Context): UiSettings {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -285,6 +306,7 @@ object SettingsStore {
     }
 
     private fun write(context: Context, settings: UiSettings) {
+        writeTileSnapshot(context, settings)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_THEME, settings.themeMode.name)
             .putString(KEY_ACCENT, settings.accent.name)

@@ -33,7 +33,7 @@ object ConfigParser {
     private const val REALITY = "reality"
 
     /** The protocols that mark a real proxy outbound; everything else is plumbing. */
-    private val PROXY_PROTOCOLS = setOf("vless", "vmess", "trojan", "shadowsocks", "socks")
+    private val PROXY_PROTOCOLS = setOf("vless", "vmess", "trojan", "shadowsocks", "socks", "hysteria")
 
     /** The strategies this core runs, normalized to the names it switches on. */
     private val STRATEGIES = setOf("random", "roundrobin", "leastping", "leastload")
@@ -212,6 +212,7 @@ object ConfigParser {
             "trojan" -> ProfileType.TROJAN
             "shadowsocks" -> ProfileType.SHADOWSOCKS
             "socks" -> ProfileType.SOCKS
+            "hysteria" -> ProfileType.HYSTERIA2
             else -> return null
         }
         val settings = outbound.obj("settings") ?: JsonObject(emptyMap())
@@ -223,7 +224,7 @@ object ConfigParser {
 
         val server = endpoint?.str("address") ?: settings.str("address") ?: return null
         val port = endpoint?.int("port") ?: settings.int("port") ?: return null
-        if (server.isBlank() || port <= 0) return null
+        if (server.isBlank() || port !in 1..65535) return null
 
         var profile = ProfileEntity(id = "", subscriptionId = null, type = type).copy(
             remarks = outbound.str("tag").orEmpty(),
@@ -258,9 +259,33 @@ object ConfigParser {
                 password = user?.str("pass") ?: settings.str("pass").orEmpty(),
             )
 
+            ProfileType.HYSTERIA2 -> {
+                val hysteria = outbound.obj("streamSettings")?.obj("hysteriaSettings") ?: return null
+                if (settings.int("version") != 2 || hysteria.int("version") != 2) return null
+                var obfsPassword = ""
+                var portHopping = ""
+                var portHoppingInterval = ""
+                outbound.obj("streamSettings")?.obj("finalmask")?.array("udp")?.arrayOfObjects()?.forEach { mask ->
+                    when (mask.str("type")) {
+                        "salamander" -> obfsPassword = mask.obj("settings")?.str("password").orEmpty()
+                        "udphop" -> {
+                            portHopping = mask.obj("settings")?.str("remotePorts").orEmpty()
+                            portHoppingInterval = mask.obj("settings")?.str("interval").orEmpty()
+                        }
+                    }
+                }
+                profile = profile.copy(
+                    password = hysteria.str("auth") ?: return null,
+                    obfsPassword = obfsPassword,
+                    portHopping = portHopping,
+                    portHoppingInterval = portHoppingInterval,
+                )
+            }
+
             else -> return null
         }
-        return withStream(profile, outbound.obj("streamSettings"))
+        val streamed = withStream(profile, outbound.obj("streamSettings"))
+        return if (type == ProfileType.HYSTERIA2) streamed.copy(network = "hysteria") else streamed
     }
 
     /**
@@ -316,7 +341,11 @@ object ConfigParser {
             }
 
             "ws", "websocket" -> stream.obj("wsSettings")?.let { ws ->
-                result = result.copy(path = ws.str("path").orEmpty(), host = ws.str("host").orEmpty())
+                result = result.copy(
+                    path = ws.str("path").orEmpty(),
+                    host = ws.str("host") ?: ws.obj("headers")?.str("Host")
+                        ?: ws.obj("headers")?.str("host").orEmpty(),
+                )
             }
 
             "httpupgrade" -> stream.obj("httpupgradeSettings")?.let { up ->

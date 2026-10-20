@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import slop.miho.chumpy.xray.RoutingMode
 import slop.miho.chumpy.xray.XrayConfigBuilder
 import java.io.File
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Connection preferences — the selected subscription and profile, the routing mode and
@@ -40,14 +42,17 @@ object ConnectionStore {
     private val state = MutableStateFlow(ConnectionSettings())
     private var seeded = false
 
+    @Synchronized
     fun settings(context: Context): StateFlow<ConnectionSettings> {
         if (!seeded) {
-            state.value = read(context)
+            state.value = current(context)
+            writeSnapshot(context, state.value)
             seeded = true
         }
         return state.asStateFlow()
     }
 
+    @Synchronized
     fun update(context: Context, transform: (ConnectionSettings) -> ConnectionSettings) {
         val updated = transform(settings(context).value)
         write(context, updated)
@@ -59,7 +64,21 @@ object ConnectionStore {
      * :core process, whose in-memory copy would go stale the moment the UI process
      * writes a new one.
      */
-    fun current(context: Context): ConnectionSettings = read(context)
+    fun current(context: Context): ConnectionSettings = runCatching {
+        val json = JSONObject(AtomicSnapshot.read(snapshot(context)) ?: error("No published connection settings"))
+        ConnectionSettings(
+            selectedSubscriptionId = json.optString(KEY_SUB).takeIf { it.isNotEmpty() },
+            selectedProfileId = json.optString(KEY_PROFILE).takeIf { it.isNotEmpty() },
+            routingMode = RoutingMode.entries.firstOrNull { it.name == json.optString(KEY_ROUTING) }
+                ?: RoutingMode.GLOBAL,
+            delayTestUrl = json.optString(KEY_TEST_URL).ifBlank { XrayConfigBuilder.DEFAULT_TEST_URL },
+            bypassedApps = json.optJSONArray(KEY_BYPASS_APPS)?.let { apps ->
+                (0 until apps.length()).map { apps.getString(it) }.toSet()
+            } ?: emptySet(),
+            perAppEnabled = json.optBoolean(KEY_PER_APP, true),
+            autoReconnect = json.optBoolean(KEY_AUTO_RECONNECT, false),
+        )
+    }.getOrElse { read(context) }
 
     /**
      * The auto-reconnect flag read straight off the prefs *file*, not this process's
@@ -69,14 +88,21 @@ object ConnectionStore {
      * file, it is the default: off.
      */
     fun autoReconnectFresh(context: Context): Boolean {
-        val dataDir = context.applicationInfo.dataDir ?: return false
-        val file = File(dataDir, "shared_prefs/$PREFS.xml")
-        if (!file.isFile) return false
-        return try {
-            file.readText().contains("<boolean name=\"$KEY_AUTO_RECONNECT\" value=\"true\"")
-        } catch (_: Exception) {
-            false
-        }
+        return current(context).autoReconnect
+    }
+
+    private fun snapshot(context: Context) = File(context.filesDir, "connection-settings.json")
+
+    private fun writeSnapshot(context: Context, settings: ConnectionSettings) {
+        val json = JSONObject()
+            .put(KEY_SUB, settings.selectedSubscriptionId.orEmpty())
+            .put(KEY_PROFILE, settings.selectedProfileId.orEmpty())
+            .put(KEY_ROUTING, settings.routingMode.name)
+            .put(KEY_TEST_URL, settings.delayTestUrl)
+            .put(KEY_BYPASS_APPS, JSONArray(settings.bypassedApps.sorted()))
+            .put(KEY_PER_APP, settings.perAppEnabled)
+            .put(KEY_AUTO_RECONNECT, settings.autoReconnect)
+        AtomicSnapshot.write(snapshot(context), json.toString())
     }
 
     private fun read(context: Context): ConnectionSettings {
@@ -101,6 +127,7 @@ object ConnectionStore {
     }
 
     private fun write(context: Context, settings: ConnectionSettings) {
+        writeSnapshot(context, settings)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .also { editor ->
                 val sub = settings.selectedSubscriptionId

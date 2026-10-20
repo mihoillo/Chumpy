@@ -81,6 +81,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -494,7 +496,15 @@ private fun <T : PillDestination> RowScope.ClassicBarItems(
                 )
             },
             label = if (labeled) {
-                { Text(stringResource(item.label), maxLines = 1) }
+                {
+                    Text(
+                        stringResource(item.label),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             } else {
                 null
             },
@@ -516,7 +526,15 @@ private fun RowScope.ClassicBarButton(
         selected = false,
         onClick = onClick,
         icon = { Icon(painterResource(icon), contentDescription = null) },
-        label = { Text(stringResource(label), maxLines = 1) },
+        label = {
+            Text(
+                stringResource(label),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        },
         alwaysShowLabel = false,
         colors = colors,
     )

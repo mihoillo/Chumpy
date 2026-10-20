@@ -2,6 +2,7 @@ package slop.miho.chumpy.sub
 
 import android.content.Context
 import android.util.Log
+import androidx.room.withTransaction
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -12,11 +13,14 @@ import androidx.work.WorkRequest
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import slop.miho.chumpy.db.ChumpyDatabase
 import slop.miho.chumpy.db.ProfileEntity
+import slop.miho.chumpy.db.ProfileType
 import slop.miho.chumpy.db.SubscriptionEntity
+import slop.miho.chumpy.db.balancerMemberKeys
 import slop.miho.chumpy.db.computeLinkKey
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -84,8 +88,10 @@ class SubscriptionRepository(
                     totalBytes = metadata.totalBytes,
                     expireEpochSeconds = metadata.expireEpochSeconds,
                 )
-                subscriptions.upsert(entity)
-                profiles.replaceProfiles(entity.id, stamped(parsed, entity.id, oldProfiles = emptyList()))
+                db.withTransaction {
+                    subscriptions.upsert(entity)
+                    profiles.replaceProfiles(entity.id, stamped(parsed, entity.id, oldProfiles = emptyList()))
+                }
                 scheduleAutoUpdate(entity)
                 Log.i(TAG, "Added subscription ${entity.id} with ${parsed.size} profiles")
                 entity
@@ -103,28 +109,31 @@ class SubscriptionRepository(
                     val parsed = SubscriptionParser.parse(body)
                     require(parsed.isNotEmpty()) { "No server links found in the response" }
 
-                    val old = profiles.bySubscriptionOnce(id)
-                    val updated = entity.copy(
-                        name = metadata.title ?: entity.name,
-                        lastUpdateAttempt = attemptAt,
-                        lastUpdateSuccess = attemptAt,
-                        updateIntervalHours = metadata.updateIntervalHours,
-                        uploadBytes = metadata.uploadBytes,
-                        downloadBytes = metadata.downloadBytes,
-                        totalBytes = metadata.totalBytes,
-                        expireEpochSeconds = metadata.expireEpochSeconds,
-                        lastError = null,
-                    )
-                    subscriptions.upsert(updated)
-                    profiles.replaceProfiles(id, stamped(parsed, id, old))
+                    val updated = db.withTransaction {
+                        val current = subscriptions.byId(id) ?: error("Subscription not found")
+                        val old = profiles.bySubscriptionOnce(id)
+                        val updated = current.copy(
+                            name = metadata.title ?: current.name,
+                            lastUpdateAttempt = attemptAt,
+                            lastUpdateSuccess = attemptAt,
+                            updateIntervalHours = metadata.updateIntervalHours,
+                            uploadBytes = metadata.uploadBytes,
+                            downloadBytes = metadata.downloadBytes,
+                            totalBytes = metadata.totalBytes,
+                            expireEpochSeconds = metadata.expireEpochSeconds,
+                            lastError = null,
+                        )
+                        subscriptions.upsert(updated)
+                        profiles.replaceProfiles(id, stamped(parsed, id, old))
+                        updated
+                    }
                     scheduleAutoUpdate(updated)
                     Log.i(TAG, "Updated subscription $id: ${parsed.size} profiles")
                     updated
                 } catch (e: Exception) {
+                    if (e is CancellationException) throw e
                     // The failure lands on the card, not in a toast that is gone in a second.
-                    subscriptions.upsert(
-                        entity.copy(lastUpdateAttempt = attemptAt, lastError = e.message ?: e.javaClass.simpleName),
-                    )
+                    subscriptions.setUpdateError(id, attemptAt, e.message ?: e.javaClass.simpleName)
                     throw e
                 }
             }.onFailure { logFailure("update", id, it) }
@@ -138,8 +147,8 @@ class SubscriptionRepository(
 
     suspend fun setSubscriptionAutoUpdate(id: String, enabled: Boolean) = withContext(Dispatchers.IO) {
         subscriptions.byId(id)?.let { sub ->
-            subscriptions.upsert(sub.copy(autoUpdate = enabled))
-            if (enabled) scheduleAutoUpdate(sub) else {
+            subscriptions.setAutoUpdate(id, enabled)
+            if (enabled) scheduleAutoUpdate(sub.copy(autoUpdate = true)) else {
                 WorkManager.getInstance(context).cancelUniqueWork(WORK_PREFIX + id)
             }
         }
@@ -157,27 +166,41 @@ class SubscriptionRepository(
                 text.trim().startsWith("[Interface]", ignoreCase = true) ->
                     listOfNotNull(LinkParsers.parseWireguardConf(text))
                 else -> {
-                    val links = text.lines().mapNotNull { LinkParsers.parse(it) }
-                    if (links.isNotEmpty()) links else ConfigParser.parse(text) ?: emptyList()
+                    SubscriptionParser.parse(text)
                 }
             }
             require(drafts.isNotEmpty()) { "No recognizable server link found" }
-            val existing = profiles.bySubscriptionOnce(null).map { it.linkKey }.toSet()
-            val fresh = drafts.filter { it.computeLinkKey() !in existing }
-            if (fresh.isNotEmpty()) {
-                profiles.replaceProfiles(
-                    null,
-                    profiles.bySubscriptionOnce(null) + stamped(fresh, null, oldProfiles = emptyList()),
-                )
+            db.withTransaction {
+                val old = profiles.bySubscriptionOnce(null)
+                val existing = old.map { it.linkKey }.toSet()
+                val visibleKeys = drafts.filterNot { it.hidden }.map { it.computeLinkKey() }.toSet()
+                val restored = old.filter { it.hidden && it.linkKey in visibleKeys }.map { it.id }.toSet()
+                val fresh = drafts.distinctBy { it.computeLinkKey() }.filter { it.computeLinkKey() !in existing }
+                if (fresh.isNotEmpty() || restored.isNotEmpty()) {
+                    profiles.replaceProfiles(
+                        null,
+                        old.map { if (it.id in restored) it.copy(hidden = false) else it } +
+                        stamped(fresh, null, oldProfiles = emptyList()).mapIndexed { index, profile ->
+                            profile.copy(order = (old.maxOfOrNull { it.order } ?: -1L) + 1 + index)
+                        },
+                    )
+                }
+                fresh.size + restored.size
             }
-            fresh.size
         }.onFailure { logFailure("import", null, it) }
     }
 
     suspend fun deleteManualProfile(id: String) = withContext(Dispatchers.IO) {
         // Manual profiles are few; replace-all is the simplest transactional delete.
-        val remaining = profiles.bySubscriptionOnce(null).filter { it.id != id }
-        profiles.replaceProfiles(null, remaining)
+        db.withTransaction {
+            val old = profiles.bySubscriptionOnce(null)
+            val remaining = old.filter { it.id != id }
+            val referenced = remaining.filter { it.type == ProfileType.BALANCER }
+                .flatMap { it.balancerMemberKeys }.toSet()
+            val retained = old.filter { it.id == id && it.linkKey in referenced }
+                .map { it.copy(hidden = true) }
+            profiles.replaceProfiles(null, (remaining + retained).filter { !it.hidden || it.linkKey in referenced })
+        }
     }
 
     /** Drops every standalone profile at once — the group's own delete. */
@@ -243,6 +266,7 @@ class SubscriptionRepository(
     }
 
     private fun logFailure(operation: String, id: String?, e: Throwable) {
+        if (e is CancellationException) throw e
         Log.w(TAG, "Subscription $operation failed (id=${id ?: "new"}): ${e.message}")
     }
 }

@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.Upsert
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
@@ -22,8 +23,14 @@ interface SubscriptionDao {
     @Query("SELECT * FROM subscriptions WHERE id = :id")
     suspend fun byId(id: String): SubscriptionEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsert(subscription: SubscriptionEntity)
+
+    @Query("UPDATE subscriptions SET autoUpdate = :enabled WHERE id = :id")
+    suspend fun setAutoUpdate(id: String, enabled: Boolean)
+
+    @Query("UPDATE subscriptions SET lastUpdateAttempt = :at, lastError = :error WHERE id = :id")
+    suspend fun setUpdateError(id: String, at: Long, error: String)
 
     @Query("DELETE FROM subscriptions WHERE id = :id")
     suspend fun delete(id: String)
@@ -66,7 +73,7 @@ abstract class ProfileDao {
     abstract suspend fun count(): Int
 
     /** The manual (subscription-less) profile count, as a flow — the setup gate watches it. */
-    @Query("SELECT COUNT(*) FROM profiles WHERE subscriptionId IS NULL")
+    @Query("SELECT COUNT(*) FROM profiles WHERE subscriptionId IS NULL AND hidden = 0")
     abstract fun manualCount(): Flow<Int>
 }
 
@@ -112,14 +119,27 @@ abstract class ChumpyDatabase : RoomDatabase() {
          */
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happSpoof")
-                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happAppVersion")
-                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happOs")
-                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happOsVersion")
-                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happDeviceModel")
-                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happLocale")
-                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happUserId")
-                db.execSQL("ALTER TABLE subscriptions DROP COLUMN happHwid")
+                db.execSQL("CREATE TEMP TABLE chumpy_profiles_backup AS SELECT * FROM profiles")
+                db.execSQL("""
+                    CREATE TABLE subscriptions_new (
+                        id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL, lastUpdateAttempt INTEGER NOT NULL,
+                        lastUpdateSuccess INTEGER NOT NULL, updateIntervalHours INTEGER,
+                        autoUpdate INTEGER NOT NULL, uploadBytes INTEGER NOT NULL,
+                        downloadBytes INTEGER NOT NULL, totalBytes INTEGER NOT NULL,
+                        expireEpochSeconds INTEGER NOT NULL, lastError TEXT
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO subscriptions_new
+                    SELECT id, name, url, createdAt, lastUpdateAttempt, lastUpdateSuccess,
+                           updateIntervalHours, autoUpdate, uploadBytes, downloadBytes,
+                           totalBytes, expireEpochSeconds, lastError FROM subscriptions
+                """.trimIndent())
+                db.execSQL("DROP TABLE subscriptions")
+                db.execSQL("ALTER TABLE subscriptions_new RENAME TO subscriptions")
+                db.execSQL("INSERT OR IGNORE INTO profiles SELECT * FROM chumpy_profiles_backup")
+                db.execSQL("DROP TABLE chumpy_profiles_backup")
             }
         }
 
