@@ -82,7 +82,7 @@ object LinkUtils {
 
     /** Both alphabets, both padded and stripped: re-pad, try standard, then URL-safe. */
     private fun decodeBase64Bytes(text: String): ByteArray? {
-        val trimmed = text.trim()
+        val trimmed = text.filterNot { it.isWhitespace() }
         if (trimmed.isEmpty()) return null
         val padded = trimmed + "=".repeat((4 - trimmed.length % 4) % 4)
         return try {

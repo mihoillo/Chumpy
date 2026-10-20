@@ -9,7 +9,7 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import slop.miho.chumpy.R
 import java.io.File
-import java.io.IOException
+import android.graphics.Typeface
 
 /**
  * The fonts selectable app-wide: the system default, Inter bundled with the app, and font
@@ -67,45 +67,29 @@ object FontRegistry {
      * error message. Re-importing the same font name overwrites the old file.
      */
     fun import(context: Context, uri: Uri): String? {
-        val displayName = queryDisplayName(context, uri)
-            ?: return context.getString(R.string.fonts_import_not_font)
-        val extension = displayName.substringAfterLast('.', "").lowercase()
-        if (extension !in FONT_EXTENSIONS) {
-            return context.getString(R.string.fonts_import_not_font)
-        }
-
-        val base = displayName.substringBeforeLast('.')
-            .replace(Regex("[^A-Za-z0-9._ -]"), "_")
-            .trim()
-            .ifEmpty { "font" }
-        val target = File(customDir(context), "$base.$extension")
-        try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                target.parentFile?.mkdirs()
-                target.outputStream().use { output ->
-                    var copied = 0L
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        copied += read
-                        if (copied > MAX_FONT_BYTES) {
-                            target.delete()
-                            return context.getString(R.string.fonts_import_too_large)
-                        }
-                        output.write(buffer, 0, read)
-                    }
-                    if (copied == 0L) {
-                        target.delete()
-                        return context.getString(R.string.fonts_import_not_font)
-                    }
+        return try {
+            val displayName = queryDisplayName(context, uri)
+                ?: return context.getString(R.string.fonts_import_not_font)
+            val extension = displayName.substringAfterLast('.', "").lowercase()
+            if (extension !in FONT_EXTENSIONS) return context.getString(R.string.fonts_import_not_font)
+            val base = displayName.substringBeforeLast('.')
+                .replace(Regex("[^A-Za-z0-9._ -]"), "_")
+                .trim()
+                .ifEmpty { "font" }
+            val target = File(customDir(context), "$base.$extension")
+            val result = context.contentResolver.openInputStream(uri)?.use { input ->
+                ImportedFile.replace(target, input, MAX_FONT_BYTES) { file ->
+                    runCatching { Typeface.createFromFile(file) }.isSuccess
                 }
             } ?: return context.getString(R.string.fonts_import_not_font)
-        } catch (_: IOException) {
-            target.delete()
-            return context.getString(R.string.error_unknown)
+            when (result) {
+                ImportedFile.Result.SUCCESS -> null
+                ImportedFile.Result.TOO_LARGE -> context.getString(R.string.fonts_import_too_large)
+                ImportedFile.Result.INVALID -> context.getString(R.string.fonts_import_not_font)
+            }
+        } catch (_: Exception) {
+            context.getString(R.string.error_unknown)
         }
-        return null
     }
 
     /**

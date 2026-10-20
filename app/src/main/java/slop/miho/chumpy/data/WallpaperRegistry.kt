@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import java.io.File
-import java.io.IOException
+import android.graphics.BitmapFactory
 import slop.miho.chumpy.R
 
 /**
@@ -35,34 +35,24 @@ object WallpaperRegistry {
      * error message. Whatever was picked before is replaced.
      */
     fun set(context: Context, uri: Uri): String? {
-        if (!isImage(context, uri)) return context.getString(R.string.wallpapers_import_not_image)
-        val target = File(context.filesDir, WALLPAPER_FILE)
-        try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                target.outputStream().use { output ->
-                    var copied = 0L
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        copied += read
-                        if (copied > MAX_IMAGE_BYTES) {
-                            target.delete()
-                            return context.getString(R.string.wallpapers_import_too_large)
-                        }
-                        output.write(buffer, 0, read)
-                    }
-                    if (copied == 0L) {
-                        target.delete()
-                        return context.getString(R.string.error_unknown)
-                    }
+        return try {
+            if (!isImage(context, uri)) return context.getString(R.string.wallpapers_import_not_image)
+            val target = File(context.filesDir, WALLPAPER_FILE)
+            val result = context.contentResolver.openInputStream(uri)?.use { input ->
+                ImportedFile.replace(target, input, MAX_IMAGE_BYTES) { file ->
+                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(file.absolutePath, options)
+                    options.outWidth > 0 && options.outHeight > 0
                 }
             } ?: return context.getString(R.string.error_unknown)
-        } catch (_: IOException) {
-            target.delete()
-            return context.getString(R.string.error_unknown)
+            when (result) {
+                ImportedFile.Result.SUCCESS -> null
+                ImportedFile.Result.TOO_LARGE -> context.getString(R.string.wallpapers_import_too_large)
+                ImportedFile.Result.INVALID -> context.getString(R.string.wallpapers_import_not_image)
+            }
+        } catch (_: Exception) {
+            context.getString(R.string.error_unknown)
         }
-        return null
     }
 
     /** The photo picker hands out image MIME URIs; unlabeled ones are judged by the name. */

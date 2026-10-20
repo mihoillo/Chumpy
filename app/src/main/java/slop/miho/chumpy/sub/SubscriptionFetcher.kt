@@ -95,7 +95,7 @@ class SubscriptionFetcher(
      */
     private fun normalizeUrl(rawUrl: String): String {
         val trimmed = rawUrl.trim()
-        return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        return if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
             trimmed
         } else {
             "https://$trimmed"

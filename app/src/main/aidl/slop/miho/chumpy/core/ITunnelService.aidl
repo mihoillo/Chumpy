@@ -14,7 +14,6 @@ interface ITunnelService {
     /** Wall-clock millis of the last transition to UP, 0 when down (survives UI restarts). */
     long connectedAtMillis();
 
-    /** The tunnel's traffic counters since it came up: {rxBytes, txBytes}; zeros while down. */
     long[] trafficBytes();
 
     /**

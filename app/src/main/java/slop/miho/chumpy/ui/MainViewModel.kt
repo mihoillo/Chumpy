@@ -5,6 +5,8 @@ import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -141,6 +143,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _notificationsAsk = MutableStateFlow(false)
     val notificationsAsk: StateFlow<Boolean> = _notificationsAsk.asStateFlow()
 
+    fun consumeNotificationsAsk() {
+        _notificationsAsk.value = false
+    }
+
     private fun maybeAskNotifications(firstConfigEver: Boolean) {
         if (_notificationsAsk.value) return
         // The "first ever" was captured BEFORE the insert: Room's own flow can report
@@ -167,7 +173,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ConnectionStore.update(app, transform)
         val after = connection.value
         // A routing change rewrites the running config; the tunnel reloads in place.
-        if (before.routingMode != after.routingMode && tunnelStatus.value.state == TunnelState.UP) {
+        if (before.routingMode != after.routingMode &&
+            tunnelStatus.value.state in setOf(TunnelState.UP, TunnelState.CONNECTING)) {
             applyConfigAndConnect()
         }
     }
@@ -184,8 +191,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             connection.drop(1).collect { current ->
                 val bypassChanged = previous.bypassedApps != current.bypassedApps ||
                     previous.perAppEnabled != current.perAppEnabled
-                if (bypassChanged && tunnelStatus.value.state == TunnelState.UP) {
-                    tunnelClient.disconnect()
+                if (bypassChanged && tunnelStatus.value.state in setOf(TunnelState.UP, TunnelState.CONNECTING)) {
                     applyConfigAndConnect()
                 }
                 previous = current
@@ -217,6 +223,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             conn.selectedSubscriptionId
                 ?.takeIf { id -> id == STANDALONE_SUBSCRIPTION_ID && manual > 0 || subs.any { it.id == id } }
                 ?: subs.firstOrNull()?.id
+                ?: STANDALONE_SUBSCRIPTION_ID.takeIf { manual > 0 }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** How many standalone configs wait outside any subscription. */
@@ -309,7 +316,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     // A brand-new list with nothing pinged yet gets one silent sweep, so
                     // the screen opens with answers instead of question marks.
-                    if (profiles.isNotEmpty() && profiles.all { it.testDelayMillis == null }) {
+                    if (profiles.any { it.type != ProfileType.BALANCER && it.lastTestAt == null }) {
                         pingServers()
                     }
                 }
@@ -321,7 +328,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         observeTunnelForHome()
         observeTunnelForStats()
         observeIdentityChips()
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             // The ":core" process spins up with the bind, but the bind itself is async —
             // the first ask often lands before the binder answers. Keep asking until it
             // does; the version never changes mid-session, so one answer settles it.
@@ -351,7 +358,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val prefs = app.getSharedPreferences("chumpy_upgrade", android.content.Context.MODE_PRIVATE)
             val versionCode = runCatching {
-                app.packageManager.getPackageInfo(app.packageName, 0).longVersionCode
+                val info = app.packageManager.getPackageInfo(app.packageName, 0)
+                if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else {
+                    @Suppress("DEPRECATION")
+                    info.versionCode.toLong()
+                }
             }.getOrDefault(0L)
             val lastSeen = prefs.getLong("version_code", 0L)
             prefs.edit().putLong("version_code", versionCode).apply()
@@ -387,45 +398,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * routing mode. The caller is responsible for the VPN consent; the service expects it.
      */
     fun connect() {
-        if (selectedProfile.value == null) return
         applyConfigAndConnect()
     }
 
-    fun disconnect() = tunnelClient.disconnect()
+    fun disconnect() {
+        connectJob?.cancel()
+        tunnelClient.disconnect()
+    }
 
-    private fun applyConfigAndConnect() {
-        val profile = selectedProfile.value ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            // A balancer's members are resolved against the store, not the screen's
-            // list — the screen hides the members, the store keeps them: linkKeys from
-            // the column, rows from the subscription. A balancer whose members have all
-            // fallen away degrades to the whole subscription — still a pick, just a
-            // wider one.
-            val members = if (profile.type == ProfileType.BALANCER) {
-                val keys = profile.balancerMemberKeys.toSet()
-                val rows = repository
-                    .profilesOf(selectedSubscriptionId.value?.takeUnless { it == STANDALONE_SUBSCRIPTION_ID })
-                    .first()
-                val resolved = rows.filter {
-                    it.type != ProfileType.BALANCER && it.linkKey in keys
+    private var connectJob: Job? = null
+
+    private fun applyConfigAndConnect(
+        profile: ProfileEntity? = _servers.value.profiles.firstOrNull { it.id == connection.value.selectedProfileId }
+            ?: _servers.value.profiles.firstOrNull(),
+    ) {
+        profile ?: return
+        val requestedConnection = connection.value
+        connectJob?.cancel()
+        connectJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // A balancer's members are resolved against the store, not the screen's
+                // list — the screen hides the members, the store keeps them: linkKeys from
+                // the column, rows from the subscription. A balancer whose members have all
+                // fallen away degrades to the whole subscription — still a pick, just a
+                // wider one.
+                val members = if (profile.type == ProfileType.BALANCER) {
+                    val keys = profile.balancerMemberKeys.toSet()
+                    val rows = repository
+                        .profilesOf(profile.subscriptionId)
+                        .first()
+                    val resolved = rows.filter {
+                        it.type != ProfileType.BALANCER && it.linkKey in keys
+                    }
+                    resolved.ifEmpty { rows.filter { it.type != ProfileType.BALANCER } }
+                } else {
+                    emptyList()
                 }
-                resolved.ifEmpty { rows.filter { it.type != ProfileType.BALANCER } }
-            } else {
-                emptyList()
+                val config = XrayConfigBuilder.buildFull(
+                    profile,
+                    requestedConnection.routingMode,
+                    members,
+                    requestedConnection.delayTestUrl,
+                )
+                currentCoroutineContext().ensureActive()
+                CoreConfigFile.write(
+                    app,
+                    config,
+                    profile.remarks.ifEmpty { profile.server },
+                    profile.subscriptionId?.let { repository.subscriptionById(it)?.name },
+                )
+                currentCoroutineContext().ensureActive()
+                tunnelClient.connect()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _servers.update { it.copy(error = e.message ?: app.getString(R.string.error_unknown)) }
             }
-            val config = XrayConfigBuilder.buildFull(
-                profile,
-                connection.value.routingMode,
-                members,
-                connection.value.delayTestUrl,
-            )
-            CoreConfigFile.write(
-                app,
-                config,
-                profile.remarks.ifEmpty { profile.server },
-                selectedSubscription.value?.name,
-            )
-            tunnelClient.connect()
         }
     }
 
@@ -437,7 +465,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_servers.value.selectedProfileId == id) return
         ConnectionStore.update(app) { it.copy(selectedProfileId = id) }
         if (tunnelStatus.value.state == TunnelState.UP) {
-            applyConfigAndConnect()
+            applyConfigAndConnect(_servers.value.profiles.firstOrNull { it.id == id })
         }
     }
 
@@ -763,11 +791,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startTrafficLoop() {
         trafficJob?.cancel()
         trafficJob = viewModelScope.launch(Dispatchers.IO) {
-            var lastAtMillis = 0L
+            var lastAtMillis = System.currentTimeMillis()
             var sessionRx = 0L
             var sessionTx = 0L
-            var sinceFlushRx = 0L
-            var sinceFlushTx = 0L
             var bucketStart = 0L
             var bucketMillis = 0L
             var bucketDownBytes = 0L
@@ -777,14 +803,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 while (isActive && tunnelStatus.value.state == TunnelState.UP) {
                     val traffic = tunnelClient.trafficBytes()
                     val now = System.currentTimeMillis()
-                    if (traffic != null && lastAtMillis != 0L) {
+                    if (traffic != null) {
                         val down = traffic[0]
                         val up = traffic[1]
-                        val elapsed = (now - lastAtMillis).coerceAtLeast(1L)
+                        val elapsed = (traffic.getOrNull(2) ?: (now - lastAtMillis)).coerceAtLeast(1L)
                         sessionRx += down
                         sessionTx += up
-                        sinceFlushRx += down
-                        sinceFlushTx += up
                         val currentBucket = (now / TRAFFIC_BUCKET_MILLIS) * TRAFFIC_BUCKET_MILLIS
                         if (currentBucket != bucketStart) {
                             bucketStart = currentBucket
@@ -815,28 +839,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             )
                         }
                         if (now - lastFlushAtMillis >= DAILY_FLUSH_MILLIS) {
-                            flushDailyTraffic(sinceFlushRx, sinceFlushTx)
-                            sinceFlushRx = 0L
-                            sinceFlushTx = 0L
+                            refreshDailyTraffic()
                             lastFlushAtMillis = now
                         }
                     }
-                    // A null answer means the call never reached the core — its counters
-                    // kept counting, nothing is lost by moving the clock on.
-                    lastAtMillis = now
+                    if (traffic != null) lastAtMillis = now
                     pacedDelay(
                         if (appInForeground) TRAFFIC_SAMPLE_MILLIS else BACKGROUND_SAMPLE_MILLIS,
                     )
                 }
             } finally {
-                flushDailyTraffic(sinceFlushRx, sinceFlushTx)
+                refreshDailyTraffic()
             }
         }
     }
 
-    private fun flushDailyTraffic(rx: Long, tx: Long) {
-        if (rx <= 0 && tx <= 0) return
-        val week = DailyTrafficStore.addToday(app, rx.coerceAtLeast(0), tx.coerceAtLeast(0))
+    private fun refreshDailyTraffic() {
+        val week = DailyTrafficStore.readWeek(app)
         _stats.update { it.copy(week = week) }
     }
 

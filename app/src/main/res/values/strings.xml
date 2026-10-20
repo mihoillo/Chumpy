@@ -57,7 +57,7 @@
     <string name="subscription_none">No subscription</string>
     <string name="subscription_choose">Choose subscription</string>
     <string name="subscription_collapse">Collapse</string>
-    <string name="subscription_bw_percent">%1$d%%</string>
+    <string name="subscription_bw_percent" translatable="false">%1$d%%</string>
     <plurals name="subscription_days_remaining">
         <item quantity="one">%1$d/30 day remaining</item>
         <item quantity="other">%1$d/30 days remaining</item>
@@ -65,7 +65,7 @@
     <string name="subscription_days_infinite">∞ days remaining</string>
     <string name="subscription_hours_left">%1$d h left</string>
     <string name="subscription_expired">expired</string>
-    <string name="subscription_consumed">%1$s / %2$s</string>
+    <string name="subscription_consumed" translatable="false">%1$s / %2$s</string>
     <string name="subscription_unlimited">unlimited</string>
     <string name="subscription_updated_at">Updated at %1$s</string>
     <string name="subscription_updated_ago">Updated %1$s ago</string>
@@ -126,11 +126,11 @@
     <string name="settings_haptic_feedback_hint">A light poke when the buttons are tapped</string>
     <string name="settings_fonts">Fonts</string>
     <string name="settings_flag_style">Flag style</string>
-    <string name="settings_flag_twemoji">Twemoji</string>
+    <string name="settings_flag_twemoji" translatable="false">Twemoji</string>
     <string name="settings_flag_system">System emoji</string>
     <string name="settings_flag_globe">Just globe</string>
     <string name="settings_app_icon">App icon</string>
-    <string name="settings_icon_chumpy">Chumpy</string>
+    <string name="settings_icon_chumpy" translatable="false">Chumpy</string>
     <string name="settings_icon_inverted">Inverted</string>
     <string name="settings_icon_themed">Themed</string>
     <string name="settings_wallpapers">Wallpapers</string>
@@ -176,13 +176,13 @@
     <string name="settings_about_language">Language</string>
     <string name="settings_about_tagline">An Xray client wrapped in Material 3 Expressive</string>
     <string name="settings_about_telegram">Telegram channel</string>
-    <string name="settings_about_telegram_handle">t.me/ChumpyXray</string>
+    <string name="settings_about_telegram_handle" translatable="false">t.me/ChumpyXray</string>
     <string name="settings_about_github">GitHub</string>
-    <string name="settings_about_github_handle">github.com/mihoillo/Chumpy</string>
+    <string name="settings_about_github_handle" translatable="false">github.com/mihoillo/Chumpy</string>
 
     <!-- Fonts -->
     <string name="fonts_system">System</string>
-    <string name="fonts_inter">Inter</string>
+    <string name="fonts_inter" translatable="false">Inter</string>
     <string name="fonts_add">Add font</string>
     <string name="fonts_delete_title">Delete this font?</string>
     <string name="fonts_delete_text">\"%1$s\" will be removed from the app. You can import it again any time.</string>
@@ -204,7 +204,7 @@
     <string name="wallpapers_move_hint">Long-tap the wallpaper to move it</string>
     <string name="wallpapers_text_hint">Tap the text to recolor it</string>
     <string name="wallpapers_done">Done</string>
-    <string name="wallpapers_percent">%1$d%%</string>
+    <string name="wallpapers_percent" translatable="false">%1$d%%</string>
     <string name="wallpapers_dim_tone">Dim color</string>
     <string name="wallpapers_dim_tone_hint">The scrim\'s tone over the wallpaper</string>
     <string name="wallpapers_blur_hint">How much the wallpaper blurs away from Home</string>
@@ -224,7 +224,7 @@
     <string name="stats_up">Up</string>
     <string name="stats_window">Last 15 min</string>
     <string name="stats_peak">Peak %1$s</string>
-    <string name="stats_loss_percent">%1$d%%</string>
+    <string name="stats_loss_percent" translatable="false">%1$d%%</string>
     <string name="stats_loss_warning">Packet loss too high: %1$d%%</string>
     <string name="stats_probes_caption">A probe every 15 s</string>
     <string name="stats_waiting">Waiting for data…</string>
@@ -241,7 +241,7 @@
     <string name="notif_disconnected">Disconnected</string>
     <string name="notif_profile_unknown">unknown server</string>
     <string name="notif_action_disconnect">Disconnect</string>
-    <string name="notif_separator">•</string>
+    <string name="notif_separator" translatable="false">•</string>
     <string name="notif_channel_alerts">Tunnel alerts</string>
     <string name="notif_channel_alerts_desc">A running tunnel that fell</string>
     <string name="notif_interrupted_title">Connection interrupted</string>

@@ -177,7 +177,7 @@ object OutboundBuilder {
             finalMask(profile)?.let { json = json.with("finalmask" to it) }
         }
 
-        return if (json.size > 1) json else null
+        return if (json.size > 1 || network !in setOf("tcp", "raw")) json else null
     }
 
     private fun tlsSettings(profile: ProfileEntity): JsonObject = buildJsonObject {

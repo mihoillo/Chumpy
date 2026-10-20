@@ -3,6 +3,7 @@ package slop.miho.chumpy.core
 import android.content.Context
 import android.os.RemoteCallbackList
 import android.os.RemoteException
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import go.Seq
@@ -14,6 +15,7 @@ import java.security.MessageDigest
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import slop.miho.chumpy.data.DailyTrafficStore
 
 /**
  * Owner of the Xray core (the gomobile bindings of 2dust/AndroidLibXrayLite). Lives only in
@@ -68,6 +70,13 @@ object XrayCore {
     /** The last TUN fd the VPN service handed us; -1 when the interface is gone. */
     @Volatile
     private var tunFd: Int = -1
+
+    private var pendingUiRx = 0L
+    private var pendingUiTx = 0L
+    private var pendingDailyRx = 0L
+    private var pendingDailyTx = 0L
+    private var lastDailyFlush = 0L
+    private var lastUiTrafficAt = 0L
 
     private val coreCallback = object : CoreCallbackHandler {
         override fun startup(): Long {
@@ -162,6 +171,11 @@ object XrayCore {
             initFailed?.let { return IllegalStateException(it) }
             val core = controller ?: Libv2ray.newCoreController(coreCallback).also { controller = it }
             core.startLoop(configJson, fd)
+            synchronized(this) {
+                pendingUiRx = 0L
+                pendingUiTx = 0L
+                lastUiTrafficAt = SystemClock.elapsedRealtime()
+            }
             isRunning = true
             return null
         } catch (e: Exception) {
@@ -182,6 +196,8 @@ object XrayCore {
      */
     fun stopLoop() {
         if (!isRunning) return
+        sampleTraffic()
+        flushDailyTraffic()
         isRunning = false
         val core = controller ?: return
         val stopper = Thread {
@@ -265,7 +281,41 @@ object XrayCore {
      * not watch a total grow. The payload's rows read "tag,uplink|downlink,value;" — the
      * counter names' last segment, not the "up"/"down" shorthand. Zeros while down.
      */
+    @Synchronized
     fun trafficBytes(): LongArray {
+        sampleTraffic()
+        val now = SystemClock.elapsedRealtime()
+        return longArrayOf(pendingUiRx, pendingUiTx, (now - lastUiTrafficAt).coerceAtLeast(1L)).also {
+            pendingUiRx = 0L
+            pendingUiTx = 0L
+            lastUiTrafficAt = now
+        }
+    }
+
+    @Synchronized
+    fun sampleTraffic() {
+        val delta = queryTrafficBytes()
+        pendingUiRx += delta[0]
+        pendingUiTx += delta[1]
+        pendingDailyRx += delta[0]
+        pendingDailyTx += delta[1]
+        if (System.currentTimeMillis() - lastDailyFlush >= 60_000L) flushDailyTraffic()
+    }
+
+    @Synchronized
+    private fun flushDailyTraffic() {
+        if (pendingDailyRx == 0L && pendingDailyTx == 0L) return
+        try {
+            DailyTrafficStore.addToday(appContext, pendingDailyRx, pendingDailyTx)
+            pendingDailyRx = 0L
+            pendingDailyTx = 0L
+            lastDailyFlush = System.currentTimeMillis()
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not save daily traffic; retaining pending bytes", e)
+        }
+    }
+
+    private fun queryTrafficBytes(): LongArray {
         if (!isRunning) return longArrayOf(0L, 0L)
         val core = controller ?: return longArrayOf(0L, 0L)
         var rx = 0L
@@ -300,7 +350,7 @@ object XrayCore {
     }
 
     private fun awaitInit() {
-        initLatch.await(30, TimeUnit.SECONDS)
+        check(initLatch.await(30, TimeUnit.SECONDS)) { "Xray initialization timed out" }
     }
 
     fun publish(newStatus: TunnelStatus) {

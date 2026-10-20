@@ -1,6 +1,5 @@
 package slop.miho.chumpy.sub
 
-import android.util.Log
 import slop.miho.chumpy.db.ProfileEntity
 import slop.miho.chumpy.db.computeLinkKey
 
@@ -12,8 +11,6 @@ import slop.miho.chumpy.db.computeLinkKey
  * by fetching it, the way Hiddify does.
  */
 object SubscriptionParser {
-    private const val TAG = "Chumpy/SubParse"
-
     /** The parsed profiles, deduplicated, in body order; empty when nothing parsed. */
     fun parse(body: String): List<ProfileEntity> {
         val text = decodeBody(body)
@@ -25,9 +22,7 @@ object SubscriptionParser {
         // whose UA happens to carry a keyword they recognise.
         ClashYamlParser.parse(text)?.let { return it.distinctBy { it.computeLinkKey() } }
         val profiles = text.lines().mapNotNull { line ->
-            LinkParsers.parse(line).also { profile ->
-                if (profile == null && line.isNotBlank()) Log.d(TAG, "Unrecognized line: ${line.take(80)}")
-            }
+            LinkParsers.parse(line)
         }
         // Identical servers repeated in one body collapse to the first occurrence.
         return profiles.distinctBy { it.computeLinkKey() }
@@ -38,14 +33,16 @@ object SubscriptionParser {
      * http(s) line that is not itself a proxy link.
      */
     fun isNestedSubscriptionUrl(body: String): String? {
-        val trimmed = body.trim()
+        val trimmed = decodeBody(body)
         if (trimmed.lines().count { it.isNotBlank() } != 1) return null
-        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return null
+        if (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true)) return null
         return trimmed
     }
 
     private fun decodeBody(body: String): String {
         val trimmed = body.trim()
+        if (trimmed.startsWith("{") || trimmed.startsWith("[") ||
+            Regex("(?m)^proxies:").containsMatchIn(trimmed)) return trimmed
         // Plain link lists announce themselves; base64 bodies don't.
         if (trimmed.contains("://")) return trimmed
         val decoded = LinkUtils.decode(trimmed)

@@ -24,7 +24,6 @@ import slop.miho.chumpy.R
 import slop.miho.chumpy.data.ConnectionStore
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -168,9 +167,17 @@ class ChumpyVpnService : VpnService() {
     @Volatile
     private var tunInterface: ParcelFileDescriptor? = null
 
+    private var appliedAppFilter: Pair<Boolean, Set<String>>? = null
+
     /** All VPN setup/teardown runs here; concurrent commands are collapsed by the lock. */
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "vpn-worker") }
-    private val starting = AtomicBoolean(false)
+    private val commandGeneration = AtomicInteger(0)
+
+    @Volatile
+    private var destroyed = false
+
+    @Volatile
+    private var latestStartId = 0
 
     /**
      * The physical network the tunnel last rode, as the system's own request names it —
@@ -200,6 +207,16 @@ class ChumpyVpnService : VpnService() {
     /** The handover timer's own looper; holds re-dials and authorization checks only. */
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private val trafficSample: Runnable = Runnable {
+        if (destroyed || !XrayCore.isRunning) return@Runnable
+        worker.execute {
+            if (XrayCore.isRunning) {
+                XrayCore.sampleTraffic()
+                mainHandler.postDelayed(trafficSample, 5_000L)
+            }
+        }
+    }
+
     /** Set by the auto-reconnect: the next tunnel outcome — up, or failed — edits the fall notice. */
     @Volatile
     private var announceAutoReconnect = false
@@ -224,6 +241,7 @@ class ChumpyVpnService : VpnService() {
      * active network's own transports say it straight, consent or no consent.
      */
     private val authorizationCheck: Runnable = Runnable {
+        if (destroyed || !watching) return@Runnable
         worker.execute {
             if (!watching || !XrayCore.isRunning) return@execute
             // The foreign VPN is asked first: while it holds the system, prepare() keeps
@@ -309,9 +327,11 @@ class ChumpyVpnService : VpnService() {
         XrayCore.init(this)
     }
 
-    override fun onBind(intent: Intent) = binder
+    override fun onBind(intent: Intent) =
+        if (intent.action == SERVICE_INTERFACE) super.onBind(intent) else binder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        latestStartId = startId
         // Foreground before anything heavy: the start contract requires it within seconds.
         ensureForeground()
         // Always-on restarts from the OS deliver the VpnService interface action, or null.
@@ -349,18 +369,24 @@ class ChumpyVpnService : VpnService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        destroyed = true
+        commandGeneration.incrementAndGet()
         stopTunnelWatch()
-        closeTun()
+        worker.execute {
+            XrayCore.stopLoop()
+            closeTun()
+            XrayCore.publish(TunnelStatus(TunnelState.DOWN))
+        }
+        worker.shutdown()
         cancelNotification()
     }
 
     private fun startOrReloadVpn() {
-        if (!starting.compareAndSet(false, true)) {
-            Log.w(TAG, "A start is already in progress")
-            return
-        }
+        val serviceStartId = latestStartId
+        val generation = commandGeneration.incrementAndGet()
         XrayCore.publish(TunnelStatus(TunnelState.CONNECTING))
         worker.execute {
+            if (generation != commandGeneration.get()) return@execute
             // A new attempt supersedes whatever fall the last one announced.
             cancelAlert()
             try {
@@ -369,29 +395,38 @@ class ChumpyVpnService : VpnService() {
                 }
                 val config = CoreConfigFile.readConfig(this)
                     ?: throw IllegalStateException(getString(R.string.error_no_config))
-                if (XrayCore.isRunning) {
+                val connection = ConnectionStore.current(this)
+                val appFilter = connection.perAppEnabled to connection.bypassedApps
+                if (XrayCore.isRunning && appliedAppFilter == appFilter) {
                     // Reload: the interface stays up, only the core loop restarts with the
                     // fresh config — server switch while connected.
                     XrayCore.stopLoop()
                     XrayCore.startLoop(config, XrayCore.currentTunFd())?.let { throw it }
                 } else {
+                    XrayCore.stopLoop()
+                    closeTun()
                     // The interface a soft fall kept standing retires here, right before
                     // its replacement — never standing alone, never mid-fall.
                     closeKeptTun()
-                    val tun = establishTun() ?: throw IllegalStateException(getString(R.string.error_tun_creation))
+                    val tun = establishTun(appFilter) ?: throw IllegalStateException(getString(R.string.error_tun_creation))
                     tunInterface = tun
                     XrayCore.startLoop(config, tun.fd)?.let { throw it }
                 }
+                appliedAppFilter = appFilter
+                if (generation != commandGeneration.get()) return@execute
                 XrayCore.publish(TunnelStatus(TunnelState.UP))
                 // The guards ride with the running tunnel: handovers under it re-dial it,
                 // and the authorization check catches the revoke a ROM never reports.
                 startTunnelWatch()
+                mainHandler.removeCallbacks(trafficSample)
+                mainHandler.post(trafficSample)
                 if (announceAutoReconnect) {
                     announceAutoReconnect = false
                     notifyReconnected()
                 }
                 ensureForeground()
             } catch (e: Exception) {
+                if (generation != commandGeneration.get()) return@execute
                 Log.e(TAG, "Failed to bring the tunnel up", e)
                 if (announceAutoReconnect) {
                     // The auto-reconnect's own outcome: the notice that promised the climb
@@ -405,9 +440,7 @@ class ChumpyVpnService : VpnService() {
                 closeTun()
                 XrayCore.publish(TunnelStatus(TunnelState.DOWN, describe(e)))
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            } finally {
-                starting.set(false)
+                stopSelfResult(serviceStartId)
             }
         }
     }
@@ -423,6 +456,8 @@ class ChumpyVpnService : VpnService() {
      * (up, or failed) is what the fall notice is edited to say.
      */
     private fun stopVpn(interruptionReason: String? = null, keepTun: Boolean = false, reconnectAfter: Boolean = false) {
+        val serviceStartId = latestStartId
+        val generation = commandGeneration.incrementAndGet()
         // The watch goes first: no handover may schedule behind a stop, and one already
         // waiting must die with it — nothing brings the tunnel back from the dead.
         stopTunnelWatch()
@@ -432,12 +467,8 @@ class ChumpyVpnService : VpnService() {
         XrayCore.publish(TunnelStatus(TunnelState.DISCONNECTING))
         worker.execute {
             try {
+                stopTunnelWatch()
                 XrayCore.stopLoop()
-                // stopSelf must run before the interface close — the core needs its fd valid
-                // through its async shutdown, or the next start finds the port still bound.
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                Thread.sleep(100)
                 if (keepTun) {
                     keptTun = tunInterface
                     tunInterface = null
@@ -449,12 +480,15 @@ class ChumpyVpnService : VpnService() {
                 if (interruptionReason != null) {
                     notifyInterrupted(interruptionReason)
                 }
-                if (reconnectAfter) {
+                if (reconnectAfter && generation == commandGeneration.get()) {
                     // The answer the toggle promised: no waiting, the climb back begins
                     // the moment the fall is finished. The outcome edits the notice.
                     Log.i(TAG, "Auto-reconnect: answering the fall at once")
                     announceAutoReconnect = true
                     startOrReloadVpn()
+                } else if (generation == commandGeneration.get()) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelfResult(serviceStartId)
                 }
             }
         }
@@ -473,15 +507,20 @@ class ChumpyVpnService : VpnService() {
      * moment, and the authorization poll falls the tunnel properly within seconds of it.
      */
     private fun scheduleHandover() {
+        if (destroyed || !watching) return
         val generation = watchGeneration.get()
-        mainHandler.removeCallbacksAndMessages(null)
-        mainHandler.postDelayed({
+        pendingHandover?.let { mainHandler.removeCallbacks(it) }
+        val handover = Runnable {
             if (generation == watchGeneration.get() && XrayCore.isRunning) {
                 worker.execute { redialCore(generation) }
             }
-        }, HANDOVER_DEBOUNCE_MILLIS)
+        }
+        pendingHandover = handover
+        mainHandler.postDelayed(handover, HANDOVER_DEBOUNCE_MILLIS)
         Log.i(TAG, "The network under the tunnel changed; re-dialing in ${HANDOVER_DEBOUNCE_MILLIS}ms")
     }
+
+    private var pendingHandover: Runnable? = null
 
     /**
      * The handover re-dial itself, v2rayNG's reload: silent — the interface, the
@@ -492,6 +531,7 @@ class ChumpyVpnService : VpnService() {
      * it down properly and says so — the alert's Reconnect is the way back.
      */
     private fun redialCore(generation: Int) {
+        val serviceStartId = latestStartId
         if (generation != watchGeneration.get() || !XrayCore.isRunning) return
         try {
             XrayCore.stopLoop()
@@ -507,7 +547,7 @@ class ChumpyVpnService : VpnService() {
             XrayCore.publish(TunnelStatus(TunnelState.DOWN, describe(e)))
             notifyInterrupted(describe(e))
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            stopSelfResult(serviceStartId)
         }
     }
 
@@ -520,6 +560,9 @@ class ChumpyVpnService : VpnService() {
         if (watching) return
         val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
         connectivityManager = connectivity
+        watching = true
+        upstream = null
+        watchSeeded = false
         try {
             connectivity.requestNetwork(
                 NetworkRequest.Builder()
@@ -528,12 +571,11 @@ class ChumpyVpnService : VpnService() {
                     .build(),
                 networkWatch,
             )
-            watching = true
-            upstream = null
-            watchSeeded = false
             mainHandler.removeCallbacks(authorizationCheck)
             mainHandler.postDelayed(authorizationCheck, AUTHORIZATION_CHECK_MILLIS)
         } catch (e: Exception) {
+            watching = false
+            connectivityManager = null
             Log.w(TAG, "Requesting the default network failed; handovers go unwatched", e)
         }
     }
@@ -558,7 +600,7 @@ class ChumpyVpnService : VpnService() {
         }
     }
 
-    private fun establishTun(): ParcelFileDescriptor? {
+    private fun establishTun(appFilter: Pair<Boolean, Set<String>>): ParcelFileDescriptor? {
         val builder = Builder()
             .setMtu(TUN_MTU)
             .addAddress(TUN_ADDRESS, TUN_PREFIX)
@@ -579,9 +621,8 @@ class ChumpyVpnService : VpnService() {
         // The per-app bypass: packages the user pulled out of the tunnel, the list's own
         // master switch permitting. Read straight off disk — this process's cached copy
         // goes stale the moment the UI writes.
-        val connection = ConnectionStore.current(this)
-        if (connection.perAppEnabled) {
-            connection.bypassedApps.forEach { pkg ->
+        if (appFilter.first) {
+            appFilter.second.forEach { pkg ->
                 try {
                     builder.addDisallowedApplication(pkg)
                 } catch (e: PackageManager.NameNotFoundException) {

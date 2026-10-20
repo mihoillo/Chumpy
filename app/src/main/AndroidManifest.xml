@@ -17,6 +17,7 @@
 
     <!-- The QR scanner's own; asked for only there, on first scan. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!-- Package visibility (Android 11+): without declaring what we look for, the
          per-app proxy's launcher query only answers with a handful of system packages.

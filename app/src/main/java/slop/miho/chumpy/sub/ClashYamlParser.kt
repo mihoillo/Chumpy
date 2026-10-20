@@ -36,11 +36,12 @@ object ClashYamlParser {
             "trojan" -> ProfileType.TROJAN
             "ss", "shadowsocks" -> ProfileType.SHADOWSOCKS
             "socks5", "socks" -> ProfileType.SOCKS
+            "hysteria2", "hy2" -> ProfileType.HYSTERIA2
             else -> return null
         }
         val server = proxy["server"] as? String ?: return null
         val port = (proxy["port"] as? String)?.toIntOrNull() ?: return null
-        if (server.isBlank() || port <= 0) return null
+        if (server.isBlank() || port !in 1..65535) return null
 
         var profile = ProfileEntity(id = "", subscriptionId = null, type = type).copy(
             remarks = (proxy["name"] as? String).orEmpty(),
@@ -73,18 +74,26 @@ object ClashYamlParser {
                 password = (proxy["password"] as? String).orEmpty(),
             )
 
+            ProfileType.HYSTERIA2 -> profile = profile.copy(
+                password = proxy["password"] as? String ?: return null,
+                obfsPassword = (proxy["obfs-password"] as? String).orEmpty(),
+                portHopping = (proxy["ports"] as? String).orEmpty(),
+                portHoppingInterval = (proxy["hop-interval"] as? String).orEmpty(),
+            )
+
             else -> return null
         }
 
         val reality = proxy["reality-opts"] as? Map<*, *>
         var result = profile.copy(
-            network = when (val net = proxy["network"] as? String) {
+            network = if (type == ProfileType.HYSTERIA2) "hysteria" else when (val net = proxy["network"] as? String) {
                 "ws", "websocket", "grpc", "httpupgrade", "kcp", "mkcp" -> net
                 "h2", "http" -> "http"
                 else -> "tcp"
             },
             security = when {
                 reality != null -> "reality"
+                type == ProfileType.HYSTERIA2 || type == ProfileType.TROJAN -> "tls"
                 proxy["tls"] == "true" -> "tls"
                 else -> ""
             },
