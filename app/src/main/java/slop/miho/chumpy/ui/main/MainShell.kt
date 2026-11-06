@@ -622,6 +622,7 @@ private fun TwoPaneShell(
     // padding, so rows at rest never sit inside the fade — only rows in flight do.
     val topFade = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp
     val bottomFade = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val sideFade = screenMargin()
 
     Row(
         Modifier
@@ -664,6 +665,8 @@ private fun TwoPaneShell(
                 // nothing. They fade instead: an offscreen layer masks the pane's own
                 // content — never what sits behind it — as far as the pages' own
                 // content padding reaches, so resting rows never sit inside the fade.
+                // The mask runs twice — vertical for scrolling, horizontal for the
+                // page rides — and multiplies: content dissolves at all four edges.
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
                     drawContent()
@@ -675,6 +678,16 @@ private fun TwoPaneShell(
                             top to Color.Black,
                             bottom to Color.Black,
                             1f to Color.Transparent,
+                        ),
+                        blendMode = BlendMode.DstIn,
+                    )
+                    val side = (sideFade.toPx() / size.width).coerceAtMost(0.45f)
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            0f to Color.Transparent,
+                            side to Color.Black,
+                            1f - side to Color.Black,
+                            size.width to Color.Transparent,
                         ),
                         blendMode = BlendMode.DstIn,
                     )
