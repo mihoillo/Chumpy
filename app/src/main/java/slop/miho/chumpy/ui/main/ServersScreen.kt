@@ -293,7 +293,7 @@ fun ServersScreen(
         val topContentPadding = WindowInsets.statusBars.asPaddingValues()
             .calculateTopPadding() + 24.dp
         val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues()
-            .calculateBottomPadding() + FloatingBottomBarReservedHeight
+            .calculateBottomPadding() + LocalBarReservedHeight.current
         LazyColumn(
             state = listState,
             modifier = Modifier

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Dp
@@ -15,6 +16,9 @@ import slop.miho.chumpy.ui.theme.LocalUiSettings
 
 /** Below this window width (dp) the app counts the screen as small. */
 private const val SMALL_SCREEN_WIDTH_DP = 400
+
+/** From this window width (dp) up, the shell splits into two panes (see [isWideScreen]). */
+private const val WIDE_SCREEN_WIDTH_DP = 700
 
 /**
  * Whether the window is a small, narrow one: there the side margins tighten to MD3's
@@ -27,6 +31,31 @@ fun isSmallScreen(): Boolean = LocalUiSettings.current.smallScreen ?: smallScree
 /** The width's own verdict on [isSmallScreen], whatever the user forced. */
 @Composable
 fun smallScreenByWidth(): Boolean = LocalConfiguration.current.screenWidthDp < SMALL_SCREEN_WIDTH_DP
+
+/**
+ * Whether the window is wide enough for the two-pane layout: Home in a pane of its own on
+ * the left, the bar floating over it, the picked destination (servers, stats, settings)
+ * filling the right one. A small layout forced by the user keeps the single column
+ * whatever the glass says.
+ */
+@Composable
+fun isWideScreen(): Boolean =
+    LocalConfiguration.current.screenWidthDp >= WIDE_SCREEN_WIDTH_DP &&
+        LocalUiSettings.current.smallScreen != true
+
+/** The Home pane's width in the two-pane layout: 42% of the window, 400..540dp. */
+@Composable
+fun twoPaneHomeWidth(): Dp =
+    (LocalConfiguration.current.screenWidthDp * 0.42f).dp.coerceIn(400.dp, 540.dp)
+
+/**
+ * The bottom space the screens keep clear for the floating bar over them: the full
+ * reservation wherever the bar floats — the single-column shell, the two-pane Home pane —
+ * and none under the two-pane content pane, where no bar ever passes. The default keeps
+ * the full reservation, so the standalone screens (wallpapers, per-app proxy) — which
+ * carry their own bar — stay clear of it without providing anything.
+ */
+val LocalBarReservedHeight = staticCompositionLocalOf { FloatingBottomBarReservedHeight }
 
 /** The classic navigation bar's resolved state: the user's pick, or the screen's default. */
 @Composable

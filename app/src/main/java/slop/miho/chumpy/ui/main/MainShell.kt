@@ -13,18 +13,22 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -106,12 +110,36 @@ fun MainShell(viewModel: MainViewModel) {
         if (result.resultCode == android.app.Activity.RESULT_OK) viewModel.connect()
     }
 
+    // The wide window's split: Home owns a pane of its own on the left — the bar floats
+    // over it — and the picked destination (servers, stats, settings) fills the right
+    // one. Home's pill is gone there, its screen never leaving the left pane, so a
+    // selection that still says HOME lands on the servers — the first content
+    // destination; the state itself follows on the next frame's effect below.
+    val wide = isWideScreen()
+    val rightTab = if (wide && selectedTab == MainTab.HOME) MainTab.SERVERS else selectedTab
+    LaunchedEffect(wide) {
+        if (wide && selectedTab == MainTab.HOME) selectedTab = MainTab.SERVERS
+    }
+
+    // The connect ask rides the VPN permission the same way whichever pane asks for it.
+    val connectWithConsent: () -> Unit = {
+        val consent = VpnService.prepare(context)
+        if (consent != null) vpnPermission.launch(consent) else viewModel.connect()
+    }
+
+    // The settings pages' shared scroll state, owned above either layout — the pager
+    // strip's two modes and the two-pane split — so flipping between any of them keeps
+    // the interface page's position.
+    val interfaceScroll = rememberScrollState()
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // The wallpaper behind the whole app, the wallpaper screen's own recipe: Home wears
         // the gentle dim only, every other screen adds the stronger dim, the blur and the
         // zoom — animated between the two looks as the user moves around.
         val wallpaper = rememberDecodedWallpaper()
-        val homeLook = selectedTab == MainTab.HOME && !settingsOpen
+        // The split keeps the wallpaper in its away-from-Home look: content is always on
+        // stage beside Home there, and Home's gentler dim would under-dim it.
+        val homeLook = !wide && selectedTab == MainTab.HOME && !settingsOpen
         val motion = MaterialTheme.motionScheme
         // The picture takes a moment to decode, so the app opens on the plain surface; its
         // arrival then plays as the switch back to Home does — a fade under a settle-down
@@ -221,66 +249,119 @@ fun MainShell(viewModel: MainViewModel) {
                 )
             }
 
-            MainPagerStrip(
-            selectedTab = selectedTab,
-            selectedCategory = selectedCategory,
-            settingsOpen = settingsOpen,
-            subscriptions = subscriptions,
-            selectedSubscription = selectedSubscription,
-            tunnelStatus = tunnelStatus,
-            servers = servers,
-            home = home,
-            // The flow itself, not its value: it ticks once a second, and the STATS page
-            // collects it in its own branch rather than recomposing the whole shell.
-            statsFlow = viewModel.stats,
-            // The standalone group's row count, the same way: only the SERVERS page
-            // ever reads it.
-            manualProfileCount = viewModel.manualProfileCount,
-            uiSettings = settings,
-            connection = viewModel.connection.collectAsStateWithLifecycle().value,
-            coreVersion = viewModel.coreVersion.collectAsStateWithLifecycle().value,
-            coreRunning = viewModel.coreRunning.collectAsStateWithLifecycle().value,
-            coreLogsFlow = viewModel.coreLogs,
-            onUiSettingsChange = viewModel::updateSettings,
-            onChangeConnection = viewModel::updateConnection,
-            onOpenServers = {
-                selectedTab = MainTab.SERVERS
-                settingsOpen = false
-            },
-            // The home screen's loss warning chip answers a tap with the graphs behind it.
-            onOpenStats = {
-                selectedTab = MainTab.STATS
-                settingsOpen = false
-            },
-            // The swipe's landing: whatever page the finger carried the strip to, the
-            // shell's own selection follows — the two groups' door stays the bar's.
-            onSelectPage = { position ->
-                if (position < MainTab.entries.size) {
-                    selectedTab = MainTab.entries[position]
-                    settingsOpen = false
-                } else {
-                    selectedCategory = SettingsCategory.entries[position - MainTab.entries.size]
-                    settingsOpen = true
-                }
-            },
-            onRefreshPing = viewModel::refreshPing,
-            onPingServers = viewModel::pingServers,
-            onUpdateSubscription = viewModel::updateSelectedSubscription,
-            onSelectSubscription = viewModel::selectSubscription,
-            onAddSubscription = viewModel::addSubscription,
-            onDeleteSubscription = viewModel::deleteSubscription,
-            onDeleteManualProfile = viewModel::deleteManualProfile,
-            onTogglePinned = viewModel::toggleProfilePinned,
-            onToggleSubscriptionPinned = viewModel::toggleSubscriptionPinned,
-            onToggleConcealed = viewModel::toggleProfileConcealed,
-            onToggleAutoUpdate = viewModel::setSubscriptionAutoUpdate,
-            onSelect = viewModel::selectProfile,
-            onConnect = {
-                val consent = VpnService.prepare(context)
-                if (consent != null) vpnPermission.launch(consent) else viewModel.connect()
-            },
-            onDisconnect = viewModel::disconnect,
-            )
+            if (wide) {
+                TwoPaneShell(
+                    selectedTab = rightTab,
+                    selectedCategory = selectedCategory,
+                    settingsOpen = settingsOpen,
+                    interfaceScroll = interfaceScroll,
+                    tunnelStatus = tunnelStatus,
+                    subscriptions = subscriptions,
+                    selectedSubscription = selectedSubscription,
+                    servers = servers,
+                    home = home,
+                    statsFlow = viewModel.stats,
+                    manualProfileCount = viewModel.manualProfileCount,
+                    uiSettings = settings,
+                    connection = viewModel.connection.collectAsStateWithLifecycle().value,
+                    coreVersion = viewModel.coreVersion.collectAsStateWithLifecycle().value,
+                    coreRunning = viewModel.coreRunning.collectAsStateWithLifecycle().value,
+                    coreLogsFlow = viewModel.coreLogs,
+                    onUiSettingsChange = viewModel::updateSettings,
+                    onChangeConnection = viewModel::updateConnection,
+                    onOpenServers = {
+                        selectedTab = MainTab.SERVERS
+                        settingsOpen = false
+                    },
+                    // The home screen's loss warning chip answers a tap with the graphs behind it.
+                    onOpenStats = {
+                        selectedTab = MainTab.STATS
+                        settingsOpen = false
+                    },
+                    onSelectPage = { position ->
+                        if (position < MainTab.entries.size) {
+                            selectedTab = MainTab.entries[position]
+                            settingsOpen = false
+                        } else {
+                            selectedCategory = SettingsCategory.entries[position - MainTab.entries.size]
+                            settingsOpen = true
+                        }
+                    },
+                    onRefreshPing = viewModel::refreshPing,
+                    onPingServers = viewModel::pingServers,
+                    onUpdateSubscription = viewModel::updateSelectedSubscription,
+                    onSelectSubscription = viewModel::selectSubscription,
+                    onAddSubscription = viewModel::addSubscription,
+                    onDeleteSubscription = viewModel::deleteSubscription,
+                    onDeleteManualProfile = viewModel::deleteManualProfile,
+                    onTogglePinned = viewModel::toggleProfilePinned,
+                    onToggleSubscriptionPinned = viewModel::toggleSubscriptionPinned,
+                    onToggleConcealed = viewModel::toggleProfileConcealed,
+                    onToggleAutoUpdate = viewModel::setSubscriptionAutoUpdate,
+                    onSelect = viewModel::selectProfile,
+                    onConnect = connectWithConsent,
+                    onDisconnect = viewModel::disconnect,
+                )
+            } else {
+                MainPagerStrip(
+                    selectedTab = selectedTab,
+                    selectedCategory = selectedCategory,
+                    settingsOpen = settingsOpen,
+                    interfaceScroll = interfaceScroll,
+                    subscriptions = subscriptions,
+                    selectedSubscription = selectedSubscription,
+                    tunnelStatus = tunnelStatus,
+                    servers = servers,
+                    home = home,
+                    // The flow itself, not its value: it ticks once a second, and the STATS page
+                    // collects it in its own branch rather than recomposing the whole shell.
+                    statsFlow = viewModel.stats,
+                    // The standalone group's row count, the same way: only the SERVERS page
+                    // ever reads it.
+                    manualProfileCount = viewModel.manualProfileCount,
+                    uiSettings = settings,
+                    connection = viewModel.connection.collectAsStateWithLifecycle().value,
+                    coreVersion = viewModel.coreVersion.collectAsStateWithLifecycle().value,
+                    coreRunning = viewModel.coreRunning.collectAsStateWithLifecycle().value,
+                    coreLogsFlow = viewModel.coreLogs,
+                    onUiSettingsChange = viewModel::updateSettings,
+                    onChangeConnection = viewModel::updateConnection,
+                    onOpenServers = {
+                        selectedTab = MainTab.SERVERS
+                        settingsOpen = false
+                    },
+                    // The home screen's loss warning chip answers a tap with the graphs behind it.
+                    onOpenStats = {
+                        selectedTab = MainTab.STATS
+                        settingsOpen = false
+                    },
+                    // The swipe's landing: whatever page the finger carried the strip to, the
+                    // shell's own selection follows — the two groups' door stays the bar's.
+                    onSelectPage = { position ->
+                        if (position < MainTab.entries.size) {
+                            selectedTab = MainTab.entries[position]
+                            settingsOpen = false
+                        } else {
+                            selectedCategory = SettingsCategory.entries[position - MainTab.entries.size]
+                            settingsOpen = true
+                        }
+                    },
+                    onRefreshPing = viewModel::refreshPing,
+                    onPingServers = viewModel::pingServers,
+                    onUpdateSubscription = viewModel::updateSelectedSubscription,
+                    onSelectSubscription = viewModel::selectSubscription,
+                    onAddSubscription = viewModel::addSubscription,
+                    onDeleteSubscription = viewModel::deleteSubscription,
+                    onDeleteManualProfile = viewModel::deleteManualProfile,
+                    onTogglePinned = viewModel::toggleProfilePinned,
+                    onToggleSubscriptionPinned = viewModel::toggleSubscriptionPinned,
+                    onToggleConcealed = viewModel::toggleProfileConcealed,
+                    onToggleAutoUpdate = viewModel::setSubscriptionAutoUpdate,
+                    onSelect = viewModel::selectProfile,
+                    onConnect = connectWithConsent,
+                    onDisconnect = viewModel::disconnect,
+                )
+            }
             }
 
             if (wallpaper == null) {
@@ -319,7 +400,10 @@ fun MainShell(viewModel: MainViewModel) {
             }
 
             FloatingBottomBar(
-                selectedTab = selectedTab,
+                // In the split the bar drives the right pane, so it wears the remapped
+                // selection; either way the pills land over Home — the whole width on a
+                // narrow window, the left pane's own stretch on a wide one.
+                selectedTab = rightTab,
                 onTabSelected = {
                     selectedTab = it
                     settingsOpen = false
@@ -335,7 +419,12 @@ fun MainShell(viewModel: MainViewModel) {
                 // What the bar floats over, for its frost: the pills re-draw the slice of
                 // it that sits behind them.
                 backdrop = if (frost) behindBar else null,
-                modifier = Modifier.align(Alignment.BottomCenter),
+                twoPane = wide,
+                modifier = if (wide) {
+                    Modifier.align(Alignment.BottomStart)
+                } else {
+                    Modifier.align(Alignment.BottomCenter)
+                },
             )
         }
     }
@@ -351,6 +440,286 @@ private fun topScrimHeight() =
 private fun bottomScrimHeight() =
     WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
         FloatingBottomBarReservedHeight + 8.dp
+
+/**
+ * The screen at a destination position: main tabs at 0..2, settings categories after
+ * them — shared by the pager strip's pages and the two-pane split's right pane, so the
+ * two layouts compose the very same screens.
+ */
+@Composable
+private fun ShellDestinationPage(
+    position: Int,
+    settingsOffset: Int,
+    /** Whether Home's page is the one on screen; coming into view re-measures the ping. */
+    homeVisible: Boolean,
+    interfaceScroll: ScrollState,
+    tunnelStatus: TunnelStatus,
+    subscriptions: List<slop.miho.chumpy.db.SubscriptionEntity>,
+    selectedSubscription: slop.miho.chumpy.db.SubscriptionEntity?,
+    servers: ServersUiState,
+    home: HomeUiState,
+    statsFlow: StateFlow<StatsUiState>,
+    manualProfileCount: StateFlow<Int>,
+    uiSettings: UiSettings,
+    connection: slop.miho.chumpy.data.ConnectionSettings,
+    coreVersion: String?,
+    coreRunning: Boolean,
+    coreLogsFlow: StateFlow<String?>,
+    onUiSettingsChange: ((UiSettings) -> UiSettings) -> Unit,
+    onChangeConnection: ((slop.miho.chumpy.data.ConnectionSettings) -> slop.miho.chumpy.data.ConnectionSettings) -> Unit,
+    onOpenServers: () -> Unit,
+    onOpenStats: () -> Unit,
+    onRefreshPing: (showPending: Boolean) -> Unit,
+    onPingServers: () -> Unit,
+    onUpdateSubscription: () -> Unit,
+    onSelectSubscription: (String) -> Unit,
+    onAddSubscription: (url: String, name: String?, onDone: (String?) -> Unit) -> Unit,
+    onDeleteSubscription: (String) -> Unit,
+    onDeleteManualProfile: (String) -> Unit,
+    onTogglePinned: (String, Boolean) -> Unit,
+    onToggleSubscriptionPinned: (String, Boolean) -> Unit,
+    onToggleConcealed: (String, Boolean) -> Unit,
+    onToggleAutoUpdate: (String, Boolean) -> Unit,
+    onSelect: (String) -> Unit,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    if (position < settingsOffset) {
+        when (val tab = MainTab.entries[position]) {
+            MainTab.HOME -> HomeScreen(
+                status = tunnelStatus,
+                home = home,
+                visible = homeVisible,
+                onRefreshPing = onRefreshPing,
+                onConnect = onConnect,
+                onDisconnect = onDisconnect,
+                onOpenServers = onOpenServers,
+                onOpenStats = onOpenStats,
+            )
+            MainTab.SERVERS -> {
+                // The week rides the stats flow but only its own list is wanted
+                // here: the flow itself ticks once a second, while the week
+                // changes only on a flush — so only the page recomposes then.
+                val weekFlow = remember(statsFlow) { statsFlow.map { it.week }.distinctUntilChanged() }
+                val week by weekFlow
+                    .collectAsStateWithLifecycle(initialValue = emptyList())
+                val manualCount by manualProfileCount.collectAsStateWithLifecycle()
+                ServersScreen(
+                    subscriptions = subscriptions,
+                    selectedSubscription = selectedSubscription,
+                    state = servers,
+                    week = week,
+                    manualCount = manualCount,
+                    flagStyle = uiSettings.flagStyle,
+                    tunnelUp = tunnelStatus.state == TunnelState.UP,
+                    onUpdate = onUpdateSubscription,
+                    onPing = onPingServers,
+                    onSelectSubscription = onSelectSubscription,
+                    onAddSubscription = onAddSubscription,
+                    onDeleteSubscription = onDeleteSubscription,
+                    onDeleteManualProfile = onDeleteManualProfile,
+                    onTogglePinned = onTogglePinned,
+                    onToggleSubscriptionPinned = onToggleSubscriptionPinned,
+                    onToggleConcealed = onToggleConcealed,
+                    onSelect = onSelect,
+                )
+            }
+            MainTab.STATS -> {
+                // Collected in the branch, not the shell's top: the flow ticks once
+                // a second and only ever recomposes this page.
+                val stats by statsFlow.collectAsStateWithLifecycle()
+                StatsScreen(
+                    state = stats,
+                    tunnelUp = tunnelStatus.state == TunnelState.UP,
+                    coreLogsFlow = coreLogsFlow,
+                )
+            }
+        }
+    } else {
+        when (val category = SettingsCategory.entries[position - settingsOffset]) {
+            SettingsCategory.INTERFACE -> InterfaceScreen(
+                settings = uiSettings,
+                onChange = onUiSettingsChange,
+                scrollState = interfaceScroll,
+            )
+            SettingsCategory.CONNECTION -> ConnectionScreen(
+                connection = connection,
+                subscriptions = subscriptions,
+                flagStyle = uiSettings.flagStyle,
+                settings = uiSettings,
+                onChangeConnection = onChangeConnection,
+                onChangeSettings = onUiSettingsChange,
+                onToggleAutoUpdate = onToggleAutoUpdate,
+            )
+            SettingsCategory.ABOUT -> AboutScreen(
+                coreVersion = coreVersion,
+                coreRunning = coreRunning,
+            )
+        }
+    }
+}
+
+/**
+ * The wide window's layout: Home owns a pane of its own on the left — the bar floats
+ * over it, its pills naming the right pane's destinations — and whatever the bar picked
+ * (servers, stats, a settings page) fills the right one. The wallpaper and the shell's
+ * paint stay whole-window behind both; only the pages split. The swipe is a phone's move
+ * here — the pills alone turn the right pane, with the same slide-up the pager's direct
+ * mode plays, and the back walks the same ladder: settings to their tab, a tab to the
+ * servers, the servers handing the back to the system's own exit ride.
+ */
+@Composable
+private fun TwoPaneShell(
+    selectedTab: MainTab,
+    selectedCategory: SettingsCategory,
+    settingsOpen: Boolean,
+    interfaceScroll: ScrollState,
+    tunnelStatus: TunnelStatus,
+    subscriptions: List<slop.miho.chumpy.db.SubscriptionEntity>,
+    selectedSubscription: slop.miho.chumpy.db.SubscriptionEntity?,
+    servers: ServersUiState,
+    home: HomeUiState,
+    statsFlow: StateFlow<StatsUiState>,
+    manualProfileCount: StateFlow<Int>,
+    uiSettings: UiSettings,
+    connection: slop.miho.chumpy.data.ConnectionSettings,
+    coreVersion: String?,
+    coreRunning: Boolean,
+    coreLogsFlow: StateFlow<String?>,
+    onUiSettingsChange: ((UiSettings) -> UiSettings) -> Unit,
+    onChangeConnection: ((slop.miho.chumpy.data.ConnectionSettings) -> slop.miho.chumpy.data.ConnectionSettings) -> Unit,
+    onOpenServers: () -> Unit,
+    onOpenStats: () -> Unit,
+    onSelectPage: (Int) -> Unit,
+    onRefreshPing: (showPending: Boolean) -> Unit,
+    onPingServers: () -> Unit,
+    onUpdateSubscription: () -> Unit,
+    onSelectSubscription: (String) -> Unit,
+    onAddSubscription: (url: String, name: String?, onDone: (String?) -> Unit) -> Unit,
+    onDeleteSubscription: (String) -> Unit,
+    onDeleteManualProfile: (String) -> Unit,
+    onTogglePinned: (String, Boolean) -> Unit,
+    onToggleSubscriptionPinned: (String, Boolean) -> Unit,
+    onToggleConcealed: (String, Boolean) -> Unit,
+    onToggleAutoUpdate: (String, Boolean) -> Unit,
+    onSelect: (String) -> Unit,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    val motion = MaterialTheme.motionScheme
+    val settingsOffset = MainTab.entries.size
+    val targetPosition = if (settingsOpen) {
+        settingsOffset + selectedCategory.ordinal
+    } else {
+        selectedTab.ordinal
+    }
+
+    // The back's own landing: settings fold back to the tab that owned the stage before
+    // them, a tab to the servers — the two-pane root — and the servers themselves have
+    // nothing left to hand back to, so the system keeps that back for its own exit ride.
+    val backTarget = when {
+        settingsOpen -> selectedTab
+        selectedTab != MainTab.SERVERS -> MainTab.SERVERS
+        else -> null
+    }
+    PredictiveBackHandler(enabled = backTarget != null) { progress ->
+        val landing = backTarget ?: return@PredictiveBackHandler
+        // The system's own window ride covers the preview; carried all the way, the
+        // landing takes over through the same door the pills use.
+        try {
+            progress.collect { }
+            onSelectPage(landing.ordinal)
+        } catch (e: CancellationException) {
+            throw e
+        }
+    }
+
+    Row(Modifier.fillMaxSize()) {
+        // Left: Home, always — the bar's pills answer for the right pane alone.
+        Box(
+            Modifier
+                .width(twoPaneHomeWidth())
+                .fillMaxHeight(),
+        ) {
+            // The bar floats over this pane, so its pages keep the full reservation.
+            CompositionLocalProvider(LocalBarReservedHeight provides FloatingBottomBarReservedHeight) {
+                HomeScreen(
+                    status = tunnelStatus,
+                    home = home,
+                    visible = true,
+                    onRefreshPing = onRefreshPing,
+                    onConnect = onConnect,
+                    onDisconnect = onDisconnect,
+                    onOpenServers = onOpenServers,
+                    onOpenStats = onOpenStats,
+                )
+            }
+        }
+        // Right: whatever the bar picked — fresh identity per pick (see PageTarget), so a
+        // re-pick of a page still leaving in a fade replays the slide instead of just
+        // crossfading it back in.
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+        ) {
+            // No bar ever passes over this pane: its pages keep nothing reserved below,
+            // and they stay out of the coverage report — the bar floats over Home alone.
+            CompositionLocalProvider(
+                LocalBarReservedHeight provides 0.dp,
+                LocalPageOnStage provides false,
+            ) {
+                val target = remember(targetPosition) { PageTarget(targetPosition) }
+                AnimatedContent(
+                    targetState = target,
+                    transitionSpec = {
+                        (fadeIn(motion.defaultEffectsSpec()) +
+                            slideInVertically(motion.defaultSpatialSpec()) { it / 3 }) togetherWith
+                            fadeOut(motion.defaultEffectsSpec())
+                    },
+                    label = "pane page switch",
+                ) { page ->
+                    ShellDestinationPage(
+                        position = page.position,
+                        settingsOffset = settingsOffset,
+                        homeVisible = false,
+                        interfaceScroll = interfaceScroll,
+                        tunnelStatus = tunnelStatus,
+                        subscriptions = subscriptions,
+                        selectedSubscription = selectedSubscription,
+                        servers = servers,
+                        home = home,
+                        statsFlow = statsFlow,
+                        manualProfileCount = manualProfileCount,
+                        uiSettings = uiSettings,
+                        connection = connection,
+                        coreVersion = coreVersion,
+                        coreRunning = coreRunning,
+                        coreLogsFlow = coreLogsFlow,
+                        onUiSettingsChange = onUiSettingsChange,
+                        onChangeConnection = onChangeConnection,
+                        onOpenServers = onOpenServers,
+                        onOpenStats = onOpenStats,
+                        onRefreshPing = onRefreshPing,
+                        onPingServers = onPingServers,
+                        onUpdateSubscription = onUpdateSubscription,
+                        onSelectSubscription = onSelectSubscription,
+                        onAddSubscription = onAddSubscription,
+                        onDeleteSubscription = onDeleteSubscription,
+                        onDeleteManualProfile = onDeleteManualProfile,
+                        onTogglePinned = onTogglePinned,
+                        onToggleSubscriptionPinned = onToggleSubscriptionPinned,
+                        onToggleConcealed = onToggleConcealed,
+                        onToggleAutoUpdate = onToggleAutoUpdate,
+                        onSelect = onSelect,
+                        onConnect = onConnect,
+                        onDisconnect = onDisconnect,
+                    )
+                }
+            }
+        }
+    }
+}
 
 /**
  * Identity of a navigation target: a new object per navigation. AnimatedContent keys its
@@ -378,6 +747,8 @@ private fun MainPagerStrip(
     selectedTab: MainTab,
     selectedCategory: SettingsCategory,
     settingsOpen: Boolean,
+    /** The interface settings page's scroll, owned above the modes so flips keep it. */
+    interfaceScroll: ScrollState,
     subscriptions: List<slop.miho.chumpy.db.SubscriptionEntity>,
     selectedSubscription: slop.miho.chumpy.db.SubscriptionEntity?,
     tunnelStatus: TunnelStatus,
@@ -418,9 +789,8 @@ private fun MainPagerStrip(
         } else {
             selectedTab.ordinal
         }
-        // Owned here, outside either pager mode, so flipping the transition setting doesn't
-        // reset the settings page's scroll position.
-        val interfaceScroll = rememberScrollState()
+        // Owned above either pager mode (see MainShell), so flipping the transition
+        // setting doesn't reset the settings page's scroll position.
         val motion = MaterialTheme.motionScheme
         val scope = rememberCoroutineScope()
 
@@ -465,79 +835,42 @@ private fun MainPagerStrip(
             // last would win the shared report, leaving the bar wearing the wrong page's
             // story across every switch.
             CompositionLocalProvider(LocalPageOnStage provides (position == targetPositionNow.value)) {
-                if (position < settingsOffset) {
-                    when (val tab = MainTab.entries[position]) {
-                        MainTab.HOME -> HomeScreen(
-                            status = tunnelStatus,
-                            home = home,
-                            visible = selectedTab == MainTab.HOME && !settingsOpen,
-                            onRefreshPing = onRefreshPing,
-                            onConnect = onConnect,
-                            onDisconnect = onDisconnect,
-                            onOpenServers = onOpenServers,
-                            onOpenStats = onOpenStats,
-                        )
-                        MainTab.SERVERS -> {
-                            // The week rides the stats flow but only its own list is wanted
-                            // here: the flow itself ticks once a second, while the week
-                            // changes only on a flush — so only the page recomposes then.
-                            val weekFlow = remember(statsFlow) { statsFlow.map { it.week }.distinctUntilChanged() }
-                            val week by weekFlow
-                                .collectAsStateWithLifecycle(initialValue = emptyList())
-                            val manualCount by manualProfileCount.collectAsStateWithLifecycle()
-                            ServersScreen(
-                                subscriptions = subscriptions,
-                                selectedSubscription = selectedSubscription,
-                                state = servers,
-                                week = week,
-                                manualCount = manualCount,
-                                flagStyle = uiSettings.flagStyle,
-                                tunnelUp = tunnelStatus.state == TunnelState.UP,
-                                onUpdate = onUpdateSubscription,
-                                onPing = onPingServers,
-                                onSelectSubscription = onSelectSubscription,
-                                onAddSubscription = onAddSubscription,
-                                onDeleteSubscription = onDeleteSubscription,
-                                onDeleteManualProfile = onDeleteManualProfile,
-                                onTogglePinned = onTogglePinned,
-                                onToggleSubscriptionPinned = onToggleSubscriptionPinned,
-                                onToggleConcealed = onToggleConcealed,
-                                onSelect = onSelect,
-                            )
-                        }
-                        MainTab.STATS -> {
-                            // Collected in the branch, not the shell's top: the flow ticks once
-                            // a second and only ever recomposes this page.
-                            val stats by statsFlow.collectAsStateWithLifecycle()
-                            StatsScreen(
-                                state = stats,
-                                tunnelUp = tunnelStatus.state == TunnelState.UP,
-                                coreLogsFlow = coreLogsFlow,
-                            )
-                        }
-                    }
-                } else {
-                    when (val category = SettingsCategory.entries[position - settingsOffset]) {
-                        SettingsCategory.INTERFACE -> InterfaceScreen(
-                            settings = uiSettings,
-                            onChange = onUiSettingsChange,
-                            scrollState = interfaceScroll,
-                        )
-                        SettingsCategory.CONNECTION -> ConnectionScreen(
-                            connection = connection,
-                            subscriptions = subscriptions,
-                            flagStyle = uiSettings.flagStyle,
-                            settings = uiSettings,
-                            onChangeConnection = onChangeConnection,
-                            onChangeSettings = onUiSettingsChange,
-                            onToggleAutoUpdate = onToggleAutoUpdate,
-                        )
-                        SettingsCategory.ABOUT -> AboutScreen(
-                            coreVersion = coreVersion,
-                            coreRunning = coreRunning,
-                        )
-                    }
-                }
+                ShellDestinationPage(
+                    position = position,
+                    settingsOffset = settingsOffset,
+                    homeVisible = selectedTab == MainTab.HOME && !settingsOpen,
+                    interfaceScroll = interfaceScroll,
+                    tunnelStatus = tunnelStatus,
+                    subscriptions = subscriptions,
+                    selectedSubscription = selectedSubscription,
+                    servers = servers,
+                    home = home,
+                    statsFlow = statsFlow,
+                    manualProfileCount = manualProfileCount,
+                    uiSettings = uiSettings,
+                    connection = connection,
+                    coreVersion = coreVersion,
+                    coreRunning = coreRunning,
+                    coreLogsFlow = coreLogsFlow,
+                    onUiSettingsChange = onUiSettingsChange,
+                    onChangeConnection = onChangeConnection,
+                    onOpenServers = onOpenServers,
+                    onOpenStats = onOpenStats,
+                    onRefreshPing = onRefreshPing,
+                    onPingServers = onPingServers,
+                    onUpdateSubscription = onUpdateSubscription,
+                    onSelectSubscription = onSelectSubscription,
+                    onAddSubscription = onAddSubscription,
+                    onDeleteSubscription = onDeleteSubscription,
+                    onDeleteManualProfile = onDeleteManualProfile,
+                    onTogglePinned = onTogglePinned,
+                    onToggleSubscriptionPinned = onToggleSubscriptionPinned,
+                    onToggleConcealed = onToggleConcealed,
+                    onToggleAutoUpdate = onToggleAutoUpdate,
+                    onSelect = onSelect,
+                    onConnect = onConnect,
+                    onDisconnect = onDisconnect,
+                )
             }
         }
 

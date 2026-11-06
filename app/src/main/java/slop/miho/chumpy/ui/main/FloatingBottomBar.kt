@@ -199,6 +199,11 @@ fun FloatingBottomBar(
     onCategorySelected: (SettingsCategory) -> Unit,
     backdrop: GraphicsLayer?,
     modifier: Modifier = Modifier,
+    /**
+     * The two-pane layout: Home owns the left pane for good, so its pill is gone — the
+     * bar drives the right pane with the content destinations alone.
+     */
+    twoPane: Boolean = false,
 ) {
     val motion = MaterialTheme.motionScheme
     // The classic bar stands in for the pills when picked (or, unpicked, on small screens);
@@ -248,9 +253,11 @@ fun FloatingBottomBar(
                             }
                             // Home's item never wears the indicator or its label: it's only
                             // ever active on Home, where the greeting already says where the
-                            // user is — and leaving it would only play them collapsing.
+                            // user is — and leaving it would only play them collapsing. In the
+                            // two-pane layout the item is gone entirely: its screen owns the
+                            // left pane for good.
                             ClassicBarItems(
-                                MainTab.entries,
+                                if (twoPane) MainTab.entries.filter { it != MainTab.HOME } else MainTab.entries,
                                 selectedTab,
                                 onTabSelected,
                                 colors,
@@ -272,6 +279,7 @@ fun FloatingBottomBar(
                 selectedCategory = selectedCategory,
                 onCategorySelected = onCategorySelected,
                 backdrop = backdrop,
+                twoPane = twoPane,
             )
         }
     }
@@ -290,6 +298,7 @@ private fun FloatingMainBar(
     selectedCategory: SettingsCategory,
     onCategorySelected: (SettingsCategory) -> Unit,
     backdrop: GraphicsLayer?,
+    twoPane: Boolean = false,
 ) {
     val motion = MaterialTheme.motionScheme
     Row(
@@ -326,7 +335,13 @@ private fun FloatingMainBar(
                         onClick = { onSettingsOpenChange(false) },
                     )
                 } else {
-                    PillItems(MainTab.entries, selectedTab, onTabSelected)
+                    // Home's pill is gone in the two-pane layout: its screen owns the left
+                    // pane for good, and the pills here answer for the right one alone.
+                    PillItems(
+                        if (twoPane) MainTab.entries.filter { it != MainTab.HOME } else MainTab.entries,
+                        selectedTab,
+                        onTabSelected,
+                    )
                 }
             }
         }

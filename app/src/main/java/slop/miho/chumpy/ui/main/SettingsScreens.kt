@@ -160,7 +160,7 @@ fun InterfaceScreen(
             .padding(
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp,
                 bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-                    FloatingBottomBarReservedHeight,
+                    LocalBarReservedHeight.current,
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -963,7 +963,7 @@ fun ConnectionScreen(
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp,
                 bottom = WindowInsets.navigationBars.union(WindowInsets.ime)
                     .asPaddingValues().calculateBottomPadding() +
-                    if (imeOpen) 16.dp else FloatingBottomBarReservedHeight,
+                    if (imeOpen) 16.dp else LocalBarReservedHeight.current,
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -1797,7 +1797,7 @@ fun AboutScreen(
                 // middle rather than hugging the status bar.
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 96.dp,
                 bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-                    FloatingBottomBarReservedHeight,
+                    LocalBarReservedHeight.current,
             ),
     ) {
         // The hero, the welcome screen's own text stack standing at the top of the page

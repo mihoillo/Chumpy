@@ -140,7 +140,7 @@ fun StatsScreen(
             .padding(
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp,
                 bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-                    FloatingBottomBarReservedHeight,
+                    LocalBarReservedHeight.current,
             ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

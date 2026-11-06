@@ -251,7 +251,7 @@ fun HomeScreen(
             onDisconnect = onDisconnect,
             modifier = Modifier
                 .navigationBarsPadding()
-                .padding(bottom = FloatingBottomBarReservedHeight + 8.dp),
+                .padding(bottom = LocalBarReservedHeight.current + 8.dp),
         )
     }
 }
