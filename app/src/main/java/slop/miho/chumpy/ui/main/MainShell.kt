@@ -618,10 +618,8 @@ private fun TwoPaneShell(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
-    // How far the right pane's fading edges reach: exactly the pages' own content
-    // padding, so rows at rest never sit inside the fade — only rows in flight do.
-    val topFade = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp
-    val bottomFade = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // How far the right pane's side fades reach: the pages' own side margin, so
+    // content at rest never sits inside the fade — only pages in flight do.
     val sideFade = screenMargin()
 
     Row(
@@ -660,27 +658,14 @@ private fun TwoPaneShell(
             Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                // The rows scroll under the pane's edges and hard-cut there — over a
-                // picture or the plain surface alike they read as vanishing into
-                // nothing. They fade instead: an offscreen layer masks the pane's own
-                // content — never what sits behind it — as far as the pages' own
-                // content padding reaches, so resting rows never sit inside the fade.
-                // The mask runs twice — vertical for scrolling, horizontal for the
-                // page rides — and multiplies: content dissolves at all four edges.
+                // The pages ride in sideways and hard-cut at the pane's edge otherwise —
+                // popping out of Home's half mid-window. They fade instead: an offscreen
+                // layer masks the pane's own content — never what sits behind it — as far
+                // as the pages' own side margin reaches, so content at rest never sits
+                // inside the fade. Only pages in flight dissolve.
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
                     drawContent()
-                    val top = (topFade.toPx() / size.height).coerceAtMost(0.45f)
-                    val bottom = (1f - bottomFade.toPx() / size.height).coerceAtLeast(top + 0.01f)
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            top to Color.Black,
-                            bottom to Color.Black,
-                            1f to Color.Transparent,
-                        ),
-                        blendMode = BlendMode.DstIn,
-                    )
                     val side = (sideFade.toPx() / size.width).coerceAtMost(0.45f)
                     drawRect(
                         brush = Brush.horizontalGradient(

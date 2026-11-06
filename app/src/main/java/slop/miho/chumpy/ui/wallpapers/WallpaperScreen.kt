@@ -26,6 +26,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -108,8 +109,10 @@ import slop.miho.chumpy.ui.components.SystemBarsIconsDark
 import slop.miho.chumpy.ui.components.pressBounce
 import slop.miho.chumpy.ui.components.rememberHapticPoke
 import slop.miho.chumpy.ui.main.FloatingBottomBarReservedHeight
+import slop.miho.chumpy.ui.main.LocalBarReservedHeight
 import slop.miho.chumpy.ui.main.PillDestination
 import slop.miho.chumpy.ui.main.isSmallScreen
+import slop.miho.chumpy.ui.main.isWideScreen
 import slop.miho.chumpy.ui.main.SubScreenBottomBar
 import slop.miho.chumpy.ui.main.recordBehindBar
 import slop.miho.chumpy.ui.main.rememberContentUnderBar
@@ -204,6 +207,11 @@ fun WallpaperScreen(
         value = withContext(Dispatchers.IO) { file?.let(::decodeWallpaper) }
     }
 
+    // The wide window splits like the main shell's: the preview — Home's stand-in — in a
+    // pane of its own on the left with the bar floating over it, the picked page filling
+    // the right one, blank on the preview's own selection.
+    val wide = isWideScreen()
+
     // The gesture that owns the position edit: a long press opens it and the very same
     // fingers then drag — a continuation, not a new gesture. It lives on the root so it sees
     // the whole stream, from the press that opens the mode to the lift that ends the drag.
@@ -223,8 +231,10 @@ fun WallpaperScreen(
                     // lies; nothing beneath is touched until the drag itself starts consuming.
                     val down = awaitFirstDown(requireUnconsumed = false)
                     if (!editPosition) {
-                        // Only the preview page over a picked picture opens the edit.
-                        if (page != WallpaperPage.PREVIEW || !wallpaperSelected) {
+                        // Only the preview over a picked picture opens the edit. On a wide
+                        // window the preview never leaves the stage — its long press answers
+                        // whatever page the right pane shows.
+                        if ((!wide && page != WallpaperPage.PREVIEW) || !wallpaperSelected) {
                             return@awaitEachGesture
                         }
                         // A lift, a drift past the touch slop or another handler claiming the
@@ -414,60 +424,119 @@ fun WallpaperScreen(
                     )
                 }
 
-                AnimatedContent(
-                    targetState = target,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = chromeAlpha },
-                    transitionSpec = {
-                        (fadeIn(motion.defaultEffectsSpec()) +
-                            slideInVertically(motion.defaultSpatialSpec()) { it / 3 }) togetherWith
-                            fadeOut(motion.defaultEffectsSpec())
-                    },
-                    label = "wallpaper page switch",
-                ) { switch ->
-                    // The same request the main pager makes: the display's high gear while the
-                    // switch itself plays out.
-                    RefreshRateRequest(active = transition.isRunning)
-                    when (switch.page) {
-                        WallpaperPage.PREVIEW -> WallpaperPreviewPage(
-                            wallpaperSelected = wallpaperSelected,
-                            importError = importError,
-                            dim = settings.wallpaperDim,
-                            onToggleText = {
-                                onSettings { it.copy(wallpaperTextDark = !it.wallpaperTextDark) }
-                            },
-                            onDim = { value -> onSettings { it.copy(wallpaperDim = value) } },
-                            onPick = {
-                                picker.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                // The pages as plain lambdas: both layouts below compose them, untouched.
+                val previewPage: @Composable () -> Unit = {
+                    WallpaperPreviewPage(
+                        wallpaperSelected = wallpaperSelected,
+                        importError = importError,
+                        dim = settings.wallpaperDim,
+                        onToggleText = {
+                            onSettings { it.copy(wallpaperTextDark = !it.wallpaperTextDark) }
+                        },
+                        onDim = { value -> onSettings { it.copy(wallpaperDim = value) } },
+                        onPick = {
+                            picker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                        onDelete = {
+                            WallpaperRegistry.delete(context)
+                            wallpaperSelected = false
+                            wallpaperVersion++
+                            // No picture, no seeds: the picker's slots empty out.
+                            WallpaperPalette.refresh(context)
+                            // And nothing to see through: the menus' surfaces reset to opaque —
+                            // and the bare text returns to the theme's own colors.
+                            onSettings {
+                                it.copy(
+                                    wallpaperTextDark = false,
+                                    wallpaperOffsetX = 0f,
+                                    wallpaperOffsetY = 0f,
+                                    wallpaperUserScale = 1f,
+                                    surfaceOpacity = 1f,
                                 )
-                            },
-                            onDelete = {
-                                WallpaperRegistry.delete(context)
-                                wallpaperSelected = false
-                                wallpaperVersion++
-                                // No picture, no seeds: the picker's slots empty out.
-                                WallpaperPalette.refresh(context)
-                                // And nothing to see through: the menus' surfaces reset to opaque —
-                                // and the bare text returns to the theme's own colors.
-                                onSettings {
-                                    it.copy(
-                                        wallpaperTextDark = false,
-                                        wallpaperOffsetX = 0f,
-                                        wallpaperOffsetY = 0f,
-                                        wallpaperUserScale = 1f,
-                                        surfaceOpacity = 1f,
-                                    )
+                            }
+                        },
+                    )
+                }
+                val settingsPage: @Composable () -> Unit = {
+                    WallpaperSettingsPage(
+                        settings = settings,
+                        onChange = onSettings,
+                        backdropDark = settingsBackdropDark,
+                        wallpaperSelected = wallpaperSelected,
+                    )
+                }
+                if (wide) {
+                    // The split, the main shell's very recipe: the preview — Home's stand-in —
+                    // in a pane of its own on the left, always on stage; the picked page
+                    // fills the right one, blank on the preview's own selection. The panes
+                    // split the width the cutouts leave available, never the raw window.
+                    Row(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = chromeAlpha }
+                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
+                    ) {
+                        // Left: the preview, the bar floating over it — full reservation.
+                        Box(Modifier.weight(1f).fillMaxHeight()) {
+                            CompositionLocalProvider(
+                                LocalBarReservedHeight provides FloatingBottomBarReservedHeight,
+                            ) {
+                                previewPage()
+                            }
+                        }
+                        // Right: the picked page. No bar ever passes over this half — nothing
+                        // reserved below, and the settings page's coverage reports fall into
+                        // fresh states here, so the bar over the preview keeps reading the
+                        // preview's own story alone.
+                        Box(Modifier.weight(1f).fillMaxHeight()) {
+                            CompositionLocalProvider(
+                                LocalBarReservedHeight provides 0.dp,
+                                LocalBarCoverage provides remember { mutableStateOf(false) },
+                                LocalBarUnderlay provides remember { mutableStateOf(false) },
+                            ) {
+                                AnimatedContent(
+                                    targetState = target,
+                                    transitionSpec = {
+                                        (fadeIn(motion.defaultEffectsSpec()) +
+                                            slideInVertically(motion.defaultSpatialSpec()) { it / 3 }) togetherWith
+                                            fadeOut(motion.defaultEffectsSpec())
+                                    },
+                                    label = "wallpaper page switch",
+                                ) { switch ->
+                                    // The same request the main pager makes: the display's
+                                    // high gear while the switch itself plays out.
+                                    RefreshRateRequest(active = transition.isRunning)
+                                    when (switch.page) {
+                                        // The preview sits in its own pane already.
+                                        WallpaperPage.PREVIEW -> {}
+                                        WallpaperPage.SETTINGS -> settingsPage()
+                                    }
                                 }
-                            },
-                        )
-                        WallpaperPage.SETTINGS -> WallpaperSettingsPage(
-                            settings = settings,
-                            onChange = onSettings,
-                            backdropDark = settingsBackdropDark,
-                            wallpaperSelected = wallpaperSelected,
-                        )
+                            }
+                        }
+                    }
+                } else {
+                    AnimatedContent(
+                        targetState = target,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = chromeAlpha },
+                        transitionSpec = {
+                            (fadeIn(motion.defaultEffectsSpec()) +
+                                slideInVertically(motion.defaultSpatialSpec()) { it / 3 }) togetherWith
+                                fadeOut(motion.defaultEffectsSpec())
+                        },
+                        label = "wallpaper page switch",
+                    ) { switch ->
+                        // The same request the main pager makes: the display's high gear while
+                        // the switch itself plays out.
+                        RefreshRateRequest(active = transition.isRunning)
+                        when (switch.page) {
+                            WallpaperPage.PREVIEW -> previewPage()
+                            WallpaperPage.SETTINGS -> settingsPage()
+                        }
                     }
                 }
             }
@@ -519,19 +588,37 @@ fun WallpaperScreen(
                 }
             }
 
-            SubScreenBottomBar(
-                items = WallpaperPage.entries,
-                selected = page,
-                onSelect = { page = it },
-                onBack = onBack,
-                // The preview is Home's stand-in: in the classic bar its item behaves as
-                // Home's does — never an indicator or a label.
-                bare = { it == WallpaperPage.PREVIEW },
-                backdrop = if (frost) behindBar else null,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .graphicsLayer { alpha = chromeAlpha },
-            )
+            // The bar centers over the preview — over the whole window on a narrow one,
+            // over its own half in the split, never hugging the pane's left edge.
+            val bar: @Composable BoxScope.() -> Unit = {
+                SubScreenBottomBar(
+                    items = WallpaperPage.entries,
+                    selected = page,
+                    onSelect = { page = it },
+                    onBack = onBack,
+                    // The preview is Home's stand-in: in the classic bar its item behaves as
+                    // Home's does — never an indicator or a label.
+                    bare = { it == WallpaperPage.PREVIEW },
+                    backdrop = if (frost) behindBar else null,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .graphicsLayer { alpha = chromeAlpha },
+                )
+            }
+            if (wide) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        // The same available width the panes split: the bar centers over
+                        // the preview's own half of it, matching the content it floats over.
+                        .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                        .fillMaxWidth(0.5f),
+                ) {
+                    bar()
+                }
+            } else {
+                bar()
+            }
 
             // The edit mode's own layer: a surface over the bare picture swallowing taps — the
             // vanished buttons beneath must not answer a press aimed at the wallpaper — with
@@ -765,7 +852,7 @@ private fun WallpaperPreviewPage(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(bottom = FloatingBottomBarReservedHeight + 8.dp)
+                    .padding(bottom = LocalBarReservedHeight.current + 8.dp)
                     .height(64.dp),
             ) {
                 Row(
@@ -993,7 +1080,7 @@ private fun WallpaperSettingsPage(
             .padding(
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp,
                 bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-                    FloatingBottomBarReservedHeight,
+                    LocalBarReservedHeight.current,
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
