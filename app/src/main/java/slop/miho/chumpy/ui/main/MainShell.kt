@@ -22,13 +22,17 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -48,6 +52,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
@@ -420,6 +425,10 @@ fun MainShell(viewModel: MainViewModel) {
                 Box(
                     Modifier
                         .align(Alignment.BottomStart)
+                        // The same available width the panes split: the bar centers over
+                        // Home's own half of it — cutouts and all — not the raw window,
+                        // so it stays true to the content it floats over.
+                        .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                         .fillMaxWidth(0.5f),
                 ) {
                     bar()
@@ -606,7 +615,15 @@ private fun TwoPaneShell(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
-    Row(Modifier.fillMaxSize()) {
+    Row(
+        Modifier
+            .fillMaxSize()
+            // The panes split the width the cutouts leave available — never the raw
+            // window — and the cutout insets consumed here read empty inside: the screens
+            // pad themselves from the cutout too (see screenPadding), and a pane sitting
+            // mid-window must not pad its inner edge for a cutout it never touches.
+            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
+    ) {
         // Left: Home, always — exactly half the window.
         Box(
             Modifier
@@ -976,6 +993,11 @@ private fun MainPagerStrip(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // The strip's pages slide their own bounds — the neighbors ride out to
+                // the sides — and whatever half of the window this strip serves, nothing
+                // of it may draw into the other half. Clipped here, on the phone the
+                // window edge does it for free.
+                .clipToBounds()
                 .draggable(
                     state = dragState,
                     orientation = Orientation.Horizontal,

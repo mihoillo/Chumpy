@@ -17,8 +17,8 @@ import slop.miho.chumpy.ui.theme.LocalUiSettings
 /** Below this window width (dp) the app counts the screen as small. */
 private const val SMALL_SCREEN_WIDTH_DP = 400
 
-/** From this window width (dp) up, the shell splits into two panes (see [isWideScreen]). */
-private const val WIDE_SCREEN_WIDTH_DP = 700
+/** From this window class (dp) up, the shell splits into two panes (see [isWideScreen]). */
+private const val WIDE_SCREEN_SMALLEST_WIDTH_DP = 600
 
 /**
  * Whether the window is a small, narrow one: there the side margins tighten to MD3's
@@ -33,14 +33,17 @@ fun isSmallScreen(): Boolean = LocalUiSettings.current.smallScreen ?: smallScree
 fun smallScreenByWidth(): Boolean = LocalConfiguration.current.screenWidthDp < SMALL_SCREEN_WIDTH_DP
 
 /**
- * Whether the window is wide enough for the two-pane layout: Home in a pane of its own on
- * the left, the bar floating over it, the picked destination (servers, stats, settings)
- * filling the right one. A small layout forced by the user keeps the single column
+ * Whether the window belongs on the two-pane layout: Home in a pane of its own on the
+ * left, the bar floating over it, the picked destination (servers, stats, settings)
+ * filling the right one. The verdict rides the window's smallest width — the class of
+ * the glass, not the way it's held — so a phone laid sideways stays single-column (its
+ * window stays narrow however it's turned) while tablets and unfolded foldables split
+ * in any orientation. A small layout forced by the user keeps the single column
  * whatever the glass says.
  */
 @Composable
 fun isWideScreen(): Boolean =
-    LocalConfiguration.current.screenWidthDp >= WIDE_SCREEN_WIDTH_DP &&
+    LocalConfiguration.current.smallestScreenWidthDp >= WIDE_SCREEN_SMALLEST_WIDTH_DP &&
         LocalUiSettings.current.smallScreen != true
 
 /**
