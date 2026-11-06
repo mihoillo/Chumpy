@@ -55,10 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -618,10 +615,6 @@ private fun TwoPaneShell(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
-    // How far the right pane's side fades reach: the pages' own side margin, so
-    // content at rest never sits inside the fade — only pages in flight do.
-    val sideFade = screenMargin()
-
     Row(
         Modifier
             .fillMaxSize()
@@ -657,26 +650,7 @@ private fun TwoPaneShell(
         Box(
             Modifier
                 .weight(1f)
-                .fillMaxHeight()
-                // The pages ride in sideways and hard-cut at the pane's edge otherwise —
-                // popping out of Home's half mid-window. They fade instead: an offscreen
-                // layer masks the pane's own content — never what sits behind it — as far
-                // as the pages' own side margin reaches, so content at rest never sits
-                // inside the fade. Only pages in flight dissolve.
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                .drawWithContent {
-                    drawContent()
-                    val side = (sideFade.toPx() / size.width).coerceAtMost(0.45f)
-                    drawRect(
-                        brush = Brush.horizontalGradient(
-                            0f to Color.Transparent,
-                            side to Color.Black,
-                            1f - side to Color.Black,
-                            size.width to Color.Transparent,
-                        ),
-                        blendMode = BlendMode.DstIn,
-                    )
-                },
+                .fillMaxHeight(),
         ) {
             CompositionLocalProvider(
                 LocalBarReservedHeight provides 0.dp,
