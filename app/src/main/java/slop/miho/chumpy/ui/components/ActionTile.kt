@@ -61,6 +61,9 @@ fun ActionTile(
         modifier = modifier
             .size(48.dp)
             .pressBounce(pressed, taps)
+            // The controller's ring rides before the focus target, outside the tile's
+            // own paint — the 16dp corners matching.
+            .focusRing()
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = if (indicated) LocalIndication.current else null,

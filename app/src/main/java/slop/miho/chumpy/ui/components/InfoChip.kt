@@ -102,7 +102,16 @@ fun InfoChip(
     Surface(
         shape = shape,
         color = container,
-        modifier = if (onClick != null) Modifier.clip(shape).clickable(onClick = onClick) else Modifier,
+        modifier = if (onClick != null) {
+            // The ring rides before the clip — outside it, as every ring sits outside
+            // what it marks — and only the chips that answer ever wear one.
+            Modifier
+                .focusRing(circular = compact, cornerRadius = 8.dp)
+                .clip(shape)
+                .clickable(onClick = onClick)
+        } else {
+            Modifier
+        },
         content = chipContent,
     )
 }

@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -82,6 +83,7 @@ import slop.miho.chumpy.ui.TrafficSample
 import slop.miho.chumpy.ui.components.FlipTriangleTile
 import slop.miho.chumpy.ui.components.FoldingGroup
 import slop.miho.chumpy.ui.components.InfoChip
+import slop.miho.chumpy.ui.components.focusRing
 import slop.miho.chumpy.ui.components.pressBounce
 import slop.miho.chumpy.ui.components.rememberHapticPoke
 import slop.miho.chumpy.ui.wallpapers.ReportBarCoverage
@@ -785,9 +787,14 @@ private fun CoreLogsRow(
         label = "copy tile container",
     )
     val copyLabel = stringResource(R.string.stats_core_logs_copy)
+    // The controller's eye on the row: the row itself carries the focus, and its
+    // triangle — the fold's own handle — wears the ring for it; the copy tile beside it
+    // is a focus stop of its own, so it rings itself.
+    var rowFocused by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged { rowFocused = it.isFocused }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -825,6 +832,9 @@ private fun CoreLogsRow(
             modifier = Modifier
                 .size(48.dp)
                 .pressBounce(copyPressed, copyTaps)
+                // The controller's ring rides before the clip — outside it, as every
+                // ring sits outside what it marks.
+                .focusRing()
                 .clip(copyShape)
                 .combinedClickable(
                     interactionSource = copySource,
@@ -849,7 +859,7 @@ private fun CoreLogsRow(
         Box(
             modifier = Modifier.pressBounce(pressed, taps),
         ) {
-            FlipTriangleTile(pressed = pressed, expanded = expanded)
+            FlipTriangleTile(pressed = pressed, expanded = expanded, focused = { rowFocused })
         }
     }
 }

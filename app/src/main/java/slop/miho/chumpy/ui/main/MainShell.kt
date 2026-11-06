@@ -1,6 +1,7 @@
 package slop.miho.chumpy.ui.main
 
 import android.net.VpnService
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -55,12 +57,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.abs
@@ -79,8 +85,11 @@ import slop.miho.chumpy.ui.HomeUiState
 import slop.miho.chumpy.ui.ServersUiState
 import slop.miho.chumpy.ui.StatsUiState
 import slop.miho.chumpy.data.UiSettings
+import slop.miho.chumpy.ui.components.InputMode
+import slop.miho.chumpy.ui.components.LocalInputMode
 import slop.miho.chumpy.ui.components.RefreshRateRequest
 import slop.miho.chumpy.ui.components.SystemBarsIconsDark
+import slop.miho.chumpy.ui.components.inputModeTracking
 import slop.miho.chumpy.ui.theme.LocalDarkTheme
 import slop.miho.chumpy.ui.wallpapers.LocalBackdropDark
 import slop.miho.chumpy.ui.wallpapers.LocalBarCanFade
@@ -115,6 +124,40 @@ fun MainShell(viewModel: MainViewModel) {
         if (result.resultCode == android.app.Activity.RESULT_OK) viewModel.connect()
     }
 
+    // The controller's reign over the shell: while the last input came from a gamepad or
+    // a remote, the bar hides off the active screen (BACK summons it, a second BACK goes
+    // home), focus stays confined to what's on stage, and the focused element wears its
+    // ring. A finger on the glass hands the shell right back to touch.
+    val inputMode = remember { mutableStateOf(InputMode.TOUCH) }
+    val controller = inputMode.value == InputMode.CONTROLLER
+    var barSummoned by remember { mutableStateOf(false) }
+    LaunchedEffect(controller) {
+        // Touch takes the bar back the moment it arrives.
+        if (!controller) barSummoned = false
+    }
+    // The bar's own visibility under the controller: Home keeps it (it is Home's look,
+    // and DOWN from the connect button reaches it), a BACK-summon shows it over whatever
+    // screen is on, and touch keeps it always.
+    val atHome = selectedTab == MainTab.HOME && !settingsOpen
+    val barVisible = !controller || atHome || barSummoned
+    val barFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(barSummoned) {
+        if (barSummoned) barFocusRequester.requestFocus()
+    }
+    // The controller's back door: one BACK summons the bar over the screen on stage —
+    // the strip's own touch-wise back (a page back, a settings fold back) stands aside —
+    // and a second BACK lands on Home. On Home itself the door is shut: the system
+    // keeps the back, as it does in touch mode.
+    BackHandler(enabled = controller && !atHome) {
+        if (barSummoned) {
+            selectedTab = MainTab.HOME
+            settingsOpen = false
+            barSummoned = false
+        } else {
+            barSummoned = true
+        }
+    }
+
     // The wide window's split: Home owns the left half of the screen — the bar floats
     // over it — and whatever the bar picked (servers, stats, a settings page) fills the
     // right one; picking Home leaves the right half to the wallpaper alone.
@@ -131,7 +174,7 @@ fun MainShell(viewModel: MainViewModel) {
     // the interface page's position.
     val interfaceScroll = rememberScrollState()
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize().inputModeTracking(inputMode)) {
         // The wallpaper behind the whole app, the wallpaper screen's own recipe: Home wears
         // the gentle dim only, every other screen adds the stronger dim, the blur and the
         // zoom — animated between the two looks as the user moves around.
@@ -210,6 +253,30 @@ fun MainShell(viewModel: MainViewModel) {
         // is recorded and the content draws straight through.
         val frost = settings.navigationBarBlur
         val behindBar = rememberGraphicsLayer()
+        // The controller's hold on the bar and the split's halves, all from the one
+        // visibility verdict: the bar flies down below the edge on a narrow window, and
+        // on a wide one the off-stage half — the left with its bar while a screen works,
+        // the right while Home or the summoned bar holds the focus — dims the way the
+        // servers list does behind its fold. Touch lights everything back up.
+        val barHidden = animateFloatAsState(
+            targetValue = if (barVisible) 0f else 1f,
+            animationSpec = motion.defaultSpatialSpec(),
+            label = "bar hide",
+        )
+        val barFootprintPx = with(LocalDensity.current) {
+            (FloatingBottomBarReservedHeight +
+                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()).roundToPx()
+        }
+        val leftDim = animateFloatAsState(
+            targetValue = if (controller && !barVisible) 0.45f else 1f,
+            animationSpec = motion.fastEffectsSpec(),
+            label = "left half dim",
+        )
+        val rightDim = animateFloatAsState(
+            targetValue = if (controller && barVisible) 0.45f else 1f,
+            animationSpec = motion.fastEffectsSpec(),
+            label = "right half dim",
+        )
         CompositionLocalProvider(
             LocalSurfaceOpacity provides surfaceOpacity,
             LocalHasWallpaper provides (wallpaper != null),
@@ -217,6 +284,7 @@ fun MainShell(viewModel: MainViewModel) {
             LocalBarCoverage provides barCoverage,
             LocalBarUnderlay provides barUnderlay,
             LocalBarCanFade provides homeLook,
+            LocalInputMode provides inputMode.value,
         ) {
             Box(
                 Modifier
@@ -253,6 +321,12 @@ fun MainShell(viewModel: MainViewModel) {
                     selectedTab = selectedTab,
                     selectedCategory = selectedCategory,
                     settingsOpen = settingsOpen,
+                    // The controller mode's half-dims and focus gates, flowing from the
+                    // same visibility the bar itself follows (see the bar below).
+                    controller = controller,
+                    barFocusable = barVisible,
+                    leftDim = { leftDim.value },
+                    rightDim = { rightDim.value },
                     interfaceScroll = interfaceScroll,
                     tunnelStatus = tunnelStatus,
                     subscriptions = subscriptions,
@@ -399,26 +473,54 @@ fun MainShell(viewModel: MainViewModel) {
             }
 
             // The bar centers over Home — over the whole window on a narrow one, over
-            // Home's own half in the split, never hugging the pane's left edge.
+            // Home's own half in the split, never hugging the pane's left edge. Under
+            // the controller it also leaves the stage while a screen works — the dims
+            // and the flight were settled right above the layouts.
             val bar: @Composable BoxScope.() -> Unit = {
                 FloatingBottomBar(
                     selectedTab = selectedTab,
                     onTabSelected = {
                         selectedTab = it
                         settingsOpen = false
+                        // A destination picked from the bar hands the stage to its screen:
+                        // the bar goes, the focus with it. Home keeps the bar — it is
+                        // Home's own look.
+                        if (controller) barSummoned = false
                     },
                     settingsOpen = settingsOpen,
                     // The gear always lands on the About page, not wherever the user left off.
                     onSettingsOpenChange = { open ->
                         settingsOpen = open
                         if (open) selectedCategory = SettingsCategory.ABOUT
+                        // The gear and the back morph are the bar switching its own two
+                        // faces — the bar stays for them whatever else it would do.
+                        if (controller && open) barSummoned = true
                     },
                     selectedCategory = selectedCategory,
-                    onCategorySelected = { selectedCategory = it },
+                    onCategorySelected = {
+                        selectedCategory = it
+                        if (controller) barSummoned = false
+                    },
+                    // Where BACK's summon lands: the picked pill takes the focus.
+                    focusRequester = barFocusRequester,
                     // What the bar floats over, for its frost: the pills re-draw the slice of
                     // it that sits behind them.
                     backdrop = if (frost) behindBar else null,
-                    modifier = Modifier.align(Alignment.BottomCenter),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        // A hidden bar keeps no focus — the dpad's search can't fall into it.
+                        .focusProperties { canFocus = barVisible }
+                        .then(
+                            if (wide) {
+                                // The split's halves dim instead of flying, the bar with its own.
+                                Modifier.graphicsLayer { alpha = leftDim.value }
+                            } else {
+                                // Narrow: the whole footprint slides below the window's edge.
+                                Modifier.offset {
+                                    IntOffset(0, (barFootprintPx * barHidden.value).roundToInt())
+                                }
+                            },
+                        ),
                 )
             }
             if (wide) {
@@ -582,6 +684,14 @@ private fun TwoPaneShell(
     selectedTab: MainTab,
     selectedCategory: SettingsCategory,
     settingsOpen: Boolean,
+    /** Whether a controller drives the shell right now (see [inputModeTracking]). */
+    controller: Boolean,
+    /** Whether the half-dimming bar is on stage — Home or a BACK-summon (controller only). */
+    barFocusable: Boolean,
+    /** The left half's animated dim, read at layer time; the bar rides the same one. */
+    leftDim: () -> Float,
+    /** The right half's animated dim, read at layer time. */
+    rightDim: () -> Float,
     interfaceScroll: ScrollState,
     tunnelStatus: TunnelStatus,
     subscriptions: List<slop.miho.chumpy.db.SubscriptionEntity>,
@@ -628,7 +738,12 @@ private fun TwoPaneShell(
         Box(
             Modifier
                 .weight(1f)
-                .fillMaxHeight(),
+                .fillMaxHeight()
+                // Under the controller the half that is not on stage dims with the bar
+                // and keeps no focus — the dpad's search can't wander into Home while a
+                // screen works.
+                .graphicsLayer { alpha = leftDim() }
+                .focusProperties { canFocus = !controller || barFocusable },
         ) {
             // The bar floats over this pane, so its content keeps the full reservation.
             CompositionLocalProvider(LocalBarReservedHeight provides FloatingBottomBarReservedHeight) {
@@ -650,7 +765,10 @@ private fun TwoPaneShell(
         Box(
             Modifier
                 .weight(1f)
-                .fillMaxHeight(),
+                .fillMaxHeight()
+                // The strip's half dims the same way while Home or the bar holds the
+                // stage under the controller.
+                .graphicsLayer { alpha = rightDim() },
         ) {
             CompositionLocalProvider(
                 LocalBarReservedHeight provides 0.dp,
@@ -819,11 +937,17 @@ private fun MainPagerStrip(
             // last would win the shared report, leaving the bar wearing the wrong page's
             // story across every switch.
             CompositionLocalProvider(LocalPageOnStage provides (position == targetPositionNow.value)) {
-                if (blankHome && position == MainTab.HOME.ordinal) {
-                    // The two-pane split's empty Home slot: the screen lives in the left
-                    // pane, so this page leaves the wallpaper to speak for the half.
-                } else {
-                    ShellDestinationPage(
+                // And only the page on stage takes focus, either: the neighbors stay
+                // composed for the strip's rides, translated just off the pane, and a
+                // dpad's search would happily wander into them — into a screen that is
+                // not on. The gate holds for touch as well: nothing hidden should ever
+                // answer a focus traversal, whatever asks for it.
+                Box(Modifier.fillMaxSize().focusProperties { canFocus = position == targetPositionNow.value }) {
+                    if (blankHome && position == MainTab.HOME.ordinal) {
+                        // The two-pane split's empty Home slot: the screen lives in the left
+                        // pane, so this page leaves the wallpaper to speak for the half.
+                    } else {
+                        ShellDestinationPage(
                     position = position,
                     settingsOffset = settingsOffset,
                     homeVisible = selectedTab == MainTab.HOME && !settingsOpen,
@@ -859,6 +983,7 @@ private fun MainPagerStrip(
                     onConnect = onConnect,
                     onDisconnect = onDisconnect,
                 )
+                    }
                 }
             }
         }
@@ -879,7 +1004,11 @@ private fun MainPagerStrip(
         // left to hand back to, so the system keeps that last back for its own exit
         // ride. This is the whole back stack the shell used to keep two handlers for,
         // now one door with a gesture of its own.
+        // The controller steps aside from this door: its BACK summons the bar instead
+        // (see MainShell), so this page-walking back stays a touch — and a predictive
+        // gesture — affair.
         val backTarget = when {
+            LocalInputMode.current == InputMode.CONTROLLER -> null
             settingsOpen -> selectedTab.ordinal
             selectedTab != MainTab.HOME -> 0
             else -> null

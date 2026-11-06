@@ -149,7 +149,10 @@ fun SubmitFieldRow(
                 },
                 modifier = Modifier
                     .size(48.dp)
-                    .pressBounce(pressed, taps + flips),
+                    .pressBounce(pressed, taps + flips)
+                    // The controller's ring rides before the focus target, outside the
+                    // tile's own paint — the 16dp corners matching.
+                    .focusRing(),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Crossfade(
@@ -207,7 +210,10 @@ fun SubmitFieldRow(
                     contentColor = colors.onSecondaryContainer,
                     modifier = Modifier
                         .size(width = 36.dp, height = 48.dp)
-                        .pressBounce(closePressed, closeTaps),
+                        .pressBounce(closePressed, closeTaps)
+                        // The controller's ring rides before the focus target, outside
+                        // the stadium's own paint — the round ends matching.
+                        .focusRing(circular = true),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(

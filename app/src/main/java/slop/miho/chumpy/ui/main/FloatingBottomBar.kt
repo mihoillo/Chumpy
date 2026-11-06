@@ -63,6 +63,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -88,6 +90,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import slop.miho.chumpy.R
+import slop.miho.chumpy.ui.components.focusRing
 import slop.miho.chumpy.ui.theme.LocalUiSettings
 import slop.miho.chumpy.ui.theme.backdropScheme
 import slop.miho.chumpy.ui.wallpapers.LocalBarCanFade
@@ -198,6 +201,8 @@ fun FloatingBottomBar(
     selectedCategory: SettingsCategory,
     onCategorySelected: (SettingsCategory) -> Unit,
     backdrop: GraphicsLayer?,
+    /** Where the controller's BACK-summon lands: the picked pill takes the focus. */
+    focusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier,
 ) {
     val motion = MaterialTheme.motionScheme
@@ -272,6 +277,7 @@ fun FloatingBottomBar(
                 selectedCategory = selectedCategory,
                 onCategorySelected = onCategorySelected,
                 backdrop = backdrop,
+                focusRequester = focusRequester,
             )
         }
     }
@@ -290,6 +296,7 @@ private fun FloatingMainBar(
     selectedCategory: SettingsCategory,
     onCategorySelected: (SettingsCategory) -> Unit,
     backdrop: GraphicsLayer?,
+    focusRequester: FocusRequester?,
 ) {
     val motion = MaterialTheme.motionScheme
     Row(
@@ -326,7 +333,14 @@ private fun FloatingMainBar(
                         onClick = { onSettingsOpenChange(false) },
                     )
                 } else {
-                    PillItems(MainTab.entries, selectedTab, onTabSelected)
+                    // The requester rides the row that owns the stage — never both rows
+                    // of the morphing pair at once.
+                    PillItems(
+                        MainTab.entries,
+                        selectedTab,
+                        onTabSelected,
+                        focusRequester = if (!settingsOpen) focusRequester else null,
+                    )
                 }
             }
         }
@@ -338,7 +352,12 @@ private fun FloatingMainBar(
                 label = "settings <-> categories",
             ) { open ->
                 if (open) {
-                    PillItems(SettingsCategory.entries, selectedCategory, onCategorySelected)
+                    PillItems(
+                        SettingsCategory.entries,
+                        selectedCategory,
+                        onCategorySelected,
+                        focusRequester = if (settingsOpen) focusRequester else null,
+                    )
                 } else {
                     // The gear spins away as it unfolds into the category pill.
                     val rotation by transition.animateFloat(label = "gear rotation") { state ->
@@ -486,6 +505,9 @@ private fun <T : PillDestination> RowScope.ClassicBarItems(
         NavigationBarItem(
             selected = item == selected,
             onClick = { onSelect(item) },
+            // The controller's focus lands on the cell as a whole; the classic bar's own
+            // paint answers only touch, so the ring is what marks it.
+            modifier = Modifier.focusRing(),
             // The label, shown or not, names the item for accessibility; where it's left
             // out, the icon does instead.
             icon = {
@@ -525,6 +547,7 @@ private fun RowScope.ClassicBarButton(
     NavigationBarItem(
         selected = false,
         onClick = onClick,
+        modifier = Modifier.focusRing(),
         icon = { Icon(painterResource(icon), contentDescription = null) },
         label = {
             Text(
@@ -773,6 +796,7 @@ private fun RoundBarButton(
     Box(
         modifier = Modifier
             .size(BarHeight)
+            .focusRing(circular = true)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -795,6 +819,8 @@ private fun <T : PillDestination> PillItems(
     items: List<T>,
     selected: T,
     onSelect: (T) -> Unit,
+    /** The BACK-summon's landing, when this row is the one holding the stage. */
+    focusRequester: FocusRequester? = null,
 ) {
     Row(
         modifier = Modifier
@@ -810,6 +836,7 @@ private fun <T : PillDestination> PillItems(
                 label = stringResource(item.label),
                 selected = item == selected,
                 onClick = { onSelect(item) },
+                focusRequester = if (item == selected) focusRequester else null,
             )
         }
     }
@@ -823,6 +850,8 @@ private fun PillItem(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
+    /** Where the BACK-summon lands, on the picked pill alone. */
+    focusRequester: FocusRequester? = null,
 ) {
     val motion = MaterialTheme.motionScheme
     val colors = MaterialTheme.colorScheme
@@ -856,6 +885,14 @@ private fun PillItem(
     Row(
         modifier = Modifier
             .height(ItemHeight)
+            // The controller's ring, drawn outside the capsule — before the clip, so it
+            // isn't clipped away — and ahead of the focus target it follows.
+            .focusRing(circular = true)
+            .then(
+                // This build's focusRequester takes no null: the requester rides the
+                // node only when there is one to land.
+                if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier,
+            )
             .clip(CircleShape)
             // The indicator: its alpha is the selection's fade, and the bar's tint rides
             // along so it fades with the glass. Nothing at all is drawn under the inactive

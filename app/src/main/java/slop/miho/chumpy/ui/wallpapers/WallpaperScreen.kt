@@ -75,6 +75,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -106,6 +107,7 @@ import slop.miho.chumpy.ui.components.ErrorCard
 import slop.miho.chumpy.ui.components.InfoChip
 import slop.miho.chumpy.ui.components.RefreshRateRequest
 import slop.miho.chumpy.ui.components.SystemBarsIconsDark
+import slop.miho.chumpy.ui.components.focusRing
 import slop.miho.chumpy.ui.components.pressBounce
 import slop.miho.chumpy.ui.components.rememberHapticPoke
 import slop.miho.chumpy.ui.main.FloatingBottomBarReservedHeight
@@ -1350,7 +1352,10 @@ private fun ToneButton(
         contentColor = content,
         modifier = Modifier
             .size(48.dp)
-            .pressBounce(pressed, taps),
+            .pressBounce(pressed, taps)
+            // The controller's ring rides before the focus target, outside the tile's
+            // own paint — the 16dp corners matching.
+            .focusRing(),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -1455,9 +1460,13 @@ private fun ToggleTileRow(
         animationSpec = motion.defaultEffectsSpec(),
         label = "toggle tile content",
     )
+    // The row carries the focus and the trailing tile wears its ring — a ring around
+    // the whole wide row would swallow the text it means to mark.
+    var rowFocused by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged { rowFocused = it.isFocused }
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -1497,7 +1506,10 @@ private fun ToggleTileRow(
             contentColor = content,
             modifier = Modifier
                 .size(48.dp)
-                .pressBounce(pressed, taps),
+                .pressBounce(pressed, taps)
+                // The tile's ring is a deputy: the row holds the focus, the tile
+                // answers for it — the 16dp corners matching its own.
+                .focusRing(focused = { rowFocused }),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(

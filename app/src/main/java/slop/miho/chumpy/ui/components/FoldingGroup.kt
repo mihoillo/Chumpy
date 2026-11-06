@@ -134,10 +134,15 @@ internal val TriangleTilePolygon =
  * The triangle tile flipping its point: down while the fold is closed, up while it is
  * open — the trip runs through the per-app row's own right-pointing pose, 180 degrees
  * on a spring a touch looser than the scheme's own, so the point swings just past its
- * mark and settles.
+ * mark and settles. The row the tile rides on carries the focus, never the tile —
+ * [focused] lends it the row's own, so the ring lands on the fold's own handle.
  */
 @Composable
-fun FlipTriangleTile(pressed: Boolean, expanded: Boolean) {
+fun FlipTriangleTile(
+    pressed: Boolean,
+    expanded: Boolean,
+    focused: (() -> Boolean)? = null,
+) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val resting = colors.secondaryContainer
@@ -158,11 +163,14 @@ fun FlipTriangleTile(pressed: Boolean, expanded: Boolean) {
         ),
         label = "flip triangle rotation",
     )
+    // The ring rides ahead of the flip's own rotation, so the point swings inside a
+    // ring that stands still — the tile turns, the focus does not.
     Surface(
         shape = TriangleTilePolygon.toShape(),
         color = container,
         modifier = Modifier
             .size(48.dp)
+            .focusRing(focused = focused)
             .graphicsLayer { rotationZ = rotation },
     ) {}
 }

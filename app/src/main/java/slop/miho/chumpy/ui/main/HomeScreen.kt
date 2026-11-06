@@ -65,6 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -86,6 +87,7 @@ import slop.miho.chumpy.ui.HomeUiState
 import slop.miho.chumpy.ui.components.ErrorCard
 import slop.miho.chumpy.ui.components.EmojiFlag
 import slop.miho.chumpy.ui.components.InfoChip
+import slop.miho.chumpy.ui.components.focusRing
 import slop.miho.chumpy.ui.components.rememberHapticDeniedKicks
 import slop.miho.chumpy.ui.components.rememberHapticPoke
 import slop.miho.chumpy.ui.components.rememberHapticPokes
@@ -408,13 +410,18 @@ private fun ServerCard(
     val colors = MaterialTheme.colorScheme
     // The flag follows the picked flag style: Twemoji, the system emoji, or the globe.
     val flagStyle = LocalUiSettings.current.flagStyle
+    // The controller's eye on the card: the card itself carries the focus, and its
+    // chevron — the arrow pointing where the tap leads — wears the ring for it.
+    var cardFocused by remember { mutableStateOf(false) }
     Surface(
         // Rounder than the rows it mirrors: a lone full-width card can afford the soft
         // extra-large corners, while its icon tile stays squarer (the servers' 12dp).
         shape = MaterialTheme.shapes.extraLarge,
         color = colors.surfaceContainer.withSurfaceOpacity(),
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { cardFocused = it.isFocused },
     ) {
         Row(
             // The same inset all around the icon tile, so the tile sits centered in its
@@ -479,7 +486,9 @@ private fun ServerCard(
             Icon(
                 painter = painterResource(R.drawable.ic_chevron_right),
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier
+                    .size(20.dp)
+                    .focusRing(circular = true, focused = { cardFocused }),
                 tint = colors.onSurfaceVariant,
             )
         }
@@ -527,7 +536,10 @@ private fun ConnectButton(
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
         modifier = modifier
             .height(64.dp)
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            // The controller's pick of the whole screen: the ring sits outside the
+            // button's capsule, as every ring sits outside what it marks.
+            .focusRing(circular = true),
     ) {
         WavyConnectBar(
             state = state,

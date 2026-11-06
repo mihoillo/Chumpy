@@ -119,6 +119,7 @@ import slop.miho.chumpy.ui.components.TriangleTilePolygon
 import slop.miho.chumpy.ui.components.AccentRow
 import slop.miho.chumpy.ui.components.CountryFlag
 import slop.miho.chumpy.ui.components.RainbowFlag
+import slop.miho.chumpy.ui.components.focusRing
 import slop.miho.chumpy.ui.components.pressBounce
 import slop.miho.chumpy.ui.components.rememberHapticPoke
 import slop.miho.chumpy.ui.fonts.FontPickerRow
@@ -584,6 +585,9 @@ private fun SquareIconButton(
         modifier = Modifier
             .size(48.dp)
             .pressBounce(pressed, taps)
+            // The controller's ring rides before the clip — outside it, as every ring
+            // sits outside what it marks — the 16dp corners matching the tile's own.
+            .focusRing()
             .clip(shape)
             .combinedClickable(
                 interactionSource = interactionSource,
@@ -630,9 +634,13 @@ private fun ToggleRow(
     // Bumped in the click handler: the tile's pop keys off it, so it fires on every click —
     // the press state alone can go unnoticed on a quick tap.
     var taps by remember { mutableIntStateOf(0) }
+    // The controller's eye on the row: the whole row carries the focus, and its tile —
+    // the switch's own stand-in — wears the ring for it.
+    var rowFocused by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged { rowFocused = it.isFocused }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -665,15 +673,29 @@ private fun ToggleRow(
                 )
             }
         }
-        ToggleIconTile(icon = icon, checked = checked, pressed = pressed, taps = taps)
+        ToggleIconTile(
+            icon = icon,
+            checked = checked,
+            pressed = pressed,
+            taps = taps,
+            focused = { rowFocused },
+        )
     }
 }
 
 /** The square icon tile that replaces a switch: raised tonal container while off, the
  *  accent container while on, and a crossfading icon in the middle. While the row is held
- *  down the tile squashes and dips its tone, and every click bounces it with a pop. */
+ *  down the tile squashes and dips its tone, and every click bounces it with a pop. The
+ *  row carries the focus, never the tile — [focused] lends it the row's own, so the ring
+ *  lands on the row's trailing mark. */
 @Composable
-private fun ToggleIconTile(icon: Int, checked: Boolean, pressed: Boolean, taps: Int) {
+private fun ToggleIconTile(
+    icon: Int,
+    checked: Boolean,
+    pressed: Boolean,
+    taps: Int,
+    focused: (() -> Boolean)? = null,
+) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val resting = (if (checked) colors.primary else colors.secondaryContainer)
@@ -693,7 +715,8 @@ private fun ToggleIconTile(icon: Int, checked: Boolean, pressed: Boolean, taps: 
         contentColor = content,
         modifier = Modifier
             .size(48.dp)
-            .pressBounce(pressed, taps),
+            .pressBounce(pressed, taps)
+            .focusRing(focused = focused),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Crossfade(
@@ -777,9 +800,13 @@ private fun ScreenLinkRow(
     // Bumped in the click handler: the pop keys off it, so it fires on every click — the
     // press state alone can go unnoticed on a quick tap.
     var taps by remember { mutableIntStateOf(0) }
+    // The controller's eye on the row: the whole row carries the focus, and its trailing
+    // triangle — the menu the screen unfolds from — wears the ring for it.
+    var rowFocused by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged { rowFocused = it.isFocused }
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -813,7 +840,7 @@ private fun ScreenLinkRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LinkIconTile(icon = icon, pressed = pressed)
-                TriangleTile(pressed = pressed)
+                TriangleTile(pressed = pressed, focused = { rowFocused })
             }
         }
     }
@@ -821,10 +848,15 @@ private fun ScreenLinkRow(
 
 /**
  * The screen's icon on the standard square tile: raised tonal container, dipping its tone
- * while the row is held down.
+ * while the row is held down. The row carries the focus, never the tile — [focused] lends
+ * it the row's own, so the ring lands on the row's trailing mark.
  */
 @Composable
-private fun LinkIconTile(icon: Int, pressed: Boolean) {
+private fun LinkIconTile(
+    icon: Int,
+    pressed: Boolean,
+    focused: (() -> Boolean)? = null,
+) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val resting = colors.secondaryContainer
@@ -837,7 +869,9 @@ private fun LinkIconTile(icon: Int, pressed: Boolean) {
         shape = RoundedCornerShape(16.dp),
         color = container,
         contentColor = colors.onSecondaryContainer,
-        modifier = Modifier.size(48.dp),
+        modifier = Modifier
+            .size(48.dp)
+            .focusRing(focused = focused),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -851,10 +885,15 @@ private fun LinkIconTile(icon: Int, pressed: Boolean) {
 
 /**
  * The empty right-pointing triangle: the same tonal raised container as the square tiles,
- * dipping its tone while the row is held down.
+ * dipping its tone while the row is held down. The row carries the focus, never the
+ * triangle — [focused] lends it the row's own, so the ring lands on the row's trailing
+ * mark.
  */
 @Composable
-private fun TriangleTile(pressed: Boolean) {
+private fun TriangleTile(
+    pressed: Boolean,
+    focused: (() -> Boolean)? = null,
+) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val resting = colors.secondaryContainer
@@ -866,7 +905,9 @@ private fun TriangleTile(pressed: Boolean) {
     Surface(
         shape = TriangleTilePolygon.toShape(),
         color = container,
-        modifier = Modifier.size(48.dp),
+        modifier = Modifier
+            .size(48.dp)
+            .focusRing(focused = focused),
     ) {}
 }
 
@@ -887,9 +928,13 @@ private fun BackgroundRefreshRow(
     // Bumped in the click handler: the pop keys off it, so it fires on every click —
     // the press state alone can go unnoticed on a quick tap.
     var taps by remember { mutableIntStateOf(0) }
+    // The controller's eye on the row: the whole row carries the focus, and its
+    // triangle — the fold's own handle — wears the ring for it.
+    var rowFocused by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged { rowFocused = it.isFocused }
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -918,7 +963,7 @@ private fun BackgroundRefreshRow(
         Box(
             modifier = Modifier.pressBounce(pressed, taps),
         ) {
-            FlipTriangleTile(pressed = pressed, expanded = expanded)
+            FlipTriangleTile(pressed = pressed, expanded = expanded, focused = { rowFocused })
         }
     }
 }
@@ -1315,6 +1360,9 @@ private fun RoutingTile(
         modifier = Modifier
             .size(48.dp)
             .pressBounce(pressed, taps)
+            // The controller's ring rides before the clip — outside it, as every ring
+            // sits outside what it marks — the 16dp corners matching the tile's own.
+            .focusRing()
             .clip(RoundedCornerShape(16.dp))
             .combinedClickable(
                 interactionSource = interactionSource,
@@ -1433,9 +1481,13 @@ private fun HappToggleRow(
     val poke = rememberHapticPoke()
     // Bumped in the click handler: the pop keys off it, so it fires on every click.
     var taps by remember { mutableIntStateOf(0) }
+    // The controller's eye on the row: the whole row carries the focus, and its tile —
+    // the toggle's own stand-in — wears the ring for it.
+    var rowFocused by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged { rowFocused = it.isFocused }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -1469,7 +1521,13 @@ private fun HappToggleRow(
                 )
             }
         }
-        ToggleIconTile(icon = R.drawable.ic_device, checked = checked, pressed = pressed, taps = taps)
+        ToggleIconTile(
+            icon = R.drawable.ic_device,
+            checked = checked,
+            pressed = pressed,
+            taps = taps,
+            focused = { rowFocused },
+        )
     }
 }
 
@@ -1490,9 +1548,13 @@ private fun EditSpoofStringsRow(
     // Bumped in the click handler: the pop keys off it, so it fires on every click —
     // the press state alone can go unnoticed on a quick tap.
     var taps by remember { mutableIntStateOf(0) }
+    // The controller's eye on the row: the whole row carries the focus, and its
+    // triangle — the doorway's own handle — wears the ring for it.
+    var rowFocused by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged { rowFocused = it.isFocused }
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -1515,7 +1577,7 @@ private fun EditSpoofStringsRow(
         Box(
             modifier = Modifier.pressBounce(pressed, taps),
         ) {
-            FlipTriangleTile(pressed = pressed, expanded = expanded)
+            FlipTriangleTile(pressed = pressed, expanded = expanded, focused = { rowFocused })
         }
     }
 }
@@ -1575,6 +1637,9 @@ private fun HappRegenerateRow(
     val poke = rememberHapticPoke()
     // Bumped in the click handler: the pop keys off it, so it fires on every click.
     var regenTaps by remember { mutableIntStateOf(0) }
+    // The controller's eye on the row: the whole row carries the focus, and its renew
+    // tile — the row's own trailing mark — wears the ring for it.
+    var rowFocused by remember { mutableStateOf(false) }
     // The toggle tile's own resting tone and pressed dip.
     val resting = colors.secondaryContainer
     val container by animateColorAsState(
@@ -1585,6 +1650,7 @@ private fun HappRegenerateRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged { rowFocused = it.isFocused }
             .combinedClickable(
                 interactionSource = regenSource,
                 indication = LocalIndication.current,
@@ -1612,7 +1678,10 @@ private fun HappRegenerateRow(
             contentColor = colors.onSecondaryContainer,
             modifier = Modifier
                 .size(48.dp)
-                .pressBounce(regenPressed, regenTaps),
+                .pressBounce(regenPressed, regenTaps)
+                // The row carries the focus; the tile wears the ring for it — the
+                // row's own trailing mark.
+                .focusRing(focused = { rowFocused }),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -1964,9 +2033,13 @@ private fun OutgoingRow(
     // Bumped in the click handler: the pop keys off it, so it fires on every click — the
     // press state alone can go unnoticed on a quick tap.
     var taps by remember { mutableIntStateOf(0) }
+    // The controller's eye on the row: the whole row carries the focus, and its tile
+    // wears the ring for it — the row's own trailing mark.
+    var rowFocused by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged { rowFocused = it.isFocused }
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -1997,7 +2070,7 @@ private fun OutgoingRow(
         Box(
             modifier = Modifier.pressBounce(pressed, taps),
         ) {
-            LinkIconTile(icon = icon, pressed = pressed)
+            LinkIconTile(icon = icon, pressed = pressed, focused = { rowFocused })
         }
     }
 }
@@ -2159,6 +2232,9 @@ private fun IconPreviewButton(
         modifier = Modifier
             .size(ICON_PREVIEW_SIZE)
             .pressBounce(pressed, taps)
+            // The controller's ring rides before the clip — outside it, as every ring
+            // sits outside what it marks — round, like the icon it circles.
+            .focusRing(circular = true)
             .clip(CircleShape)
             .drawBehind {
                 // Drawn only once there's width to draw: a zero-width stroke would still

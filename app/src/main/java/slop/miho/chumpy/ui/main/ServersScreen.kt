@@ -134,6 +134,7 @@ import slop.miho.chumpy.ui.components.rememberHapticSoftPoke
 import slop.miho.chumpy.ui.components.WavyPullToRefreshBox
 import slop.miho.chumpy.ui.components.pressBounce
 import slop.miho.chumpy.ui.components.pullShiftedPadding
+import slop.miho.chumpy.ui.components.focusRing
 import slop.miho.chumpy.ui.wallpapers.LocalSurfaceOpacity
 import slop.miho.chumpy.ui.wallpapers.ReportBarCoverage
 import slop.miho.chumpy.ui.wallpapers.withSurfaceOpacity
@@ -939,7 +940,10 @@ private fun UpdateButton(
         contentColor = colors.onSecondaryContainer,
         modifier = Modifier
             .size(width = width, height = height)
-            .pressBounce(pressed, taps),
+            .pressBounce(pressed, taps)
+            // The controller's ring rides before the focus target, outside the
+            // stadium's own paint — the round ends matching.
+            .focusRing(circular = true),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -1192,7 +1196,8 @@ private fun AddSubscriptionRow(
     // subscription rows wear, not a stripe of the card's own color.
     AnimatedContent(
         targetState = open,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth(),
         transitionSpec = {
                 // The card's own face swap laid sideways: opening, the invitation rides
                 // out to the right while the field steps in from the left; closing, the
