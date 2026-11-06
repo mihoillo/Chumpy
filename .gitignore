@@ -20,3 +20,6 @@ fedback/
 # The release signing key and its passwords: never leaves this machine.
 chumpy.keystore
 keystore.properties
+
+# The delivery script: local for now.
+build.sh

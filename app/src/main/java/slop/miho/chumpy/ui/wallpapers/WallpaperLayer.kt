@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -106,6 +107,16 @@ val LocalBarUnderlay = staticCompositionLocalOf<MutableState<Boolean>> { mutable
 val LocalBarCanFade = staticCompositionLocalOf { false }
 
 /**
+ * Whether the page about to report is the one on stage. The main shell keeps a page's
+ * neighbors composed while it shows it — the strip slides between live screens — and every
+ * one of them would love the last word: the stats page ticks once a second and rewrites
+ * the report out from under the servers list, the settings pages murmur beside it. The
+ * shell provides the flag; [ReportBarCoverage] lets only the page on stage speak. True by
+ * default: the single-page shells — wallpapers, per-app — have no neighbors to fight.
+ */
+val LocalPageOnStage = compositionLocalOf { true }
+
+/**
  * A screen's report of whether its content currently sits under the floating bar. Callers
  * pass a value derived from their scroll state (derivedStateOf keeps the boolean from
  * recomposing the screen on every scroll pixel), so the bar learns only of the flips.
@@ -113,6 +124,10 @@ val LocalBarCanFade = staticCompositionLocalOf { false }
  */
 @Composable
 fun ReportBarCoverage(covered: Boolean, underlaid: Boolean = covered) {
+    // Only the page on stage reports: the neighbors stay composed, and whichever of them
+    // recomposed last would otherwise win the shared state — the bar wearing the wrong
+    // page's story until the visible one scrolled.
+    if (!LocalPageOnStage.current) return
     val coverage = LocalBarCoverage.current
     val underlay = LocalBarUnderlay.current
     SideEffect {

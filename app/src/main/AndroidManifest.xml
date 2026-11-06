@@ -34,6 +34,7 @@
         android:name=".ChumpyApp"
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -53,7 +54,7 @@
             </intent-filter>
         </activity>
 
-        <!-- The three launcher entries, one per icon variant. Exactly one is enabled at a
+        <!-- The four launcher entries, one per icon variant. Exactly one is enabled at a
              time (Chumpy out of the box); the settings screen flips them via
              PackageManager.setComponentEnabledSetting, and the picker applies the choice
              the moment it is made. -->
@@ -92,6 +93,20 @@
             android:exported="true"
             android:label="@string/app_name"
             android:icon="@mipmap/ic_launcher_themed"
+            android:enabled="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- The dark icon: the white art on a near-black night sky. -->
+        <activity-alias
+            android:name=".LauncherDark"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:icon="@mipmap/ic_launcher_dark"
             android:enabled="false">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

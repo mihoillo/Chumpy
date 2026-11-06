@@ -18,6 +18,7 @@ object LauncherIcon {
         IconVariant.CHUMPY to "slop.miho.chumpy.LauncherChumpy",
         IconVariant.INVERTED to "slop.miho.chumpy.LauncherInverted",
         IconVariant.THEMED to "slop.miho.chumpy.LauncherThemed",
+        IconVariant.DARK to "slop.miho.chumpy.LauncherDark",
     )
 
     /** Which alias is currently enabled, per PackageManager — the installed truth. */

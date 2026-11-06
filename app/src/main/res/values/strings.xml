@@ -65,16 +65,23 @@
     <string name="subscription_days_infinite">∞ days remaining</string>
     <string name="subscription_hours_left">%1$d h left</string>
     <string name="subscription_expired">expired</string>
+    <string name="subscription_expired_chip">Expired</string>
     <string name="subscription_consumed" translatable="false">%1$s / %2$s</string>
     <string name="subscription_unlimited">unlimited</string>
     <string name="subscription_updated_at">Updated at %1$s</string>
     <string name="subscription_updated_ago">Updated %1$s ago</string>
     <string name="config_delete_title">Delete this config?</string>
-    <string name="config_delete_text">\"%1$s\" will be removed from Chumpy.</string>
-    <string name="config_delete_confirm">Delete</string>
     <string name="subscription_delete_title">Delete this subscription?</string>
-    <string name="subscription_delete_text">\"%1$s\" and all of its servers will be removed from Chumpy.</string>
-    <string name="subscription_delete_confirm">Delete</string>
+    <string name="card_menu_pin">Pin</string>
+    <string name="card_menu_unpin">Unpin</string>
+    <string name="card_menu_pinned">Pinned</string>
+    <string name="card_menu_hide">Hide</string>
+    <string name="card_menu_unhide">Show</string>
+    <string name="card_menu_concealed">Hidden</string>
+    <string name="card_menu_copy_url">Copy URL</string>
+    <string name="card_menu_delete">Delete</string>
+    <string name="card_menu_yes">Yes</string>
+    <string name="card_menu_no">No</string>
 
     <string name="happ_title">Spoof as Happ</string>
     <string name="happ_active">Enabled</string>
@@ -118,12 +125,18 @@
     <string name="settings_accent_violet">Violet</string>
     <string name="settings_accent_mono">Monochrome</string>
     <string name="settings_accent_rainbow">Rainbow</string>
+    <string name="settings_accent_custom">Custom</string>
+    <string name="settings_accent_custom_title">Custom color</string>
+    <string name="settings_accent_custom_hex">Hex color</string>
+    <string name="settings_accent_custom_pick">Pick</string>
     <string name="settings_slow_animations">Slow animations</string>
     <string name="settings_slow_animations_hint">Springs get softer, everything moves slower</string>
     <string name="settings_simple_transitions">Simple transitions</string>
     <string name="settings_simple_transitions_hint">Better for weaker devices</string>
     <string name="settings_haptic_feedback">Haptic feedback</string>
     <string name="settings_haptic_feedback_hint">A light poke when the buttons are tapped</string>
+    <string name="settings_mask_addresses">Mask addresses</string>
+    <string name="settings_mask_addresses_hint">IPs and domains never show in the lists</string>
     <string name="settings_fonts">Fonts</string>
     <string name="settings_flag_style">Flag style</string>
     <string name="settings_flag_twemoji" translatable="false">Twemoji</string>
@@ -132,6 +145,7 @@
     <string name="settings_app_icon">App icon</string>
     <string name="settings_icon_chumpy" translatable="false">Chumpy</string>
     <string name="settings_icon_inverted">Inverted</string>
+    <string name="settings_icon_dark">Dark</string>
     <string name="settings_icon_themed">Themed</string>
     <string name="settings_wallpapers">Wallpapers</string>
     <string name="settings_wallpapers_hint">The backdrop behind the app</string>
@@ -166,6 +180,9 @@
     <string name="connection_auto_reconnect">Auto-reconnect</string>
     <string name="connection_auto_reconnect_on">The tunnel comes back on its own wherever it fell</string>
     <string name="connection_auto_reconnect_off">A fall waits for the alert\'s Reconnect</string>
+    <string name="connection_bypass_lan">Bypass the local network</string>
+    <string name="connection_bypass_lan_on">LAN traffic rides the physical network, as if the VPN were off</string>
+    <string name="connection_bypass_lan_off">Everything goes through the tunnel, the LAN included</string>
     <string name="settings_background_refresh">Background refresh</string>
     <string name="settings_background_refresh_count">Auto-updates %d subscriptions</string>
     <string name="settings_about_core">Xray core</string>
@@ -227,6 +244,9 @@
     <string name="stats_loss_percent" translatable="false">%1$d%%</string>
     <string name="stats_loss_warning">Packet loss too high: %1$d%%</string>
     <string name="stats_probes_caption">A probe every 15 s</string>
+    <string name="stats_core_logs">Core logs</string>
+    <string name="stats_core_logs_empty">Nothing yet — connect the tunnel</string>
+    <string name="stats_core_logs_copy">Copy the logs</string>
     <string name="stats_waiting">Waiting for data…</string>
     <string name="stats_no_data">No data</string>
     <string name="stats_frozen_from">Stats from %1$s</string>

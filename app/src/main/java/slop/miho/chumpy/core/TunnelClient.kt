@@ -123,6 +123,16 @@ class TunnelClient(private val context: Context) {
         }
     }
 
+    /** The core's captured log tail, or null while the core process is unreachable. */
+    fun coreLogs(): String? {
+        val remote = service ?: return null
+        return try {
+            remote.coreLogs()
+        } catch (_: RemoteException) {
+            null
+        }
+    }
+
     private fun call(remote: ITunnelService, action: (ITunnelService) -> Unit) {
         try {
             action(remote)

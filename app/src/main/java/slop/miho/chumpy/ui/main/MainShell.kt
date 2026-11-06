@@ -1,7 +1,9 @@
 package slop.miho.chumpy.ui.main
 
 import android.net.VpnService
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animate
@@ -11,8 +13,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -77,6 +78,7 @@ import slop.miho.chumpy.ui.wallpapers.LocalBarCanFade
 import slop.miho.chumpy.ui.wallpapers.LocalBarCoverage
 import slop.miho.chumpy.ui.wallpapers.LocalBarUnderlay
 import slop.miho.chumpy.ui.wallpapers.LocalHasWallpaper
+import slop.miho.chumpy.ui.wallpapers.LocalPageOnStage
 import slop.miho.chumpy.ui.wallpapers.LocalSurfaceOpacity
 import slop.miho.chumpy.ui.wallpapers.MAX_WALLPAPER_BLUR
 import slop.miho.chumpy.ui.wallpapers.WallpaperBackdrop
@@ -91,9 +93,6 @@ fun MainShell(viewModel: MainViewModel) {
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.INTERFACE) }
-
-    BackHandler(enabled = settingsOpen) { settingsOpen = false }
-    BackHandler(enabled = !settingsOpen && selectedTab != MainTab.HOME) { selectedTab = MainTab.HOME }
 
     val tunnelStatus by viewModel.tunnelStatus.collectAsStateWithLifecycle()
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
@@ -241,6 +240,7 @@ fun MainShell(viewModel: MainViewModel) {
             connection = viewModel.connection.collectAsStateWithLifecycle().value,
             coreVersion = viewModel.coreVersion.collectAsStateWithLifecycle().value,
             coreRunning = viewModel.coreRunning.collectAsStateWithLifecycle().value,
+            coreLogsFlow = viewModel.coreLogs,
             onUiSettingsChange = viewModel::updateSettings,
             onChangeConnection = viewModel::updateConnection,
             onOpenServers = {
@@ -270,6 +270,9 @@ fun MainShell(viewModel: MainViewModel) {
             onAddSubscription = viewModel::addSubscription,
             onDeleteSubscription = viewModel::deleteSubscription,
             onDeleteManualProfile = viewModel::deleteManualProfile,
+            onTogglePinned = viewModel::toggleProfilePinned,
+            onToggleSubscriptionPinned = viewModel::toggleSubscriptionPinned,
+            onToggleConcealed = viewModel::toggleProfileConcealed,
             onToggleAutoUpdate = viewModel::setSubscriptionAutoUpdate,
             onSelect = viewModel::selectProfile,
             onConnect = {
@@ -386,6 +389,7 @@ private fun MainPagerStrip(
     connection: slop.miho.chumpy.data.ConnectionSettings,
     coreVersion: String?,
     coreRunning: Boolean,
+    coreLogsFlow: StateFlow<String?>,
     onUiSettingsChange: ((UiSettings) -> UiSettings) -> Unit,
     onChangeConnection: ((slop.miho.chumpy.data.ConnectionSettings) -> slop.miho.chumpy.data.ConnectionSettings) -> Unit,
     onOpenServers: () -> Unit,
@@ -398,6 +402,9 @@ private fun MainPagerStrip(
     onAddSubscription: (url: String, name: String?, onDone: (String?) -> Unit) -> Unit,
     onDeleteSubscription: (String) -> Unit,
     onDeleteManualProfile: (String) -> Unit,
+    onTogglePinned: (String, Boolean) -> Unit,
+    onToggleSubscriptionPinned: (String, Boolean) -> Unit,
+    onToggleConcealed: (String, Boolean) -> Unit,
     onToggleAutoUpdate: (String, Boolean) -> Unit,
     onSelect: (String) -> Unit,
     onConnect: () -> Unit,
@@ -446,75 +453,90 @@ private fun MainPagerStrip(
         }
 
         // The screen at a strip position: main tabs at 0..2, settings categories after them.
+        // The on-stage flag rides a state rather than a plain capture: the direct mode's
+        // outgoing page runs a stale content lambda through its fade, and a stale capture
+        // would let it keep writing its report over the landing page's own.
+        val targetPositionNow = rememberUpdatedState(targetPosition)
         @Composable
         fun destinationPage(position: Int) {
-            if (position < settingsOffset) {
-                when (val tab = MainTab.entries[position]) {
-                    MainTab.HOME -> HomeScreen(
-                        status = tunnelStatus,
-                        home = home,
-                        visible = selectedTab == MainTab.HOME && !settingsOpen,
-                        onRefreshPing = onRefreshPing,
-                        onConnect = onConnect,
-                        onDisconnect = onDisconnect,
-                        onOpenServers = onOpenServers,
-                        onOpenStats = onOpenStats,
-                    )
-                    MainTab.SERVERS -> {
-                        // The week rides the stats flow but only its own list is wanted
-                        // here: the flow itself ticks once a second, while the week
-                        // changes only on a flush — so only the page recomposes then.
-                        val weekFlow = remember(statsFlow) { statsFlow.map { it.week }.distinctUntilChanged() }
-                        val week by weekFlow
-                            .collectAsStateWithLifecycle(initialValue = emptyList())
-                        val manualCount by manualProfileCount.collectAsStateWithLifecycle()
-                        ServersScreen(
+            // Only the page on stage reports the bar's coverage (see ReportBarCoverage):
+            // the strip keeps the neighbors composed — the stats page ticks once a second,
+            // the settings pages idle beside — and without the gate whichever recomposed
+            // last would win the shared report, leaving the bar wearing the wrong page's
+            // story across every switch.
+            CompositionLocalProvider(LocalPageOnStage provides (position == targetPositionNow.value)) {
+                if (position < settingsOffset) {
+                    when (val tab = MainTab.entries[position]) {
+                        MainTab.HOME -> HomeScreen(
+                            status = tunnelStatus,
+                            home = home,
+                            visible = selectedTab == MainTab.HOME && !settingsOpen,
+                            onRefreshPing = onRefreshPing,
+                            onConnect = onConnect,
+                            onDisconnect = onDisconnect,
+                            onOpenServers = onOpenServers,
+                            onOpenStats = onOpenStats,
+                        )
+                        MainTab.SERVERS -> {
+                            // The week rides the stats flow but only its own list is wanted
+                            // here: the flow itself ticks once a second, while the week
+                            // changes only on a flush — so only the page recomposes then.
+                            val weekFlow = remember(statsFlow) { statsFlow.map { it.week }.distinctUntilChanged() }
+                            val week by weekFlow
+                                .collectAsStateWithLifecycle(initialValue = emptyList())
+                            val manualCount by manualProfileCount.collectAsStateWithLifecycle()
+                            ServersScreen(
+                                subscriptions = subscriptions,
+                                selectedSubscription = selectedSubscription,
+                                state = servers,
+                                week = week,
+                                manualCount = manualCount,
+                                flagStyle = uiSettings.flagStyle,
+                                tunnelUp = tunnelStatus.state == TunnelState.UP,
+                                onUpdate = onUpdateSubscription,
+                                onPing = onPingServers,
+                                onSelectSubscription = onSelectSubscription,
+                                onAddSubscription = onAddSubscription,
+                                onDeleteSubscription = onDeleteSubscription,
+                                onDeleteManualProfile = onDeleteManualProfile,
+                                onTogglePinned = onTogglePinned,
+                                onToggleSubscriptionPinned = onToggleSubscriptionPinned,
+                                onToggleConcealed = onToggleConcealed,
+                                onSelect = onSelect,
+                            )
+                        }
+                        MainTab.STATS -> {
+                            // Collected in the branch, not the shell's top: the flow ticks once
+                            // a second and only ever recomposes this page.
+                            val stats by statsFlow.collectAsStateWithLifecycle()
+                            StatsScreen(
+                                state = stats,
+                                tunnelUp = tunnelStatus.state == TunnelState.UP,
+                                coreLogsFlow = coreLogsFlow,
+                            )
+                        }
+                    }
+                } else {
+                    when (val category = SettingsCategory.entries[position - settingsOffset]) {
+                        SettingsCategory.INTERFACE -> InterfaceScreen(
+                            settings = uiSettings,
+                            onChange = onUiSettingsChange,
+                            scrollState = interfaceScroll,
+                        )
+                        SettingsCategory.CONNECTION -> ConnectionScreen(
+                            connection = connection,
                             subscriptions = subscriptions,
-                            selectedSubscription = selectedSubscription,
-                            state = servers,
-                            week = week,
-                            manualCount = manualCount,
                             flagStyle = uiSettings.flagStyle,
-                            tunnelUp = tunnelStatus.state == TunnelState.UP,
-                            onUpdate = onUpdateSubscription,
-                            onPing = onPingServers,
-                            onSelectSubscription = onSelectSubscription,
-                            onAddSubscription = onAddSubscription,
-                            onDeleteSubscription = onDeleteSubscription,
-                            onDeleteManualProfile = onDeleteManualProfile,
-                            onSelect = onSelect,
+                            settings = uiSettings,
+                            onChangeConnection = onChangeConnection,
+                            onChangeSettings = onUiSettingsChange,
+                            onToggleAutoUpdate = onToggleAutoUpdate,
+                        )
+                        SettingsCategory.ABOUT -> AboutScreen(
+                            coreVersion = coreVersion,
+                            coreRunning = coreRunning,
                         )
                     }
-                    MainTab.STATS -> {
-                        // Collected in the branch, not the shell's top: the flow ticks once
-                        // a second and only ever recomposes this page.
-                        val stats by statsFlow.collectAsStateWithLifecycle()
-                        StatsScreen(
-                            state = stats,
-                            tunnelUp = tunnelStatus.state == TunnelState.UP,
-                        )
-                    }
-                }
-            } else {
-                when (val category = SettingsCategory.entries[position - settingsOffset]) {
-                    SettingsCategory.INTERFACE -> InterfaceScreen(
-                        settings = uiSettings,
-                        onChange = onUiSettingsChange,
-                        scrollState = interfaceScroll,
-                    )
-                    SettingsCategory.CONNECTION -> ConnectionScreen(
-                        connection = connection,
-                        subscriptions = subscriptions,
-                        flagStyle = uiSettings.flagStyle,
-                        settings = uiSettings,
-                        onChangeConnection = onChangeConnection,
-                        onChangeSettings = onUiSettingsChange,
-                        onToggleAutoUpdate = onToggleAutoUpdate,
-                    )
-                    SettingsCategory.ABOUT -> AboutScreen(
-                        coreVersion = coreVersion,
-                        coreRunning = coreRunning,
-                    )
                 }
             }
         }
@@ -529,6 +551,115 @@ private fun MainPagerStrip(
         val expressiveNow = rememberUpdatedState(!uiSettings.simpleTransitions)
         val firstPageNow = rememberUpdatedState(firstPage)
         val lastPageNow = rememberUpdatedState(lastPage)
+
+        // The back's own landing: settings fold back to the tab that owned the stage
+        // before them, a tab to Home — and Home with the settings closed has nothing
+        // left to hand back to, so the system keeps that last back for its own exit
+        // ride. This is the whole back stack the shell used to keep two handlers for,
+        // now one door with a gesture of its own.
+        val backTarget = when {
+            settingsOpen -> selectedTab.ordinal
+            selectedTab != MainTab.HOME -> 0
+            else -> null
+        }
+        // The predictive back rides the same rails the swipe does: the gesture leads
+        // the strip toward the landing the way the finger does — settings to their
+        // tab, a tab to Home, always leftward, the same coordinate the swipe travels.
+        // Carried all the way, the landing takes over with the same hand-back the
+        // swipe's release plays; abandoned, the strip walks itself home the way a
+        // failed swipe does.
+        PredictiveBackHandler(enabled = backTarget != null) { progress ->
+            val landing = backTarget ?: return@PredictiveBackHandler
+            // The gesture takes the strip over exactly the way a drag does: whatever
+            // the released page was still doing stops, the drag states take the page
+            // in hand.
+            dragAnimJob?.cancel()
+            dragAnimJob = null
+            draggedSlot = targetPosition
+            val expressive = expressiveNow.value
+            val from = if (expressive) stripPosition.value else targetPosition.toFloat()
+            try {
+                progress.collect { event ->
+                    // Expressive: the strip rides its own rail the whole way to the
+                    // landing. Direct: the page carries its own one-page reach — the
+                    // mode's heavy swipe never previews the landing, and neither does
+                    // the back's.
+                    dragPosition = if (expressive) {
+                        from + (landing - from) * event.progress
+                    } else {
+                        from - event.progress
+                    }
+                }
+                // Carried all the way: the landing takes over from under the finger.
+                val hand = if (dragPosition.isNaN()) from else dragPosition
+                if (expressive) {
+                    scope.launch {
+                        stripPosition.snapTo(hand)
+                        stripPosition.animateTo(
+                            landing.toFloat(),
+                            motion.defaultSpatialSpec(),
+                        )
+                    }
+                    dragPosition = Float.NaN
+                    draggedSlot = Int.MIN_VALUE
+                } else {
+                    val out = (draggedSlot - 1).toFloat()
+                    if (hand > out) {
+                        dragAnimJob = scope.launch {
+                            animate(
+                                initialValue = hand,
+                                targetValue = out,
+                                animationSpec = motion.defaultSpatialSpec(),
+                            ) { value, _ ->
+                                dragPosition = value
+                            }
+                            // If the page's own disposal has already cleaned the states
+                            // behind its fade, our writes since were invisible — drop
+                            // them here too. Otherwise the fade's disposal still owns
+                            // them.
+                            if (draggedSlot == Int.MIN_VALUE) dragPosition = Float.NaN
+                        }
+                    } else {
+                        // The finger already carried the page fully out — nothing
+                        // left to fly.
+                        dragPosition = Float.NaN
+                        draggedSlot = Int.MIN_VALUE
+                    }
+                }
+                onSelectPage(landing)
+            } catch (e: CancellationException) {
+                // Abandoned: the strip walks itself home the way a failed swipe does.
+                if (dragPosition.isNaN()) {
+                    // The gesture left before showing anything — nothing to walk home.
+                    draggedSlot = Int.MIN_VALUE
+                } else if (expressive) {
+                    val hand = dragPosition
+                    scope.launch {
+                        stripPosition.snapTo(hand)
+                        stripPosition.animateTo(
+                            targetPosition.toFloat(),
+                            motion.defaultSpatialSpec(),
+                        )
+                    }
+                    dragPosition = Float.NaN
+                    draggedSlot = Int.MIN_VALUE
+                } else {
+                    val hand = dragPosition
+                    dragAnimJob = scope.launch {
+                        animate(
+                            initialValue = hand,
+                            targetValue = targetPosition.toFloat(),
+                            animationSpec = motion.defaultSpatialSpec(),
+                        ) { value, _ ->
+                            dragPosition = value
+                        }
+                        dragPosition = Float.NaN
+                        draggedSlot = Int.MIN_VALUE
+                    }
+                }
+                throw e
+            }
+        }
         val dragState = rememberDraggableState { delta ->
             // A positive delta: the finger moves right, the strip travels toward the
             // previous page. Both modes move the same coordinate; in the direct mode it

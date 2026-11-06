@@ -2,6 +2,7 @@ package slop.miho.chumpy.data
 
 import android.app.Application
 import android.content.Context
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,6 +26,22 @@ class StoreRegressionTest {
         assertEquals(setOf("test.app"), coreSettings.bypassedApps)
         assertFalse(coreSettings.perAppEnabled)
         assertTrue(ConnectionStore.autoReconnectFresh(context))
+    }
+
+    @Test
+    fun `the LAN bypass flag survives the snapshot roundtrip and defaults on`() {
+        val context = RuntimeEnvironment.getApplication()
+        // The flag rides the published snapshot like its neighbours: what the write
+        // publishes is what the core process reads back.
+        ConnectionStore.update(context) { it.copy(bypassLan = false) }
+        assertFalse(ConnectionStore.current(context).bypassLan)
+        // A snapshot without the key — the shape an older version published — reads
+        // back as the default: the LAN-friendly one, not false.
+        AtomicSnapshot.write(
+            context.getFileStreamPath("connection-settings.json"),
+            JSONObject().put("routing_mode", "GLOBAL").toString(),
+        )
+        assertTrue(ConnectionStore.current(context).bypassLan)
     }
 
     @Test

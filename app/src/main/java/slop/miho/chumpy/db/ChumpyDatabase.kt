@@ -29,6 +29,10 @@ interface SubscriptionDao {
     @Query("UPDATE subscriptions SET autoUpdate = :enabled WHERE id = :id")
     suspend fun setAutoUpdate(id: String, enabled: Boolean)
 
+    /** The pin's own switch — a targeted update, the row's metadata untouched. */
+    @Query("UPDATE subscriptions SET pinned = :pinned WHERE id = :id")
+    suspend fun setPinned(id: String, pinned: Boolean)
+
     @Query("UPDATE subscriptions SET lastUpdateAttempt = :at, lastError = :error WHERE id = :id")
     suspend fun setUpdateError(id: String, at: Long, error: String)
 
@@ -69,6 +73,14 @@ abstract class ProfileDao {
     @Query("UPDATE profiles SET testDelayMillis = :delayMillis, lastTestAt = :testedAt WHERE id = :id")
     abstract suspend fun setDelay(id: String, delayMillis: Long?, testedAt: Long)
 
+    /** The pin's own switch — a targeted update, the row's identity untouched. */
+    @Query("UPDATE profiles SET pinned = :pinned WHERE id = :id")
+    abstract suspend fun setPinned(id: String, pinned: Boolean)
+
+    /** The user's own hide — a targeted update, the row's identity untouched. */
+    @Query("UPDATE profiles SET concealed = :concealed WHERE id = :id")
+    abstract suspend fun setConcealed(id: String, concealed: Boolean)
+
     @Query("SELECT COUNT(*) FROM profiles")
     abstract suspend fun count(): Int
 
@@ -84,7 +96,7 @@ abstract class ProfileDao {
  */
 @Database(
     entities = [SubscriptionEntity::class, ProfileEntity::class],
-    version = 5,
+    version = 8,
     exportSchema = false,
 )
 abstract class ChumpyDatabase : RoomDatabase() {
@@ -160,6 +172,39 @@ abstract class ChumpyDatabase : RoomDatabase() {
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE profiles ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * v6: the source link — the share link a profile was born from, kept verbatim
+         * for the row menu's copy. Old rows carry none, and their copy stays dim until
+         * the next import brings a link along.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE profiles ADD COLUMN sourceLink TEXT")
+            }
+        }
+
+        /**
+         * v7: the pin — the row menu's own flag, carrying pinned rows to the head of
+         * their list.
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE profiles ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * v8: the subscriptions' own pin, and the user's own hide for servers — the
+         * dropdown's pinned rows to its head, the hidden ones out of the list until
+         * the header's chip calls them back.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE profiles ADD COLUMN concealed INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

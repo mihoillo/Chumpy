@@ -28,11 +28,11 @@ enum class FlagStyle { TWEMOJI, SYSTEM, GLOBE }
 
 /**
  * The launcher icon variant. CHUMPY is the flat sky-colored art on white; INVERTED swaps
- * the two; THEMED is the neutral art the system's themed icons (Android 13+) dress in the
- * monet palette — and that the app itself colors from its own accent everywhere it draws
- * (the QS tile, the picker's preview).
+ * the two; DARK is the white art on a near-black #041420; THEMED is the neutral art the
+ * system's themed icons (Android 13+) dress in the monet palette — and that the app itself
+ * colors from its own accent everywhere it draws (the QS tile, the picker's preview).
  */
-enum class IconVariant { CHUMPY, INVERTED, THEMED }
+enum class IconVariant { CHUMPY, INVERTED, THEMED, DARK }
 
 /**
  * The interface accent. ADAPTIVE follows the wallpaper (Material You, Android 12+); the rest
@@ -70,7 +70,13 @@ enum class Accent(val hue: Float) {
      * The hue slowly cycling around the whole color wheel; [hue] is unused — the theme
      * animates it. Hidden behind a long tap on the monochrome swatch.
      */
-    RAINBOW(0f);
+    RAINBOW(0f),
+
+    /**
+     * The user's own picked color; [hue] is unused — the scheme is re-hued from the color
+     * stored in the settings at theming time.
+     */
+    CUSTOM(0f);
 
     /** Whether the hue comes from the picked wallpaper rather than this table. */
     val fromWallpaper: Boolean
@@ -100,6 +106,12 @@ data class UiSettings(
     val hapticFeedback: Boolean = true,
     /** Whether the home screen's exit IP chip reads "Hidden"; flipped by tapping the chip. */
     val hideIp: Boolean = false,
+    /**
+     * The addresses' own curtain: IPs, domains and ports never show — the dots stand
+     * where they stood, in every list and on the server card. The tunnel itself keeps
+     * reading them the same; only the eyes are kept out.
+     */
+    val maskAddresses: Boolean = false,
 
     /**
      * Whether the notifications permission was asked for already: the ask rides the
@@ -125,6 +137,8 @@ data class UiSettings(
     val flagStyle: FlagStyle = FlagStyle.TWEMOJI,
     /** The launcher icon variant; see [IconVariant]. */
     val iconVariant: IconVariant = IconVariant.CHUMPY,
+    /** The CUSTOM accent's own color, as an ARGB int (alpha always opaque). */
+    val customAccent: Int = 0xFF6FACED.toInt(),
     /** How strongly the scrim dims the wallpaper on Home, 0 (none) to 1 (fully dark). */
     val wallpaperDim: Float = 0.4f,
     /** The scrim strength on every other screen, 0 (none) to 1 (fully dark). */
@@ -257,6 +271,7 @@ object SettingsStore {
             grayscaleOffline = prefs.getBoolean(KEY_GRAYSCALE_OFFLINE, false),
             hapticFeedback = prefs.getBoolean(KEY_HAPTIC, true),
             hideIp = prefs.getBoolean(KEY_HIDE_IP, false),
+            maskAddresses = prefs.getBoolean(KEY_MASK_ADDRESSES, false),
             notificationsPermissionAsked = prefs.getBoolean(KEY_NOTIFICATIONS_ASKED, false),
             happSpoof = prefs.getBoolean(KEY_HAPP_SPOOF, true),
             happAppVersion = prefs.getString(KEY_HAPP_APP_VERSION, null).orEmpty()
@@ -275,6 +290,7 @@ object SettingsStore {
             fontId = prefs.getString(KEY_FONT, null) ?: FontRegistry.INTER_ID,
             flagStyle = enumEntry(prefs.getString(KEY_FLAG_STYLE, null), FlagStyle.TWEMOJI),
             iconVariant = enumEntry(prefs.getString(KEY_ICON_VARIANT, null), IconVariant.CHUMPY),
+            customAccent = prefs.getInt(KEY_CUSTOM_ACCENT, 0xFF6FACED.toInt()),
             wallpaperDim = prefs.getFloat(KEY_WALLPAPER_DIM, 0.4f),
             wallpaperDimScreens = prefs.getFloat(KEY_WALLPAPER_DIM_SCREENS, 0.5f),
             wallpaperBlur = prefs.getFloat(KEY_WALLPAPER_BLUR, 0.25f),
@@ -317,6 +333,7 @@ object SettingsStore {
             .putBoolean(KEY_GRAYSCALE_OFFLINE, settings.grayscaleOffline)
             .putBoolean(KEY_HAPTIC, settings.hapticFeedback)
             .putBoolean(KEY_HIDE_IP, settings.hideIp)
+            .putBoolean(KEY_MASK_ADDRESSES, settings.maskAddresses)
             .putBoolean(KEY_NOTIFICATIONS_ASKED, settings.notificationsPermissionAsked)
             .putBoolean(KEY_HAPP_SPOOF, settings.happSpoof)
             .putString(KEY_HAPP_APP_VERSION, settings.happAppVersion)
@@ -329,6 +346,7 @@ object SettingsStore {
             .putString(KEY_FONT, settings.fontId)
             .putString(KEY_FLAG_STYLE, settings.flagStyle.name)
             .putString(KEY_ICON_VARIANT, settings.iconVariant.name)
+            .putInt(KEY_CUSTOM_ACCENT, settings.customAccent)
             .putFloat(KEY_WALLPAPER_DIM, settings.wallpaperDim)
             .putFloat(KEY_WALLPAPER_DIM_SCREENS, settings.wallpaperDimScreens)
             .putFloat(KEY_WALLPAPER_BLUR, settings.wallpaperBlur)
@@ -387,6 +405,7 @@ object SettingsStore {
     private const val KEY_HAPTIC = "haptic_feedback"
     private const val KEY_SIMPLE_TRANSITIONS = "simple_transitions"
     private const val KEY_HIDE_IP = "hide_ip"
+    private const val KEY_MASK_ADDRESSES = "mask_addresses"
     private const val KEY_NOTIFICATIONS_ASKED = "notifications_permission_asked"
 
     // The Happ fingerprint keys, all one global block.
@@ -401,6 +420,7 @@ object SettingsStore {
     private const val KEY_FONT = "font"
     private const val KEY_FLAG_STYLE = "flag_style"
     private const val KEY_ICON_VARIANT = "icon_variant"
+    private const val KEY_CUSTOM_ACCENT = "custom_accent"
     private const val KEY_WALLPAPER_DIM = "wallpaper_dim"
     private const val KEY_WALLPAPER_DIM_SCREENS = "wallpaper_dim_screens"
     private const val KEY_WALLPAPER_BLUR = "wallpaper_blur"

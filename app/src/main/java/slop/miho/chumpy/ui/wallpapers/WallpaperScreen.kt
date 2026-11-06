@@ -77,6 +77,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -1064,6 +1065,10 @@ private fun WallpaperSettingsPage(
                     AccentRow(
                         selected = settings.accent,
                         onSelect = { accent -> onChange { it.copy(accent = accent) } },
+                        customColor = Color(settings.customAccent),
+                        onPickCustom = { color ->
+                            onChange { it.copy(accent = Accent.CUSTOM, customAccent = color.toArgb()) }
+                        },
                         monetPlaceholders = true,
                     )
                 },

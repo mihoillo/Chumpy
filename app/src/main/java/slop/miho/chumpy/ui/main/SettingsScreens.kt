@@ -25,6 +25,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,7 +48,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
@@ -55,6 +55,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -83,6 +84,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -102,8 +104,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.annotation.DrawableRes
-import androidx.graphics.shapes.CornerRounding
-import androidx.graphics.shapes.RoundedPolygon
 import kotlin.math.roundToInt
 import slop.miho.chumpy.BuildConfig
 import slop.miho.chumpy.R
@@ -112,13 +112,17 @@ import slop.miho.chumpy.data.FlagStyle
 import slop.miho.chumpy.data.IconVariant
 import slop.miho.chumpy.data.ThemeMode
 import slop.miho.chumpy.data.UiSettings
+import slop.miho.chumpy.ui.components.FlipTriangleTile
+import slop.miho.chumpy.ui.components.FoldingGroup
 import slop.miho.chumpy.ui.components.InfoChip
+import slop.miho.chumpy.ui.components.TriangleTilePolygon
 import slop.miho.chumpy.ui.components.AccentRow
 import slop.miho.chumpy.ui.components.CountryFlag
 import slop.miho.chumpy.ui.components.RainbowFlag
 import slop.miho.chumpy.ui.components.pressBounce
 import slop.miho.chumpy.ui.components.rememberHapticPoke
 import slop.miho.chumpy.ui.fonts.FontPickerRow
+import slop.miho.chumpy.ui.theme.LocalUiSettings
 import slop.miho.chumpy.ui.theme.backdropScheme
 import slop.miho.chumpy.ui.wallpapers.LocalBackdropDark
 import slop.miho.chumpy.ui.wallpapers.LocalHasWallpaper
@@ -195,6 +199,10 @@ fun InterfaceScreen(
                     AccentRow(
                         selected = settings.accent,
                         onSelect = { accent -> onChange { it.copy(accent = accent) } },
+                        customColor = Color(settings.customAccent),
+                        onPickCustom = { color ->
+                            onChange { it.copy(accent = Accent.CUSTOM, customAccent = color.toArgb()) }
+                        },
                     )
                 },
             )
@@ -369,6 +377,23 @@ fun InterfaceScreen(
                     )
                 },
             )
+            // The addresses' own curtain, the block of its own: an eye struck through
+            // while the curtain stands, the plain eye while it doesn't.
+            SettingsGroup(
+                {
+                    ToggleRow(
+                        title = stringResource(R.string.settings_mask_addresses),
+                        supporting = stringResource(R.string.settings_mask_addresses_hint),
+                        icon = if (settings.maskAddresses) {
+                            R.drawable.ic_visibility_off
+                        } else {
+                            R.drawable.ic_visibility
+                        },
+                        checked = settings.maskAddresses,
+                        onChange = { checked -> onChange { it.copy(maskAddresses = checked) } },
+                    )
+                },
+            )
         }
     }
 }
@@ -462,13 +487,6 @@ private fun PreviewFlag(rainbow: Boolean, twemoji: Boolean) {
         }
     }
 }
-
-/**
- * The row's triangle tile shape: an equilateral triangle, one corner pointing right — the
- * "go deeper" affordance — with corners rounded about as much as the square tiles.
- */
-private val TriangleTilePolygon =
-    RoundedPolygon(numVertices = 3, rounding = CornerRounding(0.25f)).normalized()
 
 /**
  * A setting with a few mutually exclusive options, picked with square icon buttons.
@@ -906,44 +924,11 @@ private fun BackgroundRefreshRow(
 }
 
 /**
- * The triangle tile flipping its point: down while the fold is closed, up while it is
- * open — the trip runs through the per-app row's own right-pointing pose, 180 degrees
- * on a spring a touch looser than the scheme's own, so the point swings just past its
- * mark and settles.
- */
-@Composable
-private fun FlipTriangleTile(pressed: Boolean, expanded: Boolean) {
-    val colors = MaterialTheme.colorScheme
-    val motion = MaterialTheme.motionScheme
-    val resting = colors.secondaryContainer
-    val container by animateColorAsState(
-        targetValue = if (pressed) lerp(resting, colors.onSurface, 0.1f) else resting,
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "flip triangle container",
-    )
-    val rotation by animateFloatAsState(
-        targetValue = if (expanded) -90f else 90f,
-        animationSpec = spring(
-            dampingRatio = 0.65f,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
-        label = "flip triangle rotation",
-    )
-    Surface(
-        shape = TriangleTilePolygon.toShape(),
-        color = container,
-        modifier = Modifier
-            .size(48.dp)
-            .graphicsLayer { rotationZ = rotation },
-    ) {}
-}
-
-/**
  * The "Connection" settings page. One screen, four blocks: how traffic is routed — the
- * mode's tile, the country's flag on it like the fonts' tiles carry their own glyphs —
- * the per-app bypass list's doorway, the URL the real ping measurements fetch through
- * every server, and the background refresh's fold holding the per-subscription
- * switches. Same grouped-list language as the interface page.
+ * mode's tile, the country's flag on it like the fonts' tiles carry their own glyphs,
+ * with the per-app and LAN toggles beside it — the URL the real ping measurements
+ * fetch through every server, and the background refresh's fold holding the
+ * per-subscription switches. Same grouped-list language as the interface page.
  */
 @Composable
 fun ConnectionScreen(
@@ -982,8 +967,10 @@ fun ConnectionScreen(
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Routing and the per-app bypass share one block: both decide what the tunnel
-        // carries — whole countries by their sites and addresses, single apps by name.
+        // Routing, the per-app bypass and the LAN's own toggle share one block: all
+        // three decide what the tunnel carries — whole countries by their sites and
+        // addresses, single apps by name, and the local network by whether it rides
+        // the tunnel at all.
         SettingsGroup(
             {
                 RoutingRow(
@@ -1008,6 +995,23 @@ fun ConnectionScreen(
                     },
                     icon = R.drawable.ic_apps,
                     target = slop.miho.chumpy.ui.perapp.PerAppProxyActivity::class.java,
+                )
+            },
+            {
+                ToggleRow(
+                    title = stringResource(R.string.connection_bypass_lan),
+                    supporting = stringResource(
+                        if (connection.bypassLan) {
+                            R.string.connection_bypass_lan_on
+                        } else {
+                            R.string.connection_bypass_lan_off
+                        },
+                    ),
+                    icon = R.drawable.ic_home_storage,
+                    checked = connection.bypassLan,
+                    onChange = { enabled ->
+                        onChangeConnection { it.copy(bypassLan = enabled) }
+                    },
                 )
             },
         )
@@ -1172,7 +1176,12 @@ fun ConnectionScreen(
                 rows = subscriptions.map { subscription ->
                     @Composable {
                         ToggleRow(
-                            title = subscription.name.ifEmpty { subscription.url },
+                            // The addresses' curtain reaches the unnamed subscriptions
+                            // too: no name means the URL would have shown, so the title
+                            // stands empty instead.
+                            title = subscription.name.ifEmpty {
+                                if (LocalUiSettings.current.maskAddresses) "" else subscription.url
+                            },
                             supporting = null,
                             icon = R.drawable.ic_clock,
                             checked = subscription.autoUpdate,
@@ -1403,95 +1412,6 @@ private fun TestUrlRow(
             color = colors.onSurfaceVariant,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         )
-    }
-}
-
-/**
- * [SettingsGroup]'s body with one fold built in — the header stands, the rows under it
- * unroll and roll back up — because the whole thing is one card, not a doorway group
- * with a second one hanging under it. The seam the fold rides on is the header's own
- * bottom corners: the card's outer ones while the rows are folded, the inner seam once
- * they stand under it, animating on the same clock the rows themselves unroll on.
- */
-@Composable
-private fun FoldingGroup(
-    expanded: Boolean,
-    headerRows: List<@Composable () -> Unit>,
-    rows: List<@Composable () -> Unit>,
-) {
-    val outer = MaterialTheme.shapes.extraLarge
-    val inner = MaterialTheme.shapes.extraSmall
-    val motion = MaterialTheme.motionScheme
-    val density = LocalDensity.current
-    // The corner radii come out of the theme's shapes as px against this density, back
-    // into Dp — the fold animates that Dp, and a shape rebuilt around a new Dp is a new
-    // shape, so the outline follows the animation frame by frame. (Dp corners ignore
-    // the shape size they are handed, which is all the theme's shapes are made of.)
-    fun CornerSize.dp(): Dp = with(density) { toPx(Size(1f, 1f), this).toDp() }
-    val outerTop = outer.topStart.dp()
-    val outerBottom = outer.bottomStart.dp()
-    val innerTop = inner.topStart.dp()
-    val innerBottom = inner.bottomStart.dp()
-    // The seam the fold rides on is the header's last row's bottom corners: the card's
-    // outer ones while the rows are folded, the inner seam once they stand under it.
-    val headerBottom by animateDpAsState(
-        targetValue = if (expanded) innerBottom else outerBottom,
-        animationSpec = motion.defaultSpatialSpec(),
-        label = "happ header bottom corner",
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(outer),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        // The header's own rows ride as surfaces of their own, separated by the same
-        // 2dp seams the fold's rows wear — the first keeps the card's outer top, the
-        // last carries the fold's animated seam, the ones between take inner corners
-        // all around.
-        headerRows.forEachIndexed { index, row ->
-            val last = index == headerRows.lastIndex
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainer.withSurfaceOpacity(),
-                shape = RoundedCornerShape(
-                    topStart = if (index == 0) outerTop else innerTop,
-                    topEnd = if (index == 0) outerTop else innerTop,
-                    bottomStart = if (last) headerBottom else innerBottom,
-                    bottomEnd = if (last) headerBottom else innerBottom,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                row()
-            }
-        }
-        // The fold itself: the rows unroll down from the header and roll back up under
-        // it, the fade riding strong on top — the background refresh's own trade.
-        AnimatedVisibility(
-            visible = expanded,
-            enter = expandVertically(motion.defaultSpatialSpec()) +
-                fadeIn(motion.defaultEffectsSpec()),
-            exit = shrinkVertically(motion.defaultSpatialSpec()) +
-                fadeOut(motion.defaultEffectsSpec()),
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                rows.forEachIndexed { index, row ->
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainer.withSurfaceOpacity(),
-                        shape = RoundedCornerShape(
-                            topStart = inner.topStart,
-                            topEnd = inner.topEnd,
-                            bottomStart = if (index == rows.lastIndex) outer.bottomStart else inner.bottomStart,
-                            bottomEnd = if (index == rows.lastIndex) outer.bottomEnd else inner.bottomEnd,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        row()
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -2083,36 +2003,43 @@ private fun OutgoingRow(
 }
 
 /**
- * The launcher icon picker: the three variants as the icons themselves — round, the way a
+ * The launcher icon picker: the variants as the icons themselves — round, the way a
  * launcher draws them, not glyph-in-a-tile like the other pickers. Chumpy is the flat sky
- * art on white, Inverted swaps the two, Themed shows the app's own live scheme (the neutral
- * art over the surface, in the accent's primary). Picking one swaps the launcher entry on
- * the spot, through the activity aliases in the manifest.
+ * art on white, Inverted swaps the two, Dark lays the same white art on a near-black night
+ * sky, Themed shows the app's own live scheme (the neutral art over the surface, in the
+ * accent's primary). Picking one swaps the launcher entry on the spot, through the
+ * activity aliases in the manifest.
+ *
+ * Like the font row, the previews sit beside the title while the run of them fits; once
+ * they would crowd it, the title steps aside and the previews take the row's full width
+ * beneath it.
  */
 @Composable
 private fun IconVariantRow(
     selected: IconVariant,
     onSelect: (IconVariant) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
+    // Themed is benched for now — its launcher alias doesn't sit right yet.
+    // Everything behind it (the alias, the storage, the QS tile) stays, so it
+    // walks back in the day it's fixed.
+    val variants = IconVariant.entries.filter { it != IconVariant.THEMED }
+    val title = stringResource(R.string.settings_app_icon)
+
+    // The title block, shared by both layouts below: the setting's name over the picked
+    // variant's, like the font and flag rows.
+    val labels: @Composable (Modifier) -> Unit = { modifier ->
+        Column(modifier) {
             Text(
-                text = stringResource(R.string.settings_app_icon),
+                text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            // The picked variant's name under the title, like the font and flag rows.
             Text(
                 text = stringResource(
                     when (selected) {
                         IconVariant.CHUMPY -> R.string.settings_icon_chumpy
                         IconVariant.INVERTED -> R.string.settings_icon_inverted
+                        IconVariant.DARK -> R.string.settings_icon_dark
                         IconVariant.THEMED -> R.string.settings_icon_themed
                     },
                 ),
@@ -2120,21 +2047,55 @@ private fun IconVariantRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Row(
-            modifier = Modifier.padding(start = 16.dp),
-            // Tighter than the swatches look: every preview's wrapper carries its own
-            // margin around the 48dp icon.
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            // Themed is benched for now — its launcher alias doesn't sit right yet.
-            // Everything behind it (the alias, the storage, the QS tile) stays, so it
-            // walks back in the day it's fixed.
-            IconVariant.entries.filter { it != IconVariant.THEMED }.forEach { variant ->
+    }
+
+    // The previews themselves, shared too: tighter than the swatches look, every
+    // preview's wrapper carries its own margin around the 48dp icon.
+    val previews: @Composable () -> Unit = {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            variants.forEach { variant ->
                 IconPreviewButton(
                     variant = variant,
                     selected = variant == selected,
                     onClick = { onSelect(variant) },
                 )
+            }
+        }
+    }
+
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val density = LocalDensity.current
+        val measurer = rememberTextMeasurer()
+        val titleStyle = MaterialTheme.typography.bodyLarge
+        val titleWidth = remember(title, titleStyle, density) {
+            with(density) { measurer.measure(title, titleStyle).size.width.toDp() }
+        }
+        // Everything the inline layout needs on one line: the padding either side, the
+        // title, the gap after it and the whole run of previews.
+        val runWidth = ICON_PREVIEW_SIZE * variants.size + 4.dp * (variants.size - 1)
+        val inlineWidth = 16.dp * 2 + titleWidth + 16.dp + runWidth
+        if (inlineWidth <= maxWidth) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                labels(Modifier.weight(1f))
+                Row(modifier = Modifier.padding(start = 16.dp)) {
+                    previews()
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+            ) {
+                labels(Modifier)
+                Spacer(Modifier.height(12.dp))
+                previews()
             }
         }
     }
@@ -2147,8 +2108,8 @@ private fun IconVariantRow(
  * it and the icon so the two never touch. The art is the monochrome mask (an alpha
  * drawing), tinted per variant, drawn 1.4 times the launcher's own scale — the adaptive
  * icon's safe margins swallow half the circle, and the mark would read as a crumb. The
- * hairline outline keeps the white-on-white and surface-on-surface variants from
- * dissolving into the card.
+ * hairline outline keeps the white-on-white, dark-on-dark and surface-on-surface variants
+ * from dissolving into the card.
  */
 @Composable
 private fun IconPreviewButton(
@@ -2159,9 +2120,12 @@ private fun IconPreviewButton(
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val sky = Color(0xFF6FACED)
+    val night = Color(0xFF041420)
     val (background, art) = when (variant) {
         IconVariant.CHUMPY -> Color.White to sky
         IconVariant.INVERTED -> sky to Color.White
+        // The dark icon: the white art on its near-black night sky.
+        IconVariant.DARK -> night to Color.White
         // The live scheme, as the QS tile and the app itself draw the themed icon.
         IconVariant.THEMED -> colors.surface to colors.primary
     }
@@ -2169,6 +2133,7 @@ private fun IconPreviewButton(
         when (variant) {
             IconVariant.CHUMPY -> R.string.settings_icon_chumpy
             IconVariant.INVERTED -> R.string.settings_icon_inverted
+            IconVariant.DARK -> R.string.settings_icon_dark
             IconVariant.THEMED -> R.string.settings_icon_themed
         },
     )
@@ -2192,7 +2157,7 @@ private fun IconPreviewButton(
     )
     Box(
         modifier = Modifier
-            .size(60.dp)
+            .size(ICON_PREVIEW_SIZE)
             .pressBounce(pressed, taps)
             .clip(CircleShape)
             .drawBehind {
@@ -2237,9 +2202,11 @@ private fun IconPreviewButton(
                 painter = painterResource(
                     when (variant) {
                         IconVariant.CHUMPY -> R.drawable.ic_launcher_foreground
-                        // White art: shown as-is for Inverted, tinted with the live primary
-                        // for Themed — the vector is the real launcher art, not a stand-in.
+                        // White art: shown as-is for Inverted and Dark, tinted with the
+                        // live primary for Themed — the vector is the real launcher art,
+                        // not a stand-in.
                         IconVariant.INVERTED -> R.drawable.ic_launcher_fg_inverted
+                        IconVariant.DARK -> R.drawable.ic_launcher_fg_dark
                         IconVariant.THEMED -> R.drawable.ic_launcher_fg_inverted
                     },
                 ),
@@ -2256,3 +2223,6 @@ private fun IconPreviewButton(
 
 /** How far the icon yields under the pick's ring. */
 private const val ICON_MARK_SCALE = 0.85f
+
+/** One preview's wrapper: the 48dp icon plus the room its pick's ring needs around it. */
+private val ICON_PREVIEW_SIZE = 60.dp

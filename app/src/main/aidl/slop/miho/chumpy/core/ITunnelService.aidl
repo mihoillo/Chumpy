@@ -31,6 +31,9 @@ interface ITunnelService {
     /** The Xray core version string, for the about screen. */
     String coreVersion();
 
+    /** The core's own captured log tail, oldest first — the viewer's whole text. */
+    String coreLogs();
+
     /** Registers a listener; it immediately receives the current state. */
     void registerCallback(ITunnelCallback callback);
 

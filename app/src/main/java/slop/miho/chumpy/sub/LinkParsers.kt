@@ -49,7 +49,11 @@ object LinkParsers {
                 trimmed.startsWith("wg://", ignoreCase = true) -> parseWireguardUri(trimmed)
             else -> null
         }
+        // The link itself rides along, verbatim — the row's copy gives it back the
+        // way it came in, and everything that parses through here is a link by
+        // definition. Configs and balancers arrive by other doors, carrying none.
         return parsed?.takeIf { it.server.isNotBlank() && it.serverPort in 1..65535 }
+            ?.copy(sourceLink = raw)
     }
 
     /** A WireGuard .conf file body (the tunnel-migration import path). */

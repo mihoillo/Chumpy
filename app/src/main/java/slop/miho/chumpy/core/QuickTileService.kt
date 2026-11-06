@@ -24,10 +24,11 @@ import slop.miho.chumpy.ui.theme.themedIconColor
  * process and talks to [XrayCore] and the VPN service directly, so it keeps working when the
  * UI is long gone.
  *
- * The glyph follows the picked launcher icon variant: the sky art, its white inversion, or
- * the "themed" one — the app's own accent, live, so flipping the accent re-tints the tile
- * the next time it shows. The settings flow is watched while the tile is on screen, so a
- * variant picked in the UI lands here without a re-add.
+ * The glyph follows the picked launcher icon variant: the sky art, its white inversion,
+ * the white-on-night dark one, or the "themed" one — the app's own accent, live, so
+ * flipping the accent re-tints the tile the next time it shows. The settings flow is
+ * watched while the tile is on screen, so a variant picked in the UI lands here without
+ * a re-add.
  */
 class QuickTileService : TileService() {
 
@@ -133,7 +134,10 @@ class QuickTileService : TileService() {
     /** The connected glyph in the picked variant's color. */
     private fun variantIcon(variant: IconVariant): Icon = when (variant) {
         IconVariant.CHUMPY -> Icon.createWithResource(this, R.drawable.ic_tile_on)
+        // The dark variant's glyph is the white art too: the tile carries no background
+        // of its own, so the night sky stays in the launcher.
         IconVariant.INVERTED -> Icon.createWithResource(this, R.drawable.ic_tile_inverted)
+        IconVariant.DARK -> Icon.createWithResource(this, R.drawable.ic_tile_inverted)
         // The app's own accent, tinted onto the white glyph at runtime — the live scheme,
         // not a color baked into a resource.
         IconVariant.THEMED -> themedIcon(themedIconColor(this, SettingsStore.tileSettings(this)))

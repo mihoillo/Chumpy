@@ -15,10 +15,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -58,6 +59,8 @@ data class HomeUiState(
     val profileLabel: String? = null,
     /** The flag emoji the selected profile's name begins with, if it does. */
     val profileFlag: String? = null,
+    /** Whether the active subscription's calendar has already run out — the red chip. */
+    val subscriptionExpired: Boolean = false,
     /** Round-trip through the running tunnel, refreshed every 15 s while connected. */
     val pingMillis: Long? = null,
     /** Wall-clock millis of the last transition to UP; null while down. */
@@ -71,6 +74,9 @@ data class HomeUiState(
 /** The servers screen's list: the selected subscription's profiles, plus the transient bits. */
 data class ServersUiState(
     val profiles: List<ProfileEntity> = emptyList(),
+    /** The subscription's concealed rows, kept out of [profiles] — the header's chip
+     *  counts them and the reveal mode shows them. */
+    val concealed: List<ProfileEntity> = emptyList(),
     val selectedProfileId: String? = null,
     /** Whether a real-ping sweep over the list is running (the pull-to-refresh action). */
     val isPinging: Boolean = false,
@@ -203,6 +209,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _coreVersion = MutableStateFlow<String?>(null)
     val coreVersion: StateFlow<String?> = _coreVersion.asStateFlow()
 
+    /**
+     * The core's captured log tail. A snapshot poll rather than a stream: the viewer is
+     * the only reader, and it asks only while its fold stands open — once a second,
+     * binder-cheap, and null simply means the core process is not up yet.
+     */
+    val coreLogs: StateFlow<String?> = flow {
+        while (true) {
+            emit(tunnelClient.coreLogs())
+            delay(1000)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(1000), null)
+
     /** Whether the core's loop is up — the about screen's status half. */
     val coreRunning: StateFlow<Boolean> = tunnelStatus
         .map { it.state == TunnelState.UP }
@@ -210,9 +228,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ------------------------------------------------------------ subscriptions
 
-    /** Every subscription, oldest first; the servers screen's dropdown list. */
+    /** Every subscription, the pinned ones standing the dropdown's ground floor. */
     val subscriptions: StateFlow<List<SubscriptionEntity>> =
         repository.subscriptions()
+            .map { subs -> subs.sortedBy { !it.pinned } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** The subscription whose profiles the servers screen shows. */
@@ -289,34 +308,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // The balancer's internals — the outbounds of a config whose routing
                     // carries a surviving balancer — stay in the store (the balancer's
                     // members resolve by linkKey at connect) but never stand in the
-                    // list: they are the group's plumbing, its parameters, not servers
-                    // to pick from. A config presenting the same server on its own
-                    // un-hides the row on the parser's side.
+                    // list, not even in the reveal mode: they are the group's plumbing,
+                    // its parameters, not servers to pick from. A config presenting the
+                    // same server on its own un-hides the row on the parser's side.
                     // The standalone group's id is a label for the manual profiles' null
-                    // bucket.
+                    // bucket. The user's own hide — the concealed flag — keeps its rows
+                    // in the store too, but those the reveal mode can call back.
                     repository.profilesOf(id?.takeUnless { it == STANDALONE_SUBSCRIPTION_ID })
-                        .map { rows -> rows.filterNot { it.hidden } }
+                        .map { rows ->
+                            rows.filterNot { it.hidden || it.concealed } to
+                                rows.filter { it.concealed && !it.hidden }
+                        }
                 }
-                .combine(connection) { profiles, conn ->
-                    val selected = profiles.firstOrNull { it.id == conn.selectedProfileId }
+                .combine(connection) { (visible, concealed), conn ->
+                    val selected = visible.firstOrNull { it.id == conn.selectedProfileId }
                     // A selection that no longer exists falls back to the list's head —
                     // persisted the moment it is made, so it survives restarts.
-                    if (selected == null && profiles.isNotEmpty()) {
-                        ConnectionStore.update(app) { it.copy(selectedProfileId = profiles.first().id) }
+                    if (selected == null && visible.isNotEmpty()) {
+                        ConnectionStore.update(app) { it.copy(selectedProfileId = visible.first().id) }
                     }
-                    profiles
+                    // The pinned rows stand the list's ground floor, first among
+                    // themselves in the panel's own order; the rest follow as they
+                    // always did. Room's list is stable, so the sort only ever moves
+                    // the rows the pin actually moved. The concealed keep the same
+                    // order for the reveal mode's own block.
+                    visible.sortedBy { !it.pinned } to concealed.sortedBy { !it.pinned }
                 }
-                .collect { profiles ->
+                .collect { (visible, concealed) ->
                     _servers.update { state ->
                         state.copy(
-                            profiles = profiles,
-                            selectedProfileId = profiles.firstOrNull { it.id == connection.value.selectedProfileId }?.id
-                                ?: profiles.firstOrNull()?.id,
+                            profiles = visible,
+                            concealed = concealed,
+                            selectedProfileId = visible.firstOrNull { it.id == connection.value.selectedProfileId }?.id
+                                ?: visible.firstOrNull()?.id,
                         )
                     }
                     // A brand-new list with nothing pinged yet gets one silent sweep, so
                     // the screen opens with answers instead of question marks.
-                    if (profiles.any { it.type != ProfileType.BALANCER && it.lastTestAt == null }) {
+                    if (visible.any { it.type != ProfileType.BALANCER && it.lastTestAt == null }) {
                         pingServers()
                     }
                 }
@@ -380,11 +409,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // The flag panels put at the front of the name moves into the card's icon
                 // slot; the card's header says subscription first, region second.
                 val split = profile?.let { p -> splitLeadingFlag(p.remarks.ifEmpty { p.server }) }
+                // The addresses' curtain reaches Home too: a nameless server's card
+                // keeps the address out of sight — the region line stands empty
+                // rather than saying where it goes.
+                val fallback = if (settings.value.maskAddresses) "" else profile?.server
                 _home.update {
                     it.copy(
                         subscriptionName = subscription?.name,
                         profileFlag = split?.first,
-                        profileLabel = split?.second?.ifEmpty { profile?.server },
+                        profileLabel = split?.second?.ifEmpty { fallback },
+                        // The panel's calendar, read once per report: a subscription
+                        // whose expiry has already passed wears the red chip.
+                        subscriptionExpired = subscription != null &&
+                            subscription.expireEpochSeconds > 0 &&
+                            subscription.expireEpochSeconds <= System.currentTimeMillis() / 1000,
                     )
                 }
             }.collect { }
@@ -444,7 +482,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 CoreConfigFile.write(
                     app,
                     config,
-                    profile.remarks.ifEmpty { profile.server },
+                    // The addresses' curtain reaches the system's own notification: a
+                    // nameless server would have named the address there, so the name
+                    // stands empty instead.
+                    profile.remarks.ifEmpty {
+                        if (settings.value.maskAddresses) "" else profile.server
+                    },
                     profile.subscriptionId?.let { repository.subscriptionById(it)?.name },
                 )
                 currentCoroutineContext().ensureActive()
@@ -554,6 +597,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ConnectionStore.update(app) { it.copy(selectedProfileId = null) }
             }
         }
+    }
+
+    /** The pin's own switch, on whatever row the menu stands — the list re-sorts live. */
+    fun toggleProfilePinned(id: String, pinned: Boolean) {
+        viewModelScope.launch { repository.setProfilePinned(id, pinned) }
+    }
+
+    /** The hide's own switch — the row leaves the list for the header's chip to count. */
+    fun toggleProfileConcealed(id: String, concealed: Boolean) {
+        viewModelScope.launch { repository.setProfileConcealed(id, concealed) }
+    }
+
+    /** The subscription pin's own switch — the dropdown re-sorts live. */
+    fun toggleSubscriptionPinned(id: String, pinned: Boolean) {
+        viewModelScope.launch { repository.setSubscriptionPinned(id, pinned) }
     }
 
     /** Switches the servers screen to another subscription. */

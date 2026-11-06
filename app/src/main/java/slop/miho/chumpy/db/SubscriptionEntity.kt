@@ -41,4 +41,12 @@ data class SubscriptionEntity(
 
     /** The message of the last failed update, shown on the subscription card. */
     val lastError: String? = null,
+
+    /**
+     * The pin the row menu drives: pinned subscriptions stand the dropdown's ground
+     * floor, first whatever the panel's birthday order says. A state like the auto
+     * update, not a trait like the URL — it rides the row through metadata refreshes,
+     * which never replace the row, only copy over it.
+     */
+    val pinned: Boolean = false,
 )

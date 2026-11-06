@@ -291,6 +291,15 @@ private fun InfoChips(
                 .withSurfaceOpacity(),
             content = if (up) colors.onSecondaryContainer else colors.onSurfaceVariant,
         )
+        // The subscription's own red badge: a panel whose calendar has already run out
+        // says so at a glance, whatever the tunnel's own health.
+        if (home.subscriptionExpired) {
+            InfoChip(
+                value = stringResource(R.string.subscription_expired_chip),
+                container = colors.errorContainer.withSurfaceOpacity(),
+                content = colors.onErrorContainer,
+            )
+        }
         if (up) {
             InfoChip(uptimeText(home.uptimeStartMillis), R.drawable.ic_clock)
             val poke = rememberHapticPoke()

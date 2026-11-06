@@ -135,6 +135,11 @@ class DatabaseRegressionTest {
         sql.beginTransaction()
         try {
             ChumpyDatabase.MIGRATION_2_3.migrate(sql)
+            // The rebuild lands the table in its v3 shape; the pin came later (v8) —
+            // the same step the real chain runs next, restoring the shape the DAOs
+            // read. The profiles' own v8 step stays out: the fresh database already
+            // wears its column, and the rebuild's backup carried it over.
+            sql.execSQL("ALTER TABLE subscriptions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
             sql.setTransactionSuccessful()
         } finally {
             sql.endTransaction()

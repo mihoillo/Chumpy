@@ -2,10 +2,19 @@ package slop.miho.chumpy.ui.main
 
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,10 +41,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,15 +57,33 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.StateFlow
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.DailyTraffic
 import slop.miho.chumpy.ui.LossBucket
 import slop.miho.chumpy.ui.StatsUiState
 import slop.miho.chumpy.ui.TrafficSample
+import slop.miho.chumpy.ui.components.FlipTriangleTile
+import slop.miho.chumpy.ui.components.FoldingGroup
 import slop.miho.chumpy.ui.components.InfoChip
+import slop.miho.chumpy.ui.components.pressBounce
+import slop.miho.chumpy.ui.components.rememberHapticPoke
 import slop.miho.chumpy.ui.wallpapers.ReportBarCoverage
 import slop.miho.chumpy.ui.wallpapers.withSurfaceOpacity
 import java.text.SimpleDateFormat
@@ -92,6 +123,7 @@ private const val BUCKET_MILLIS = 15_000L
 fun StatsScreen(
     state: StatsUiState,
     tunnelUp: Boolean,
+    coreLogsFlow: StateFlow<String?>,
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
@@ -149,6 +181,38 @@ fun StatsScreen(
         WeekChartCard(week = state.week)
         TrafficChartCard(samples = state.samples, tunnelUp = tunnelUp)
         LossChartCard(buckets = state.buckets, tunnelUp = tunnelUp)
+        // The core's own story, told by itself: the ring the core process keeps of its
+        // own words. Folded shut out of the box — a debug pane, not a destination — the
+        // copy riding beside the fold's own triangle; the tail itself rides under the
+        // seam, monospaced, warnings and errors lit in their own colors.
+        var logsOpen by rememberSaveable { mutableStateOf(false) }
+        // The tail follows the tunnel while the fold stands open; once a second is
+        // plenty for prose. The flow's own collector starts only here, under the fold.
+        val coreLogs by coreLogsFlow.collectAsStateWithLifecycle()
+        // The copy hands the whole tail to the clipboard, straight from the flow's own
+        // snapshot — the same text the card below shows.
+        val clipboard = LocalClipboardManager.current
+        FoldingGroup(
+            expanded = logsOpen,
+            headerRows = listOf(
+                {
+                    CoreLogsRow(
+                        supporting = coreLogs?.lineSequence()?.lastOrNull()
+                            ?: stringResource(R.string.stats_core_logs_empty),
+                        expanded = logsOpen,
+                        onToggle = { logsOpen = !logsOpen },
+                        onCopy = {
+                            coreLogs?.let { clipboard.setText(AnnotatedString(it)) }
+                        },
+                    )
+                }
+            ),
+            rows = listOf(
+                {
+                    CoreLogCard(logs = coreLogs)
+                }
+            ),
+        )
     }
 }
 
@@ -689,3 +753,176 @@ private fun Path.smoothThrough(points: List<Offset>) {
         cubicTo(midX, previous.y, midX, current.y, current.x, current.y)
     }
 }
+
+/**
+ * The core logs' doorway: the same fold row as the settings' own — the last line under
+ * the title, the triangle flipping open — with the copy tile riding beside the triangle,
+ * a square tile of the row's own language. The copy hands the whole tail over at once.
+ */
+@Composable
+private fun CoreLogsRow(
+    supporting: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onCopy: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val poke = rememberHapticPoke()
+    // Bumped in the click handler: the pop keys off it, so it fires on every click —
+    // the press state alone can often go unnoticed on a quick tap.
+    var taps by remember { mutableIntStateOf(0) }
+    var copyTaps by remember { mutableIntStateOf(0) }
+    val copySource = remember { MutableInteractionSource() }
+    val copyPressed by copySource.collectIsPressedAsState()
+    // The copy tile's own resting tone and pressed dip, the square tiles' language.
+    val resting = colors.secondaryContainer
+    val copyContainer by animateColorAsState(
+        targetValue = if (copyPressed) lerp(resting, colors.onSurface, 0.1f) else resting,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "copy tile container",
+    )
+    val copyLabel = stringResource(R.string.stats_core_logs_copy)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+            ) {
+                poke()
+                taps++
+                onToggle()
+            }
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.stats_core_logs),
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.onSurface,
+            )
+            // The tail's last line tells where the story stands; an empty ring says
+            // why — the core has not spoken yet.
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        // The copy, its own square tap target beside the fold's own triangle.
+        val copyShape = RoundedCornerShape(16.dp)
+        Surface(
+            shape = copyShape,
+            color = copyContainer,
+            contentColor = colors.onSecondaryContainer,
+            modifier = Modifier
+                .size(48.dp)
+                .pressBounce(copyPressed, copyTaps)
+                .clip(copyShape)
+                .combinedClickable(
+                    interactionSource = copySource,
+                    indication = LocalIndication.current,
+                    role = Role.Button,
+                ) {
+                    poke()
+                    copyTaps++
+                    onCopy()
+                }
+                .semantics { contentDescription = copyLabel },
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_content_copy),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+        // The triangle bounces alone when tapped.
+        Box(
+            modifier = Modifier.pressBounce(pressed, taps),
+        ) {
+            FlipTriangleTile(pressed = pressed, expanded = expanded)
+        }
+    }
+}
+
+/**
+ * The log tail itself: the fold's own row is its card — the same surface every card
+ * wears — twenty lines tall, the text monospaced and horizontally scrollable: lines
+ * keep their own width, the card never wraps a stack trace, while the whole tail
+ * scrolls vertically. Warnings wear the tertiary tone, errors the error one, the way
+ * logcat would.
+ */
+@Composable
+private fun CoreLogCard(logs: String?) {
+    val colors = MaterialTheme.colorScheme
+    val scrollState = rememberScrollState()
+    // The tail's own colors: warnings in the tertiary tone, errors in the error one,
+    // the plain lines in the card's own text color. Built here rather than in a
+    // remember: the tail changes with every poll, and every line carries its own mark.
+    val annotated = remember(logs, colors) {
+        buildAnnotatedString {
+            logs?.lineSequence()?.forEachIndexed { index, line ->
+                if (index > 0) append('\n')
+                when {
+                    line.startsWith("E/") -> withStyle(
+                        SpanStyle(color = colors.error),
+                    ) { append(line) }
+
+                    line.startsWith("W/") -> withStyle(
+                        SpanStyle(color = colors.tertiary),
+                    ) { append(line) }
+
+                    else -> append(line)
+                }
+            }
+        }
+    }
+    Box(
+        modifier = Modifier
+            .height(LOG_CARD_HEIGHT)
+            .fillMaxWidth()
+            .verticalScroll(scrollState)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        if (logs.isNullOrBlank()) {
+            Text(
+                text = stringResource(R.string.stats_core_logs_empty),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                ),
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.TopStart),
+            )
+        } else {
+            // The lines keep their own width — a stack trace never wraps — and the
+            // card scrolls them sideways instead.
+            Text(
+                text = annotated,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = MaterialTheme.typography.bodySmall.lineHeight * 1.15f,
+                ),
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .align(Alignment.TopStart),
+            )
+        }
+    }
+    // The tail grows at its end: every poll that lands new lines jumps the view to
+    // the bottom, so the story's own last line stays in sight — the way logcat follows.
+    LaunchedEffect(logs) {
+        scrollState.animateScrollTo(scrollState.maxValue)
+    }
+}
+
+/** The log card's own face: twenty monospaced lines, the padding counted in. */
+private val LOG_CARD_HEIGHT = (20 * 20).dp

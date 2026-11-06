@@ -141,6 +141,11 @@ private fun themeColorScheme(
         settings.accent == Accent.MONO -> monoColorScheme(darkTheme)
         settings.accent == Accent.RAINBOW ->
             (if (darkTheme) darkColorScheme() else lightColorScheme()).withHue(rainbowHue)
+        // The user's own color, re-hued like a fixed accent: the wheel's hue with the
+        // saturation and lightness the scheme's roles carry.
+        settings.accent == Accent.CUSTOM ->
+            (if (darkTheme) darkColorScheme() else lightColorScheme())
+                .withHue(hueOf(settings.customAccent))
         else -> accentColorScheme(settings.accent, monetHues, darkTheme)
     }
     return if (darkTheme && settings.themeMode == ThemeMode.AMOLED) scheme.amoled() else scheme
@@ -288,6 +293,16 @@ private fun Color.desaturated(): Color {
     ColorUtils.colorToHSL(toArgb(), hsl)
     hsl[1] = 0f
     return Color(ColorUtils.HSLToColor(hsl))
+}
+
+/**
+ * The wheel's hue of an ARGB int, in the 0..360 HSL terms [reHued] works in. A gray picks
+ * no side — the sky hue stands in, the CUSTOM accent's fallback.
+ */
+private fun hueOf(argb: Int): Float {
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(argb, hsl)
+    return if (hsl[1] < 0.02f) Accent.SKY.hue else hsl[0]
 }
 
 /**

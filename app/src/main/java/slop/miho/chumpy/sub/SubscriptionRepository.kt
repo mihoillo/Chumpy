@@ -212,6 +212,18 @@ class SubscriptionRepository(
     suspend fun setProfileDelay(id: String, delayMillis: Long?, testedAt: Long) =
         withContext(Dispatchers.IO) { profiles.setDelay(id, delayMillis, testedAt) }
 
+    /** Pins or unpins a row — a targeted update, the row's identity untouched. */
+    suspend fun setProfilePinned(id: String, pinned: Boolean) =
+        withContext(Dispatchers.IO) { profiles.setPinned(id, pinned) }
+
+    /** Hides or reveals a row from the list — a targeted update, the row's identity untouched. */
+    suspend fun setProfileConcealed(id: String, concealed: Boolean) =
+        withContext(Dispatchers.IO) { profiles.setConcealed(id, concealed) }
+
+    /** Pins or unpins a subscription — a targeted update, the row's metadata untouched. */
+    suspend fun setSubscriptionPinned(id: String, pinned: Boolean) =
+        withContext(Dispatchers.IO) { subscriptions.setPinned(id, pinned) }
+
     /**
      * Stamps the drafts as rows: identity, ownership, order and — where the linkKey
      * matches an old row of the same subscription — the old id, ping and its timestamp.
@@ -233,6 +245,12 @@ class SubscriptionRepository(
                 linkKey = key,
                 testDelayMillis = old?.testDelayMillis,
                 lastTestAt = old?.lastTestAt,
+                // The pin rides the identity like the ping does: a server the user
+                // pinned stays pinned through whatever the panel ships next.
+                pinned = old?.pinned ?: false,
+                // The hide rides it too: a server the user hid stays out of sight
+                // through whatever the panel ships next.
+                concealed = old?.concealed ?: false,
             )
         }
     }

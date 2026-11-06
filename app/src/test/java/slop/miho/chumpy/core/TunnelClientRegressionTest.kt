@@ -22,6 +22,7 @@ class TunnelClientRegressionTest {
             override fun measureDelay(configJson: String?, testUrl: String?) = delay
             override fun measureLiveDelay(testUrl: String?) = delay
             override fun coreVersion() = "test"
+            override fun coreLogs() = ""
             override fun registerCallback(callback: ITunnelCallback?) = Unit
             override fun unregisterCallback(callback: ITunnelCallback?) = Unit
         }

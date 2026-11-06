@@ -46,6 +46,12 @@ data class ProfileEntity(
     val remarks: String = "",
     /** Position within the subscription, kept stable across updates. */
     val order: Long = 0,
+    /**
+     * The share link the profile was born from, verbatim — the row menu's copy hands
+     * it back word for word, the way it came in. Null for everything that is not a
+     * link: raw configs, Clash files, balancers.
+     */
+    val sourceLink: String? = null,
 
     // Endpoint and authentication.
     val server: String = "",
@@ -128,6 +134,23 @@ data class ProfileEntity(
     /** The last real ping through the core, in millis; null when never measured. */
     val testDelayMillis: Long? = null,
     val lastTestAt: Long? = null,
+
+    /**
+     * The pin the row menu drives: pinned rows stand the list's ground floor, first
+     * whatever the panel's order says. A state like the ping, not a trait like the
+     * port — it rides the row's identity through subscription updates, and never
+     * enters the link key.
+     */
+    val pinned: Boolean = false,
+
+    /**
+     * The user's own hide — the row menu's "Hide": the row stays in the store but the
+     * list keeps it out of sight, the header's chip holding the count and the door back.
+     * A state like the pin, not a trait like the port — it rides the row's identity
+     * through subscription updates, and never enters the link key. Not the balancer's
+     * own [hidden]: that one is the parser's plumbing, this one is the user's choice.
+     */
+    val concealed: Boolean = false,
 
     /**
      * A digest of everything that defines the server. Subscription updates diff on it: a

@@ -34,6 +34,13 @@ data class ConnectionSettings(
      * back by the user's own hand.
      */
     val autoReconnect: Boolean = false,
+    /**
+     * Whether the local network stays out of the tunnel — the LAN-friendly default.
+     * On, the tunnel claims the public internet only and LAN traffic rides the
+     * physical network as if the VPN were off; off, the one 0.0.0.0/0 route swallows
+     * everything again. The core reads it fresh off disk when a tunnel starts.
+     */
+    val bypassLan: Boolean = true,
 )
 
 object ConnectionStore {
@@ -77,6 +84,7 @@ object ConnectionStore {
             } ?: emptySet(),
             perAppEnabled = json.optBoolean(KEY_PER_APP, true),
             autoReconnect = json.optBoolean(KEY_AUTO_RECONNECT, false),
+            bypassLan = json.optBoolean(KEY_BYPASS_LAN, true),
         )
     }.getOrElse { read(context) }
 
@@ -102,6 +110,7 @@ object ConnectionStore {
             .put(KEY_BYPASS_APPS, JSONArray(settings.bypassedApps.sorted()))
             .put(KEY_PER_APP, settings.perAppEnabled)
             .put(KEY_AUTO_RECONNECT, settings.autoReconnect)
+            .put(KEY_BYPASS_LAN, settings.bypassLan)
         AtomicSnapshot.write(snapshot(context), json.toString())
     }
 
@@ -123,6 +132,7 @@ object ConnectionStore {
             bypassedApps = prefs.getStringSet(KEY_BYPASS_APPS, null)?.toSet() ?: emptySet(),
             perAppEnabled = prefs.getBoolean(KEY_PER_APP, true),
             autoReconnect = prefs.getBoolean(KEY_AUTO_RECONNECT, false),
+            bypassLan = prefs.getBoolean(KEY_BYPASS_LAN, true),
         )
     }
 
@@ -154,4 +164,5 @@ object ConnectionStore {
     private const val KEY_BYPASS_APPS = "bypassed_apps"
     private const val KEY_PER_APP = "per_app_enabled"
     private const val KEY_AUTO_RECONNECT = "auto_reconnect"
+    private const val KEY_BYPASS_LAN = "bypass_lan"
 }

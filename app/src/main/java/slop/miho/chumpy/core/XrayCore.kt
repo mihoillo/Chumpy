@@ -40,6 +40,12 @@ object XrayCore {
     private const val GEOIP = "geoip.dat"
     private const val GEOSITE = "geosite.dat"
 
+    /**
+     * How many log lines the ring keeps. The viewer shows the tail; the ring only wraps
+     * whole lines and never grows past this, so a long session costs nothing.
+     */
+    private const val LOG_CAPACITY = 1000
+
     private lateinit var appContext: Context
 
     /** The core's own worker: init, start/stop loop and stats queries queue here. */
@@ -71,6 +77,35 @@ object XrayCore {
     @Volatile
     private var tunFd: Int = -1
 
+    /**
+     * The core's own logcat, kept in the round: every line this object hands to Log also
+     * lands here, wrapped to [LOG_CAPACITY] lines. The UI reads the tail through the
+     * binder's coreLogs(); synchronized because the worker, the VPN service and the
+     * binder threads all log.
+     */
+    private val logRing = ArrayDeque<String>(LOG_CAPACITY)
+
+    /** The ring's whole tail, oldest first — the viewer's text. */
+    fun coreLogs(): String = synchronized(logRing) { logRing.joinToString("\n") }
+
+    private fun log(level: Int, message: String, error: Exception? = null) {
+        val line = when (level) {
+            Log.ERROR -> "E/"
+            Log.WARN -> "W/"
+            else -> "I/"
+        } + message + (error?.let { ": ${it.message}" } ?: "")
+        synchronized(logRing) {
+            if (logRing.size >= LOG_CAPACITY) logRing.removeFirst()
+            logRing.addLast(line)
+        }
+        if (error != null) {
+            // Log.println takes no throwable; the exception's own message rides the line.
+            Log.println(level, TAG, "$message: ${error.message}")
+        } else {
+            Log.println(level, TAG, message)
+        }
+    }
+
     private var pendingUiRx = 0L
     private var pendingUiTx = 0L
     private var pendingDailyRx = 0L
@@ -80,17 +115,17 @@ object XrayCore {
 
     private val coreCallback = object : CoreCallbackHandler {
         override fun startup(): Long {
-            Log.i(TAG, "Core startup")
+            log(Log.INFO, "Core startup")
             return 0
         }
 
         override fun shutdown(): Long {
-            Log.i(TAG, "Core shutdown")
+            log(Log.INFO, "Core shutdown")
             return 0
         }
 
         override fun onEmitStatus(l: Long, s: String?): Long {
-            if (!s.isNullOrBlank()) Log.d(TAG, "Core status: $s")
+            if (!s.isNullOrBlank()) log(Log.DEBUG, "Core: $s")
             return 0
         }
     }
@@ -105,16 +140,16 @@ object XrayCore {
         try {
             Seq.setContext(appContext)
         } catch (e: Exception) {
-            Log.e(TAG, "Seq.setContext failed", e)
+            log(Log.ERROR, "Seq.setContext failed", e)
         }
         worker.execute {
             try {
                 copyGeoAssets()
                 Libv2ray.initCoreEnv(assetsDir().absolutePath, deviceId())
-                Log.i(TAG, "Xray core ${Libv2ray.checkVersionX()} environment ready")
+                log(Log.INFO, "Xray core ${Libv2ray.checkVersionX()} environment ready")
             } catch (e: Exception) {
                 initFailed = e.message ?: e.javaClass.simpleName
-                Log.e(TAG, "Failed to init core environment", e)
+                log(Log.ERROR, "Failed to init core environment", e)
             } finally {
                 initLatch.countDown()
             }
@@ -141,7 +176,7 @@ object XrayCore {
                     }
                 }
             }
-            Log.i(TAG, "Installed $name (${File(dir, name).length()} bytes)")
+            log(Log.INFO, "Installed $name (${File(dir, name).length()} bytes)")
         }
     }
 
@@ -204,7 +239,7 @@ object XrayCore {
             try {
                 core.stopLoop()
             } catch (e: Exception) {
-                Log.w(TAG, "stopLoop failed", e)
+                log(Log.WARN, "stopLoop failed", e)
             }
         }
         stopper.start()
@@ -213,7 +248,7 @@ object XrayCore {
         } catch (_: InterruptedException) {
         }
         if (stopper.isAlive) {
-            Log.e(TAG, "Core stopLoop wedged; abandoning the controller and exiting")
+            log(Log.ERROR, "Core stopLoop wedged; abandoning the controller and exiting")
             controller = null
             Thread {
                 try {
@@ -253,7 +288,7 @@ object XrayCore {
             initFailed?.let { return -1L }
             return Libv2ray.measureOutboundDelay(configJson, testUrl)
         } catch (e: Exception) {
-            Log.w(TAG, "measureOutboundDelay failed: ${e.message}")
+            log(Log.WARN, "measureOutboundDelay failed", e)
             return -1L
         }
     }
@@ -269,7 +304,7 @@ object XrayCore {
         return try {
             core.measureDelay(testUrl)
         } catch (e: Exception) {
-            Log.w(TAG, "measureLiveDelay failed: ${e.message}")
+            log(Log.WARN, "measureLiveDelay failed", e)
             -1L
         }
     }
@@ -311,7 +346,7 @@ object XrayCore {
             pendingDailyTx = 0L
             lastDailyFlush = System.currentTimeMillis()
         } catch (e: Exception) {
-            Log.w(TAG, "Could not save daily traffic; retaining pending bytes", e)
+            log(Log.WARN, "Could not save daily traffic; retaining pending bytes", e)
         }
     }
 
@@ -337,7 +372,7 @@ object XrayCore {
             }
         } catch (e: Exception) {
             // The stats manager is gone once the core stops; a query racing that is fine.
-            Log.w(TAG, "traffic stats query failed: ${e.message}")
+            log(Log.WARN, "traffic stats query failed", e)
         }
         return longArrayOf(rx, tx)
     }

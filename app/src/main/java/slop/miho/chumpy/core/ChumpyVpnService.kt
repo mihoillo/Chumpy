@@ -113,6 +113,55 @@ class ChumpyVpnService : VpnService() {
         private const val TUN_PREFIX = 30
         private const val TUN_MTU = 1500
 
+        /**
+         * The tunnel's LAN-friendly shape, the "bypass LAN" preset's own blocks: they
+         * add up to the public internet only. One 0.0.0.0/0 route would swallow the
+         * local network as well, and while the core's routing rules send private
+         * ranges direct, the detour still costs LAN apps their broadcast and multicast
+         * shouts: a discovery packet that enters the tunnel lands on the core's own
+         * sockets, which cannot broadcast on the LAN's behalf — exactly how KDE
+         * Connect breaks under a full tunnel. The blocks leave out the private ranges
+         * (10/8, 172.16/12, 192.168/16) and the 224–255 tail (multicast, the reserved
+         * class E, and the 255.255.255.255 broadcast) — v2rayNG's "bypass LAN" preset
+         * without its 240/4 entry, so the global broadcast stays local too. Loopback
+         * never reaches the route table — the kernel's local table wins first — and
+         * the core's own traffic is excluded from the VPN anyway, so the only traffic
+         * whose path changes is the LAN's: it rides the physical network as if the
+         * VPN were off.
+         */
+        internal val ROUTED_IP_BLOCKS = listOf(
+            "0.0.0.0" to 5,
+            "8.0.0.0" to 7,
+            "11.0.0.0" to 8,
+            "12.0.0.0" to 6,
+            "16.0.0.0" to 4,
+            "32.0.0.0" to 3,
+            "64.0.0.0" to 2,
+            "128.0.0.0" to 3,
+            "160.0.0.0" to 5,
+            "168.0.0.0" to 6,
+            "172.0.0.0" to 12,
+            "172.32.0.0" to 11,
+            "172.64.0.0" to 10,
+            "172.128.0.0" to 9,
+            "173.0.0.0" to 8,
+            "174.0.0.0" to 7,
+            "176.0.0.0" to 4,
+            "192.0.0.0" to 9,
+            "192.128.0.0" to 11,
+            "192.160.0.0" to 13,
+            "192.169.0.0" to 16,
+            "192.170.0.0" to 15,
+            "192.172.0.0" to 14,
+            "192.176.0.0" to 12,
+            "192.192.0.0" to 10,
+            "193.0.0.0" to 8,
+            "194.0.0.0" to 7,
+            "196.0.0.0" to 6,
+            "200.0.0.0" to 5,
+            "208.0.0.0" to 4,
+        )
+
         fun startConnect(context: Context) {
             context.startForegroundService(
                 Intent(context, ChumpyVpnService::class.java).setAction(ACTION_CONNECT),
@@ -152,6 +201,8 @@ class ChumpyVpnService : VpnService() {
             XrayCore.measureLiveDelay(testUrl.orEmpty())
 
         override fun coreVersion(): String = XrayCore.coreVersion()
+
+        override fun coreLogs(): String = XrayCore.coreLogs()
 
         override fun registerCallback(callback: ITunnelCallback?) {
             if (callback != null) XrayCore.register(callback)
@@ -408,7 +459,8 @@ class ChumpyVpnService : VpnService() {
                     // The interface a soft fall kept standing retires here, right before
                     // its replacement — never standing alone, never mid-fall.
                     closeKeptTun()
-                    val tun = establishTun(appFilter) ?: throw IllegalStateException(getString(R.string.error_tun_creation))
+                    val tun = establishTun(appFilter, connection.bypassLan)
+                        ?: throw IllegalStateException(getString(R.string.error_tun_creation))
                     tunInterface = tun
                     XrayCore.startLoop(config, tun.fd)?.let { throw it }
                 }
@@ -600,11 +652,17 @@ class ChumpyVpnService : VpnService() {
         }
     }
 
-    private fun establishTun(appFilter: Pair<Boolean, Set<String>>): ParcelFileDescriptor? {
+    private fun establishTun(appFilter: Pair<Boolean, Set<String>>, bypassLan: Boolean): ParcelFileDescriptor? {
         val builder = Builder()
             .setMtu(TUN_MTU)
             .addAddress(TUN_ADDRESS, TUN_PREFIX)
-            .addRoute("0.0.0.0", 0)
+            .apply {
+                if (bypassLan) {
+                    ROUTED_IP_BLOCKS.forEach { (address, prefix) -> addRoute(address, prefix) }
+                } else {
+                    addRoute("0.0.0.0", 0)
+                }
+            }
             .addDnsServer("1.1.1.1")
             .addDnsServer("8.8.8.8")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

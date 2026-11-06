@@ -1,6 +1,7 @@
 package slop.miho.chumpy.ui.main
 
 import android.content.Intent
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.graphics.ColorUtils
@@ -8,12 +9,14 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -23,7 +26,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
@@ -41,9 +43,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
@@ -51,19 +55,19 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -75,6 +79,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.ui.graphics.Color
@@ -82,20 +87,27 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.DailyTraffic
 import slop.miho.chumpy.data.FlagStyle
@@ -107,6 +119,8 @@ import slop.miho.chumpy.db.balancerMemberKeys
 import slop.miho.chumpy.ui.ServersUiState
 import slop.miho.chumpy.ui.scan.ScannerActivity
 import slop.miho.chumpy.ui.components.ActionTile
+import slop.miho.chumpy.ui.components.CardCallout
+import slop.miho.chumpy.ui.components.CardMenu
 import slop.miho.chumpy.ui.components.CookieBackdrop
 import slop.miho.chumpy.ui.components.EmojiFlag
 import slop.miho.chumpy.ui.components.ErrorCard
@@ -115,7 +129,6 @@ import slop.miho.chumpy.ui.components.PrideFlagIcon
 import slop.miho.chumpy.ui.components.SubmitFieldRow
 import slop.miho.chumpy.ui.components.splitLeadingFlag
 import slop.miho.chumpy.ui.components.splitLeadingPrideFlag
-import slop.miho.chumpy.ui.components.rememberHapticDeniedKicks
 import slop.miho.chumpy.ui.components.rememberHapticPoke
 import slop.miho.chumpy.ui.components.rememberHapticSoftPoke
 import slop.miho.chumpy.ui.components.WavyPullToRefreshBox
@@ -123,6 +136,8 @@ import slop.miho.chumpy.ui.components.pressBounce
 import slop.miho.chumpy.ui.components.pullShiftedPadding
 import slop.miho.chumpy.ui.wallpapers.LocalSurfaceOpacity
 import slop.miho.chumpy.ui.wallpapers.ReportBarCoverage
+import slop.miho.chumpy.ui.wallpapers.withSurfaceOpacity
+import slop.miho.chumpy.ui.theme.LocalUiSettings
 
 /**
  * The servers screen: one subscription card up top (the database tile with the reload
@@ -149,6 +164,9 @@ fun ServersScreen(
     onAddSubscription: (url: String, name: String?, onDone: (String?) -> Unit) -> Unit,
     onDeleteSubscription: (String) -> Unit,
     onDeleteManualProfile: (String) -> Unit,
+    onTogglePinned: (String, Boolean) -> Unit,
+    onToggleSubscriptionPinned: (String, Boolean) -> Unit,
+    onToggleConcealed: (String, Boolean) -> Unit,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -166,9 +184,93 @@ fun ServersScreen(
         if (!dropdownOpen) addOpen = false
     }
 
-    // One dialog at a time: the delete question a long press on a subscription row asks.
-    var deleteTarget by remember { mutableStateOf<SubscriptionEntity?>(null) }
-    var configDeleteTarget by remember { mutableStateOf<ProfileEntity?>(null) }
+    // The reveal mode's own flag — the header's chip drives it. Keyed to the selected
+    // subscription: switching groups closes the curtain, the next one opens with its
+    // own hidden ones out of sight again.
+    var revealConcealed by rememberSaveable(selectedSubscription?.id) { mutableStateOf(false) }
+
+    // Back closes the fold the way a tap anywhere over the dimmed list does — but the
+    // gesture gets to lead it. The fold keeps two clocks of its own, the same two the
+    // AnimatedVisibility ran it by: a spring for the height, a quicker fade for the
+    // content. A carried-all-the-way gesture hands them back where the finger left
+    // them and the close finishes on the settle the flag's flip always runs; an
+    // abandoned one walks them home through the composition's own scope — the
+    // handler's cancelled coroutine must not carry the walk, it dies mid-stride.
+    val motion = MaterialTheme.motionScheme
+    val foldScope = rememberCoroutineScope()
+    val foldHeight = remember { Animatable(if (dropdownOpen) 1f else 0f) }
+    val foldAlpha = remember { Animatable(if (dropdownOpen) 1f else 0f) }
+    // The gesture's own hands on the two clocks, NaN while nobody holds them — the
+    // same law the page strip's own drag follows.
+    var foldHeightLead by remember { mutableFloatStateOf(Float.NaN) }
+    var foldAlphaLead by remember { mutableFloatStateOf(Float.NaN) }
+    LaunchedEffect(dropdownOpen) {
+        foldHeight.animateTo(if (dropdownOpen) 1f else 0f, motion.defaultSpatialSpec())
+    }
+    // The fade rides its own quicker clock, the AnimatedVisibility's own pairing.
+    LaunchedEffect(dropdownOpen) {
+        foldAlpha.animateTo(if (dropdownOpen) 1f else 0f, motion.defaultEffectsSpec())
+    }
+    // The fold as it stands: the gesture's hands while it holds it, the clocks' own
+    // otherwise.
+    val foldShown = { if (!foldHeightLead.isNaN()) foldHeightLead else foldHeight.value }
+    val foldFade = { if (!foldAlphaLead.isNaN()) foldAlphaLead else foldAlpha.value }
+
+    PredictiveBackHandler(enabled = dropdownOpen) { progress ->
+        try {
+            progress.collect { event ->
+                // The fade runs ahead of the height — the same lead the fold's own
+                // close keeps between them.
+                foldHeightLead = 1f - event.progress
+                foldAlphaLead = (1f - event.progress).coerceAtLeast(0.25f).let {
+                    (it - 0.25f) / 0.75f
+                }
+            }
+            // Carried all the way: the clocks are handed back where the finger left
+            // them and the close finishes on the settle the flag's flip always runs.
+            foldHeight.snapTo(if (foldHeightLead.isNaN()) 1f else foldHeightLead)
+            foldAlpha.snapTo(if (foldAlphaLead.isNaN()) 1f else foldAlphaLead)
+            foldHeightLead = Float.NaN
+            foldAlphaLead = Float.NaN
+            dropdownOpen = false
+        } catch (e: CancellationException) {
+            // Abandoned: the clocks walk themselves home through the composition's
+            // own scope — the handler's cancelled coroutine must not carry the walk,
+            // it dies mid-stride and leaves the fold stranded.
+            if (!foldHeightLead.isNaN()) {
+                val hand = foldHeightLead
+                val fadeHand = foldAlphaLead
+                foldHeightLead = Float.NaN
+                foldAlphaLead = Float.NaN
+                foldScope.launch {
+                    foldHeight.snapTo(hand)
+                    foldAlpha.snapTo(fadeHand)
+                    launch { foldHeight.animateTo(1f, motion.defaultSpatialSpec()) }
+                    foldAlpha.animateTo(1f, motion.defaultEffectsSpec())
+                }
+            }
+            throw e
+        }
+    }
+
+    // The row menu a long press opens: the row holding it, whatever kind of row — a
+    // subscription's, a loose config's, a subscription's own config. One menu on the
+    // whole screen; while it stands, every card but its host drops into the chooser's
+    // own half-light, and the popup's scrim keeps the list out of touch on its own.
+    var menuHost by remember { mutableStateOf<String?>(null) }
+    // The menu's second face: the delete ask — the menu traded for its Да and Нет
+    // while the question itself rides above the row. One flag serves whichever row
+    // holds the menu, because only one can.
+    var menuAskingDelete by remember { mutableStateOf(false) }
+
+    // Opening a menu (or closing one) always starts from the first face.
+    fun openMenu(id: String?) {
+        menuHost = id
+        menuAskingDelete = false
+    }
+
+    // Both menus' copies ride the same hand: whatever a row was born from, verbatim.
+    val clipboard = LocalClipboardManager.current
 
     // Rows sit under the floating bar while the list outgrows the screen.
     val listState = rememberLazyListState()
@@ -213,6 +315,7 @@ fun ServersScreen(
                     subscription = selectedSubscription,
                     isUpdating = state.isUpdating,
                     expanded = dropdownOpen,
+                    dimmed = menuHost != null,
                     week = week,
                     onToggle = { dropdownOpen = !dropdownOpen },
                     onUpdate = onUpdate,
@@ -222,41 +325,66 @@ fun ServersScreen(
             // The chooser unrolls under the card and the servers stay: the Happ fold's
             // own ride, opening to push the list down and closing to let it climb back
             // — one piece, never leaving the slot empty. While the chooser stands open
-            // the servers are out of play: drawn dim, taken out of touch, and any tap
-            // on them folds the chooser back up — the dim itself is the button.
+            // the servers are out of play: drawn dim — the dim following the fold's own
+            // stand — taken out of touch, and any tap on them folds the chooser back
+            // up — the dim itself is the button. A row's open menu keeps the same dim
+            // lit — one formula, so the two never stack on top of each other.
             item {
                 val motion = MaterialTheme.motionScheme
                 val dimmed by animateFloatAsState(
-                    targetValue = if (dropdownOpen) 0.45f else 1f,
-                    animationSpec = motion.defaultEffectsSpec(),
+                    targetValue = if (menuHost != null) 0.45f else lerp(1f, 0.45f, foldShown()),
+                    animationSpec = motion.fastEffectsSpec(),
                     label = "servers dim",
                 )
                 val poke = rememberHapticPoke()
                 Column(Modifier.fillMaxWidth()) {
-                    AnimatedVisibility(
-                        visible = dropdownOpen,
-                        enter = expandVertically(motion.defaultSpatialSpec()) +
-                            fadeIn(motion.defaultEffectsSpec()),
-                        exit = shrinkVertically(motion.defaultSpatialSpec()) +
-                            fadeOut(motion.defaultEffectsSpec()),
-                    ) {
-                        Column(Modifier.padding(bottom = 8.dp)) {
-                            SubscriptionDropdown(
-                                subscriptions = subscriptions,
-                                selectedId = selectedSubscription?.id,
-                                week = week,
-                                manualCount = manualCount,
-                                addOpen = addOpen,
-                                addUrl = addUrl,
-                                onAddOpenChange = { addOpen = it },
-                                onAddUrlChange = { addUrl = it },
-                                onAdd = { url, onDone -> onAddSubscription(url, null, onDone) },
-                                onSelect = { id ->
-                                    dropdownOpen = false
-                                    if (id != selectedSubscription?.id) onSelectSubscription(id)
-                                },
-                                onDeleteRequest = { deleteTarget = it },
-                            )
+                    // The fold on its own two clocks — the same pairing the
+                    // AnimatedVisibility ran it by, so an open and a close play the
+                    // same ride they always did. The window clips the content at
+                    // whatever of it stands revealed, and the content rides the
+                    // window's bottom edge — bottom-anchored the way the stock
+                    // expandVertically anchors it, so the list slides out from
+                    // under the card rather than being unveiled in place; the fade
+                    // rides its own quicker clock and runs ahead of the height, the
+                    // way the fold's own close keeps them.
+                    if (foldShown() > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clipToBounds()
+                                .layout { measurable, constraints ->
+                                    val placeable = measurable.measure(constraints)
+                                    val height = (placeable.height * foldShown()).roundToInt()
+                                    layout(placeable.width, height) {
+                                        placeable.place(0, height - placeable.height)
+                                    }
+                                }
+                                .graphicsLayer { alpha = foldFade() },
+                        ) {
+                            Column(Modifier.padding(bottom = 8.dp)) {
+                                SubscriptionDropdown(
+                                    subscriptions = subscriptions,
+                                    selectedId = selectedSubscription?.id,
+                                    week = week,
+                                    manualCount = manualCount,
+                                    addOpen = addOpen,
+                                    addUrl = addUrl,
+                                    onAddOpenChange = { addOpen = it },
+                                    onAddUrlChange = { addUrl = it },
+                                    onAdd = { url, onDone -> onAddSubscription(url, null, onDone) },
+                                    onSelect = { id ->
+                                        dropdownOpen = false
+                                        if (id != selectedSubscription?.id) onSelectSubscription(id)
+                                    },
+                                    onDeleteRequest = { onDeleteSubscription(it.id) },
+                                    onTogglePinned = onToggleSubscriptionPinned,
+                                    menuHost = menuHost,
+                                    onMenuHostChange = { openMenu(it) },
+                                    menuAskingDelete = menuAskingDelete,
+                                    onMenuAskingChange = { menuAskingDelete = it },
+                                    onCopyText = { text -> clipboard.setText(AnnotatedString(text)) },
+                                )
+                            }
                         }
                     }
                     Box {
@@ -266,14 +394,40 @@ fun ServersScreen(
                                 .graphicsLayer { alpha = dimmed },
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            ServersHeader(state = state)
+                            ServersHeader(
+                                state = state,
+                                expired = selectedSubscription?.let { isExpired(it) } == true,
+                                onToggleReveal = { revealConcealed = !revealConcealed },
+                            )
+                            // The reveal mode's own list: the concealed rows come back
+                            // at the places the panel keeps them in — not a block of
+                            // their own above the list, but their own seats in it —
+                            // wearing the half-light and the slashed eye until the chip
+                            // puts them away again. The merge repeats the store's own
+                            // order (the pin's ground floor, then the panel's own
+                            // sequence), so a revealed row lands exactly where it
+                            // always stood.
+                            val rows = if (revealConcealed && state.concealed.isNotEmpty()) {
+                                (state.profiles + state.concealed).sortedWith(
+                                    compareBy({ !it.pinned }, { it.order }, { it.remarks }),
+                                )
+                            } else {
+                                state.profiles
+                            }
                             ServerGroup(
-                                profiles = state.profiles,
+                                profiles = rows,
                                 selectedId = state.selectedProfileId,
                                 flagStyle = flagStyle,
                                 tunnelUp = tunnelUp,
                                 onSelect = onSelect,
-                                onDelete = { configDeleteTarget = it },
+                                onDelete = { onDeleteManualProfile(it.id) },
+                                onTogglePinned = onTogglePinned,
+                                onToggleConcealed = onToggleConcealed,
+                                menuHost = menuHost,
+                                onMenuHostChange = { openMenu(it) },
+                                menuAskingDelete = menuAskingDelete,
+                                onMenuAskingChange = { menuAskingDelete = it },
+                                onCopyText = { text -> clipboard.setText(AnnotatedString(text)) },
                             )
                         }
                         // The catcher over the out-of-play list: no ripple, no press —
@@ -296,27 +450,6 @@ fun ServersScreen(
             }
         }
     }
-
-    configDeleteTarget?.let { profile ->
-        DeleteConfigDialog(
-            profile = profile,
-            onConfirm = {
-                onDeleteManualProfile(profile.id)
-                configDeleteTarget = null
-            },
-            onDismiss = { configDeleteTarget = null },
-        )
-    }
-    deleteTarget?.let { subscription ->
-        DeleteSubscriptionDialog(
-            subscription = subscription,
-            onConfirm = {
-                onDeleteSubscription(subscription.id)
-                deleteTarget = null
-            },
-            onDismiss = { deleteTarget = null },
-        )
-    }
 }
 
 /**
@@ -325,7 +458,12 @@ fun ServersScreen(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ServersHeader(state: ServersUiState) {
+private fun ServersHeader(
+    state: ServersUiState,
+    expired: Boolean,
+    onToggleReveal: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
@@ -348,6 +486,27 @@ private fun ServersHeader(state: ServersUiState) {
                 )
             }
         }
+        // The subscription's own red badge among the counts: a panel whose calendar
+        // has already run out says so at a glance, whatever the list's own health.
+        if (expired) {
+            InfoChip(
+                value = stringResource(R.string.subscription_expired_chip),
+                container = colors.errorContainer.withSurfaceOpacity(),
+                content = colors.onErrorContainer,
+            )
+        }
+        // The hidden ones' own count, the reveal mode's door: a tap calls them back into
+        // their own block above the list, another puts them away again. The chip stays
+        // gone while nothing is hidden — a list that never hides keeps its row quiet.
+        // The eye alone carries the meaning; the number alone carries the count.
+        if (state.concealed.isNotEmpty()) {
+            InfoChip(
+                value = state.concealed.size.toString(),
+                icon = R.drawable.ic_visibility_off,
+                animateValue = true,
+                onClick = onToggleReveal,
+            )
+        }
     }
 }
 
@@ -360,12 +519,15 @@ private fun ServersHeader(state: ServersUiState) {
  * the chooser's ask: the report rides down and out of view, and on the same backing
  * steps in the ask — the database tile alone, the call to action, the arrow that folds
  * it back — while the button's tap stays a different ask: pulling new servers in.
+ * While some row's menu stands open, the card dims with everything else — the menu's
+ * own spotlight.
  */
 @Composable
 private fun SubscriptionCard(
     subscription: SubscriptionEntity?,
     isUpdating: Boolean,
     expanded: Boolean,
+    dimmed: Boolean,
     week: List<DailyTraffic>,
     onToggle: () -> Unit,
     onUpdate: () -> Unit,
@@ -389,6 +551,13 @@ private fun SubscriptionCard(
         animationSpec = motion.defaultEffectsSpec(),
         label = "subscription supporting",
     )
+    // A row's open menu dims the card with the rest — the same half-light the chooser
+    // lays over the servers.
+    val dimmedAlpha by animateFloatAsState(
+        targetValue = if (dimmed) 0.45f else 1f,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "subscription card dim",
+    )
 
     Surface(
         onClick = {
@@ -398,7 +567,9 @@ private fun SubscriptionCard(
         shape = MaterialTheme.shapes.extraLarge,
         color = containerColor,
         contentColor = contentColor,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { alpha = dimmedAlpha },
     ) {
         // The card itself trades faces: opening, the report rides down and out of view
         // while the chooser's ask drops in from above on the same backing; closing,
@@ -677,6 +848,11 @@ private fun SubscriptionTitleRow(
     }
 }
 
+/** The panel's calendar, already run out: expiry reported and the moment passed. */
+private fun isExpired(subscription: SubscriptionEntity): Boolean =
+    subscription.expireEpochSeconds > 0 &&
+        subscription.expireEpochSeconds <= System.currentTimeMillis() / 1000
+
 /**
  * The chooser's own face, the card the report card becomes while the list is open: the
  * same backing, carrying only the home-storage tile — the collapse button the card turns
@@ -781,10 +957,11 @@ private fun UpdateButton(
  * The unfolded subscription list: one row per subscription — the servers' own segmented
  * container, Surface подложки, cookie-marked pick and all — with the "add subscription"
  * row closing the list off, one of the rows itself, its icon on the square backing the
- * card's tile wears. A long press on a subscription's row asks the heavier question:
- * deleting that subscription and everything it brought in. The loose configs' row asks
- * nothing — it owns no subscription to delete, its members answer their own long press
- * in the server list below.
+ * card's tile wears. A long press on a subscription's row opens the row's own menu: the
+ * pin it will one day carry, the URL it was added from (there for the copying, verbatim),
+ * and the delete that asks the heavier question. The loose configs' row asks nothing —
+ * it owns no subscription to ask about, its members answer their own long press in the
+ * server list below.
  */
 @Composable
 private fun SubscriptionDropdown(
@@ -799,6 +976,12 @@ private fun SubscriptionDropdown(
     onAdd: (url: String, onDone: (String?) -> Unit) -> Unit,
     onSelect: (String) -> Unit,
     onDeleteRequest: (SubscriptionEntity) -> Unit,
+    onTogglePinned: (String, Boolean) -> Unit,
+    menuHost: String?,
+    onMenuHostChange: (String?) -> Unit,
+    menuAskingDelete: Boolean,
+    onMenuAskingChange: (Boolean) -> Unit,
+    onCopyText: (String) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -846,6 +1029,13 @@ private fun SubscriptionDropdown(
         animationSpec = motion.defaultSpatialSpec(),
         label = "add row gap",
     )
+    // The add row wears the same half-light the rows around it do while one of them
+    // holds its menu open — the invitation dims with the rest of the list.
+    val addDim by animateFloatAsState(
+        targetValue = if (menuHost != null) 0.45f else 1f,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "add row dim",
+    )
     // The subscriptions and the add row stand as one segmented block; the add row's
     // opening is what parts it — the seam under the block blooms into the card's own
     // corners and the button gap of air slides in beneath it.
@@ -868,13 +1058,29 @@ private fun SubscriptionDropdown(
                     R.drawable.ic_database
                 },
                 onClick = { onSelect(subscription.id) },
-                // Only a real subscription's row carries the delete question; the loose
-                // configs' row has no subscription behind it to take with it.
-                onLongClick = if (subscription.id == STANDALONE_SUBSCRIPTION_ID) {
+                // Only a real subscription's row carries the menu — the pin, its URL,
+                // the delete that asks the heavier question. The loose configs' row
+                // owns no subscription, so it owns no menu either: its members answer
+                // their own long press in the server list below.
+                menu = if (subscription.id == STANDALONE_SUBSCRIPTION_ID) {
                     null
                 } else {
-                    { onDeleteRequest(subscription) }
+                    RowMenu(
+                        open = menuHost == subscription.id,
+                        onOpenChange = { open -> onMenuHostChange(subscription.id.takeIf { open }) },
+                        askingDelete = menuAskingDelete,
+                        onAskingDeleteChange = onMenuAskingChange,
+                        deleteQuestion = stringResource(R.string.subscription_delete_title),
+                        canDelete = true,
+                        canCopy = true,
+                        copyEnabled = subscription.url.isNotBlank(),
+                        onCopy = { onCopyText(subscription.url) },
+                        onDelete = { onDeleteRequest(subscription) },
+                        pinned = subscription.pinned,
+                        onTogglePinned = { onTogglePinned(subscription.id, it) },
+                    )
                 },
+                dimmed = menuHost != null && menuHost != subscription.id,
                 shape = RoundedCornerShape(
                     topStart = if (first) outerTop else innerTop,
                     topEnd = if (first) outerTop else innerTop,
@@ -893,7 +1099,9 @@ private fun SubscriptionDropdown(
             color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
             // The spring's overshoot dips below zero on the way to the seam — padding
             // takes none of that, it is clamped at the seam itself.
-            modifier = Modifier.padding(top = addGap.coerceAtLeast(0.dp)),
+            modifier = Modifier
+                .graphicsLayer { alpha = addDim }
+                .padding(top = addGap.coerceAtLeast(0.dp)),
         )
     }
 }
@@ -1177,13 +1385,13 @@ private fun SubscriptionRow(
     week: List<DailyTraffic>,
     icon: Int,
     onClick: () -> Unit,
-    onLongClick: (() -> Unit)?,
+    menu: RowMenu?,
+    dimmed: Boolean,
     shape: Shape,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
-    val kicks = rememberHapticDeniedKicks()
     val containerColor by animateColorAsState(
         targetValue = (if (selected) colors.primaryContainer else colors.surfaceContainer)
             .copy(alpha = LocalSurfaceOpacity.current),
@@ -1210,11 +1418,20 @@ private fun SubscriptionRow(
         animationSpec = motion.defaultEffectsSpec(),
         label = "subscription row icon",
     )
+    // Another row's open menu lays its half-light over this one — the chooser's own
+    // 0.45, worn one row at a time while the menu stands.
+    val dimmedAlpha by animateFloatAsState(
+        targetValue = if (dimmed) 0.45f else 1f,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "subscription row dim",
+    )
     Surface(
         shape = shape,
         color = containerColor,
         contentColor = contentColor,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { alpha = dimmedAlpha },
     ) {
         ListItem(
             modifier = Modifier
@@ -1230,15 +1447,31 @@ private fun SubscriptionRow(
                         poke()
                         onClick()
                     },
-                    onLongClick = onLongClick?.let { handler ->
+                    // The long press opens the row's own menu — the pin, the URL, the
+                    // delete — for the rows that have one.
+                    onLongClick = menu?.let { rowMenu ->
                         {
-                            kicks()
-                            handler()
+                            poke()
+                            rowMenu.onOpenChange(true)
                         }
                     },
                 ),
             headlineContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The pin's mark in the list's own scale: a pinned subscription
+                    // wears the small pin at its name, the dropdown's own badge —
+                    // the fold's window clips at its edge, so the corner carry the
+                    // server rows use would lose the head outside it.
+                    if (subscription.pinned) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_keep),
+                            contentDescription = stringResource(R.string.card_menu_pinned),
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .padding(end = 4.dp)
+                                .size(16.dp),
+                        )
+                    }
                     Text(
                         text = subscription.name.takeIf { it.isNotBlank() }
                             ?: stringResource(R.string.subscription_none),
@@ -1296,6 +1529,24 @@ private fun SubscriptionRow(
             ),
             tonalElevation = 0.dp,
         )
+        // The row's own asks, standing over the row itself: the popup anchors to the
+        // Surface, so the menu drops out centered under the whole row.
+        menu?.let { rowMenu ->
+            CardActionsMenu(
+                expanded = rowMenu.open,
+                onClose = { rowMenu.onOpenChange(false) },
+                askingDelete = rowMenu.askingDelete,
+                onAskingDeleteChange = rowMenu.onAskingDeleteChange,
+                deleteQuestion = rowMenu.deleteQuestion,
+                canDelete = rowMenu.canDelete,
+                canCopy = rowMenu.canCopy,
+                copyEnabled = rowMenu.copyEnabled,
+                onCopy = rowMenu.onCopy,
+                onDelete = rowMenu.onDelete,
+                pinned = rowMenu.pinned,
+                onTogglePinned = rowMenu.onTogglePinned,
+            )
+        }
     }
 }
 
@@ -1459,7 +1710,10 @@ private fun SubscriptionRowInfo(
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = supportingColor,
+                    // An expired subscription's days read in red — the row's own quiet
+                    // way of saying the calendar has run out, the card's badge echoed
+                    // where the chip itself doesn't reach.
+                    color = if (secondsLeft <= 0) colors.error else supportingColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1580,6 +1834,13 @@ private fun ServerGroup(
     tunnelUp: Boolean,
     onSelect: (String) -> Unit,
     onDelete: (ProfileEntity) -> Unit,
+    onTogglePinned: (String, Boolean) -> Unit,
+    onToggleConcealed: (String, Boolean) -> Unit,
+    menuHost: String?,
+    onMenuHostChange: (String?) -> Unit,
+    menuAskingDelete: Boolean,
+    onMenuAskingChange: (Boolean) -> Unit,
+    onCopyText: (String) -> Unit,
 ) {
     if (profiles.isEmpty()) {
         ServersEmpty()
@@ -1593,15 +1854,40 @@ private fun ServerGroup(
                     selected = profile.id == selectedId,
                     flagStyle = flagStyle,
                     tunnelUp = tunnelUp,
-                    onSelect = { onSelect(profile.id) },
-                    // The delete question belongs to the loose configs alone — their own
-                    // row is the only thing that owns them. A subscription's servers
-                    // answer to the subscription itself, and this row is not their place.
-                    onLongClick = if (profile.subscriptionId == null) {
-                        { onDelete(profile) }
+                    // A concealed row, called back by the chip, stands where it always
+                    // stood but stays out of play: the tap that would pick it does
+                    // nothing — the menu's own Показать is its way back.
+                    onSelect = if (profile.concealed) {
+                        {}
                     } else {
-                        null
+                        { onSelect(profile.id) }
                     },
+                    // Every config row carries the menu, but not every one the same
+                    // menu: the loose configs own themselves — the pin, the hide and
+                    // the delete are theirs, the copy of the link they were born from
+                    // too — while a subscription's configs answer to the subscription,
+                    // and their menu is the pin and the hide alone.
+                    menu = RowMenu(
+                        open = menuHost == profile.id,
+                        onOpenChange = { open -> onMenuHostChange(profile.id.takeIf { open }) },
+                        askingDelete = menuAskingDelete,
+                        onAskingDeleteChange = onMenuAskingChange,
+                        deleteQuestion = stringResource(R.string.config_delete_title),
+                        canDelete = profile.subscriptionId == null,
+                        canCopy = profile.subscriptionId == null,
+                        copyEnabled = profile.sourceLink != null,
+                        onCopy = { profile.sourceLink?.let(onCopyText) },
+                        onDelete = { onDelete(profile) },
+                        pinned = profile.pinned,
+                        onTogglePinned = { onTogglePinned(profile.id, it) },
+                        // Every server row hides — the whole list is the user's own
+                        // shelf. The subscriptions' own rows (the dropdown) keep the
+                        // door shut: their menu never passes one.
+                        canHide = true,
+                        concealed = profile.concealed,
+                        onToggleConcealed = { onToggleConcealed(profile.id, it) },
+                    ),
+                    dimmed = menuHost != null && menuHost != profile.id,
                     shape = shape,
                 )
             }
@@ -1609,10 +1895,11 @@ private fun ServerGroup(
     }
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.extraSmall
+    // No clip on the block: a pinned row wears its pin half over the edge, and the
+    // block's own outline would take it. The rows clip themselves — each to its own
+    // shape — which is all the segmented look ever asked of it.
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(outer),
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         rows.forEachIndexed { index, row ->
@@ -1661,8 +1948,9 @@ private fun ServersEmpty() {
  * One server row: the remark as the headline, the endpoint and protocol in the supporting
  * line, the last real ping after the name — the accent from [HIGH_PING_MILLIS] on — and the
  * spinning cookie marking the pick. Selectable at any time, tunnel or not; a tap that lands
- * while the tunnel is up swaps the server in place. A long press asks the delete question,
- * and only a loose config's row ever gets one — the rest belong to their subscription.
+ * while the tunnel is up swaps the server in place. A long press opens the row's own menu —
+ * the pin, the link, the delete — and a pinned row wears the pin itself, stuck through its
+ * top-right corner at its own angle.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1672,7 +1960,8 @@ private fun ServerRow(
     flagStyle: FlagStyle,
     tunnelUp: Boolean,
     onSelect: () -> Unit,
-    onLongClick: (() -> Unit)?,
+    menu: RowMenu?,
+    dimmed: Boolean,
     shape: Shape,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -1685,7 +1974,10 @@ private fun ServerRow(
     // The flag the panel put at the front of the name moves into the icon slot; the
     // headline shows the name without it.
     val (flag, splitTitle) = splitLeadingFlag(prideStripped)
-    val title = splitTitle.ifEmpty { profile.server }
+    // The addresses' curtain: a nameless row would have shown the address itself, so
+    // the headline stands empty instead — the address keeps out of sight entirely.
+    val masked = LocalUiSettings.current.maskAddresses
+    val title = splitTitle.ifEmpty { if (masked) "" else profile.server }
     val darkRow = colors.surface.luminance() < 0.5f
     val cyclingHue = if (pride != null) prideHueCycle() else null
 
@@ -1728,6 +2020,15 @@ private fun ServerRow(
         animationSpec = motion.defaultEffectsSpec(),
         label = "server icon",
     )
+    // Another row's open menu lays its half-light over this one — the same 0.45 the
+    // chooser dims the whole list with, worn row by row. A concealed row wears it
+    // always, the reveal mode's own uniform: half-light and the slashed eye at the
+    // end saying what the chip called back.
+    val dimmedAlpha by animateFloatAsState(
+        targetValue = if (dimmed || profile.concealed) 0.45f else 1f,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "server row dim",
+    )
 
     // A pride row's container and tile are computed straight from the cycling hue — the
     // hue itself is the animation, so the state animators bow out for those two.
@@ -1753,29 +2054,43 @@ private fun ServerRow(
         measured = true
     }
 
-    Surface(
-        shape = shape,
-        color = containerColor,
-        contentColor = contentColor,
-        modifier = Modifier.fillMaxWidth(),
+    // The row's own frame, clipping to nothing: every Surface clips to its shape,
+    // and the pin rides the top-right corner half over the edge — so the pin stands
+    // outside the card, pinned through it from the frame. The dim wears the frame,
+    // so the pin follows the card wherever the list's light goes.
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { alpha = dimmedAlpha },
     ) {
-        ListItem(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(shape)
-                .combinedClickable(
-                    role = Role.Button,
-                    onClick = {
-                        if (!selected) {
-                            poke()
-                            onSelect()
-                        }
-                    },
-                    onLongClick = {
-                        poke()
-                        onLongClick?.invoke()
-                    },
-                ),
+        Surface(
+            shape = shape,
+            color = containerColor,
+            contentColor = contentColor,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            ListItem(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(shape)
+                    .combinedClickable(
+                        role = Role.Button,
+                        onClick = {
+                            if (!selected) {
+                                poke()
+                                onSelect()
+                            }
+                        },
+                        // The long press opens the row's own menu — the pin, the
+                        // link, the delete — for the loose configs, the rows that
+                        // own themselves.
+                        onLongClick = menu?.let { rowMenu ->
+                            {
+                                poke()
+                                rowMenu.onOpenChange(true)
+                            }
+                        },
+                    ),
             headlineContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -1826,9 +2141,12 @@ private fun ServerRow(
                             balancerStrategyLabel(profile),
                         ).joinToString("  ·  ")
                     } else {
+                        // The addresses' curtain: the protocol keeps its name, the
+                        // endpoint keeps out of sight — no placeholder stands in,
+                        // the line just ends where the address began.
                         listOfNotNull(
                             protocolLabel(profile),
-                            "${profile.server}:${profile.serverPort}",
+                            if (masked) null else "${profile.server}:${profile.serverPort}",
                         ).joinToString("  ·  ")
                     },
                     maxLines = 1,
@@ -1880,8 +2198,22 @@ private fun ServerRow(
                     }
                 }
             },
-            // No trailing mark: the picked row already wears the accent and the cookie —
+            // The concealed row's own mark: the slashed eye at the end, the chip's
+            // icon riding the row itself — the reveal mode's uniform. Otherwise no
+            // trailing mark: the picked row already wears the accent and the cookie,
             // a checkmark on top of them would say the same thing a third time.
+            trailingContent = if (profile.concealed) {
+                {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_visibility_off),
+                        contentDescription = stringResource(R.string.card_menu_concealed),
+                        tint = supportingColor,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            } else {
+                null
+            },
             colors = ListItemDefaults.colors(
                 // The row's Surface already paints the container; painting it here again
                 // stacked the translucent color twice, leaving these rows denser than the
@@ -1894,6 +2226,48 @@ private fun ServerRow(
             ),
             tonalElevation = 0.dp,
         )
+        }
+        // The row's own asks, standing over the row itself: the popup anchors to the
+        // row's frame, so the menu drops out centered under the whole row.
+        menu?.let { rowMenu ->
+            CardActionsMenu(
+                expanded = rowMenu.open,
+                onClose = { rowMenu.onOpenChange(false) },
+                askingDelete = rowMenu.askingDelete,
+                onAskingDeleteChange = rowMenu.onAskingDeleteChange,
+                deleteQuestion = rowMenu.deleteQuestion,
+                canDelete = rowMenu.canDelete,
+                canCopy = rowMenu.canCopy,
+                copyEnabled = rowMenu.copyEnabled,
+                onCopy = rowMenu.onCopy,
+                onDelete = rowMenu.onDelete,
+                pinned = rowMenu.pinned,
+                onTogglePinned = rowMenu.onTogglePinned,
+                canHide = rowMenu.canHide,
+                concealed = rowMenu.concealed,
+                onToggleConcealed = rowMenu.onToggleConcealed,
+            )
+        }
+        // The pin's mark: a pinned row wears the pin itself, stuck through the card's
+        // top-right corner — a little over the edge, at the row's own dice-rolled
+        // angle, in the accent. The symbol's needle points straight down at rest, so
+        // the tilt rolls clockwise, 15° to 45°: the needle walks into the card, the
+        // head leans out of the corner. The dice roll once per row and stay rolled —
+        // the same row shows the same pin every time it comes around.
+        if (profile.pinned) {
+            Icon(
+                painter = painterResource(R.drawable.ic_keep),
+                contentDescription = stringResource(R.string.card_menu_pinned),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 8.dp, y = (-6).dp)
+                    .size(28.dp)
+                    .graphicsLayer {
+                        rotationZ = (profile.id.hashCode().mod(31)) + 15f
+                    },
+            )
+        }
     }
 }
 
@@ -1924,96 +2298,218 @@ private fun balancerStrategyLabel(profile: ProfileEntity): String = when (profil
 }
 
 /**
- * The delete confirmation — the question a loose config's row long press asks before doing
- * the one thing there is no coming back from. The confirm button carries the error color,
- * MD3's way of marking a destructive action.
+ * One row's asks, collected for its menu: the open flag and the delete ask live with
+ * the screen (one menu on the whole screen at a time, one face shown at a time), the
+ * doors themselves stay with the row.
  */
-@Composable
-private fun DeleteConfigDialog(
-    profile: ProfileEntity,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                painter = painterResource(R.drawable.ic_delete),
-                contentDescription = null,
-                tint = colors.error,
-            )
-        },
-        title = { Text(stringResource(R.string.config_delete_title)) },
-        text = {
-            Text(
-                stringResource(
-                    R.string.config_delete_text,
-                    profile.remarks.takeIf { it.isNotBlank() } ?: profile.server,
-                ),
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
-            ) {
-                Text(stringResource(R.string.config_delete_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.subscription_cancel))
-            }
-        },
-    )
-}
+private class RowMenu(
+    val open: Boolean,
+    val onOpenChange: (Boolean) -> Unit,
+    val askingDelete: Boolean,
+    val onAskingDeleteChange: (Boolean) -> Unit,
+    val deleteQuestion: String,
+    val canDelete: Boolean,
+    val canCopy: Boolean,
+    val copyEnabled: Boolean,
+    val onCopy: () -> Unit,
+    val onDelete: () -> Unit,
+    val pinned: Boolean,
+    val onTogglePinned: (Boolean) -> Unit,
+    val canHide: Boolean = false,
+    val concealed: Boolean = false,
+    val onToggleConcealed: (Boolean) -> Unit = {},
+)
 
 /**
- * The delete confirmation — the question a subscription row's long press asks before doing
- * the one thing there is no coming back from. The confirm button carries the error color,
- * MD3's way of marking a destructive action.
+ * The row menu itself: the stock dropdown in its stock clothes. Its first face is the
+ * asks — the pin (a live one: pinning a row carries it to the head of its list, and
+ * the door says so), the copy of whatever the row was born from (dim when there is
+ * nothing behind it to copy), and the delete, the one door that wears red. The delete
+ * does not delete: it trades the menu's face for the ask — Да in red over Нет, the way
+ * back — while the question itself rides above the row, in the callout. Rows that
+ * cannot delete (a subscription's configs answer to the subscription) keep the first
+ * face only.
  */
 @Composable
-private fun DeleteSubscriptionDialog(
-    subscription: SubscriptionEntity,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
+private fun CardActionsMenu(
+    expanded: Boolean,
+    onClose: () -> Unit,
+    askingDelete: Boolean,
+    onAskingDeleteChange: (Boolean) -> Unit,
+    deleteQuestion: String,
+    canDelete: Boolean,
+    canCopy: Boolean,
+    copyEnabled: Boolean,
+    onCopy: () -> Unit,
+    onDelete: () -> Unit,
+    pinned: Boolean,
+    onTogglePinned: (Boolean) -> Unit,
+    canHide: Boolean = false,
+    concealed: Boolean = false,
+    onToggleConcealed: (Boolean) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                painter = painterResource(R.drawable.ic_delete),
-                contentDescription = null,
-                tint = colors.error,
-            )
-        },
-        title = { Text(stringResource(R.string.subscription_delete_title)) },
-        text = {
-            Text(
-                stringResource(
-                    R.string.subscription_delete_text,
-                    subscription.name.takeIf { it.isNotBlank() }
-                        ?: stringResource(R.string.subscription_none),
-                ),
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
-            ) {
-                Text(stringResource(R.string.subscription_delete_confirm))
+    val motion = MaterialTheme.motionScheme
+    val poke = rememberHapticPoke()
+    val density = LocalDensity.current
+    // The menu holds the widest face it has ever worn: the ask's shorter pair would
+    // leave the popup snapping narrower the moment the old face finished walking
+    // out. One width for as long as the menu stands, whatever face it wears.
+    var heldWidth by remember { mutableStateOf(Dp.Unspecified) }
+    CardMenu(expanded = expanded, onDismissRequest = onClose) {
+        // The two faces trade places the way the add row's own face swap does — one
+        // rides out while the other steps in, the menu standing where it is. The
+        // size does not ride along: the popup window takes its next stance at once
+        // instead of chasing the content's size frame by frame, and the faces do
+        // all the walking themselves.
+        AnimatedContent(
+            targetState = askingDelete,
+            modifier = Modifier
+                .widthIn(min = heldWidth)
+                .onSizeChanged { size ->
+                    val width = with(density) { size.width.toDp() }
+                    if (heldWidth == Dp.Unspecified || width > heldWidth) heldWidth = width
+                },
+            transitionSpec = {
+                val direction = if (targetState) 1 else -1
+                ContentTransform(
+                    targetContentEnter = fadeIn(motion.fastEffectsSpec()) +
+                        slideInVertically(motion.fastSpatialSpec()) {
+                            direction * it / 4
+                        },
+                    initialContentExit = fadeOut(motion.fastEffectsSpec()) +
+                        slideOutVertically(motion.fastSpatialSpec()) {
+                            -direction * it / 4
+                        },
+                    sizeTransform = SizeTransform(clip = false) { _, _ -> snap() },
+                )
+            },
+            label = "row menu face",
+        ) { asking ->
+            if (asking) {
+                Column {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.card_menu_yes)) },
+                        onClick = {
+                            onClose()
+                            poke()
+                            onDelete()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                painterResource(R.drawable.ic_delete),
+                                contentDescription = null,
+                                tint = colors.error,
+                            )
+                        },
+                        colors = MenuDefaults.itemColors(
+                            textColor = colors.error,
+                            leadingIconColor = colors.error,
+                        ),
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.card_menu_no)) },
+                        onClick = {
+                            poke()
+                            onAskingDeleteChange(false)
+                        },
+                        leadingIcon = {
+                            Icon(painterResource(R.drawable.ic_close), contentDescription = null)
+                        },
+                    )
+                }
+            } else {
+                Column {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (pinned) R.string.card_menu_unpin else R.string.card_menu_pin,
+                                ),
+                            )
+                        },
+                        onClick = {
+                            onClose()
+                            poke()
+                            onTogglePinned(!pinned)
+                        },
+                        leadingIcon = {
+                            Icon(painterResource(R.drawable.ic_keep), contentDescription = null)
+                        },
+                    )
+                    if (canCopy) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.card_menu_copy_url)) },
+                            enabled = copyEnabled,
+                            onClick = {
+                                onClose()
+                                poke()
+                                onCopy()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    painterResource(R.drawable.ic_content_copy),
+                                    contentDescription = null,
+                                )
+                            },
+                        )
+                    }
+                    // The hide's own door, live like the pin's: hiding carries the
+                    // row out of the list and into the header's chip count; a revealed
+                    // row's door reads the other way, putting it back. Subscription
+                    // rows keep the door shut — their servers answer to the panel's
+                    // list, not the user's own shelf.
+                    if (canHide) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(
+                                        if (concealed) R.string.card_menu_unhide else R.string.card_menu_hide,
+                                    ),
+                                )
+                            },
+                            onClick = {
+                                onClose()
+                                poke()
+                                onToggleConcealed(!concealed)
+                            },
+                            leadingIcon = {
+                                Icon(painterResource(R.drawable.ic_visibility_off), contentDescription = null)
+                            },
+                        )
+                    }
+                    if (canDelete) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.card_menu_delete)) },
+                            onClick = {
+                                poke()
+                                onAskingDeleteChange(true)
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    painterResource(R.drawable.ic_delete),
+                                    contentDescription = null,
+                                    tint = colors.error,
+                                )
+                            },
+                            colors = MenuDefaults.itemColors(
+                                textColor = colors.error,
+                                leadingIconColor = colors.error,
+                            ),
+                        )
+                    }
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.subscription_cancel))
-            }
-        },
-    )
+        }
+    }
+    // The question over the row, standing exactly as long as the ask does.
+    CardCallout(expanded = expanded && askingDelete) {
+        Text(
+            text = deleteQuestion,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+    }
 }
 
 /** From this ping on (ms) a server counts as slow, and its ping is painted in the accent. */

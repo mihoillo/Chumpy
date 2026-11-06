@@ -30,6 +30,17 @@ class LinkParsersTest {
     }
 
     @Test
+    fun `the source link rides along verbatim`() {
+        // Whatever came in goes back out: the row menu's copy hands the link over word
+        // for word, caps, padding and all — only the surrounding air is trimmed.
+        val link = "vless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=tls#Tokyo"
+        assertEquals(link, LinkParsers.parse("  $link  ")!!.sourceLink)
+        // A config body is not a link — it arrives by its own door, carrying none.
+        val conf = "[Interface]\nPrivateKey=ABCDEF=\n[Peer]\nPublicKey=PUBKEY=\nEndpoint=5.6.7.8:51820"
+        assertNull(LinkParsers.parseWireguardConf(conf)!!.sourceLink)
+    }
+
+    @Test
     fun `vmess URI parses`() {
         val p = LinkParsers.parse(
             "vmess://b831381d-6324-4d53-ad4f-8cda48b30811@1.2.3.4:8000?type=tcp&security=none#remarks",
