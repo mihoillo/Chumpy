@@ -18,6 +18,7 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -28,7 +29,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -110,16 +110,10 @@ fun MainShell(viewModel: MainViewModel) {
         if (result.resultCode == android.app.Activity.RESULT_OK) viewModel.connect()
     }
 
-    // The wide window's split: Home owns a pane of its own on the left — the bar floats
-    // over it — and the picked destination (servers, stats, settings) fills the right
-    // one. Home's pill is gone there, its screen never leaving the left pane, so a
-    // selection that still says HOME lands on the servers — the first content
-    // destination; the state itself follows on the next frame's effect below.
+    // The wide window's split: Home owns the left half of the screen — the bar floats
+    // over it — and whatever the bar picked (servers, stats, a settings page) fills the
+    // right one; picking Home leaves the right half to the wallpaper alone.
     val wide = isWideScreen()
-    val rightTab = if (wide && selectedTab == MainTab.HOME) MainTab.SERVERS else selectedTab
-    LaunchedEffect(wide) {
-        if (wide && selectedTab == MainTab.HOME) selectedTab = MainTab.SERVERS
-    }
 
     // The connect ask rides the VPN permission the same way whichever pane asks for it.
     val connectWithConsent: () -> Unit = {
@@ -137,9 +131,9 @@ fun MainShell(viewModel: MainViewModel) {
         // the gentle dim only, every other screen adds the stronger dim, the blur and the
         // zoom — animated between the two looks as the user moves around.
         val wallpaper = rememberDecodedWallpaper()
-        // The split keeps the wallpaper in its away-from-Home look: content is always on
-        // stage beside Home there, and Home's gentler dim would under-dim it.
-        val homeLook = !wide && selectedTab == MainTab.HOME && !settingsOpen
+        // On a wide window Home's pick empties the right half — the wallpaper behind
+        // everything gets Home's own gentle look then, the content look otherwise.
+        val homeLook = selectedTab == MainTab.HOME && !settingsOpen
         val motion = MaterialTheme.motionScheme
         // The picture takes a moment to decode, so the app opens on the plain surface; its
         // arrival then plays as the switch back to Home does — a fade under a settle-down
@@ -251,7 +245,7 @@ fun MainShell(viewModel: MainViewModel) {
 
             if (wide) {
                 TwoPaneShell(
-                    selectedTab = rightTab,
+                    selectedTab = selectedTab,
                     selectedCategory = selectedCategory,
                     settingsOpen = settingsOpen,
                     interfaceScroll = interfaceScroll,
@@ -399,33 +393,40 @@ fun MainShell(viewModel: MainViewModel) {
                 )
             }
 
-            FloatingBottomBar(
-                // In the split the bar drives the right pane, so it wears the remapped
-                // selection; either way the pills land over Home — the whole width on a
-                // narrow window, the left pane's own stretch on a wide one.
-                selectedTab = rightTab,
-                onTabSelected = {
-                    selectedTab = it
-                    settingsOpen = false
-                },
-                settingsOpen = settingsOpen,
-                // The gear always lands on the About page, not wherever the user left off.
-                onSettingsOpenChange = { open ->
-                    settingsOpen = open
-                    if (open) selectedCategory = SettingsCategory.ABOUT
-                },
-                selectedCategory = selectedCategory,
-                onCategorySelected = { selectedCategory = it },
-                // What the bar floats over, for its frost: the pills re-draw the slice of
-                // it that sits behind them.
-                backdrop = if (frost) behindBar else null,
-                twoPane = wide,
-                modifier = if (wide) {
-                    Modifier.align(Alignment.BottomStart)
-                } else {
-                    Modifier.align(Alignment.BottomCenter)
-                },
-            )
+            // The bar centers over Home — over the whole window on a narrow one, over
+            // Home's own half in the split, never hugging the pane's left edge.
+            val bar: @Composable BoxScope.() -> Unit = {
+                FloatingBottomBar(
+                    selectedTab = selectedTab,
+                    onTabSelected = {
+                        selectedTab = it
+                        settingsOpen = false
+                    },
+                    settingsOpen = settingsOpen,
+                    // The gear always lands on the About page, not wherever the user left off.
+                    onSettingsOpenChange = { open ->
+                        settingsOpen = open
+                        if (open) selectedCategory = SettingsCategory.ABOUT
+                    },
+                    selectedCategory = selectedCategory,
+                    onCategorySelected = { selectedCategory = it },
+                    // What the bar floats over, for its frost: the pills re-draw the slice of
+                    // it that sits behind them.
+                    backdrop = if (frost) behindBar else null,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
+            if (wide) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(0.5f),
+                ) {
+                    bar()
+                }
+            } else {
+                bar()
+            }
         }
     }
 }
@@ -560,13 +561,12 @@ private fun ShellDestinationPage(
 }
 
 /**
- * The wide window's layout: Home owns a pane of its own on the left — the bar floats
- * over it, its pills naming the right pane's destinations — and whatever the bar picked
- * (servers, stats, a settings page) fills the right one. The wallpaper and the shell's
- * paint stay whole-window behind both; only the pages split. The swipe is a phone's move
- * here — the pills alone turn the right pane, with the same slide-up the pager's direct
- * mode plays, and the back walks the same ladder: settings to their tab, a tab to the
- * servers, the servers handing the back to the system's own exit ride.
+ * The wide window's layout: Home owns the left half of the screen — the bar floats over
+ * it — and the right half runs the very pager strip the narrow window does: swipes,
+ * flings and the predictive back included, over the same destinations, with Home's own
+ * slot in the strip emptied out (the screen it names lives in the left pane). Picking
+ * Home parks the right half on the wallpaper alone. The wallpaper and the shell's paint
+ * stay whole-window behind both; only the pages split.
  */
 @Composable
 private fun TwoPaneShell(
@@ -606,42 +606,14 @@ private fun TwoPaneShell(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
-    val motion = MaterialTheme.motionScheme
-    val settingsOffset = MainTab.entries.size
-    val targetPosition = if (settingsOpen) {
-        settingsOffset + selectedCategory.ordinal
-    } else {
-        selectedTab.ordinal
-    }
-
-    // The back's own landing: settings fold back to the tab that owned the stage before
-    // them, a tab to the servers — the two-pane root — and the servers themselves have
-    // nothing left to hand back to, so the system keeps that back for its own exit ride.
-    val backTarget = when {
-        settingsOpen -> selectedTab
-        selectedTab != MainTab.SERVERS -> MainTab.SERVERS
-        else -> null
-    }
-    PredictiveBackHandler(enabled = backTarget != null) { progress ->
-        val landing = backTarget ?: return@PredictiveBackHandler
-        // The system's own window ride covers the preview; carried all the way, the
-        // landing takes over through the same door the pills use.
-        try {
-            progress.collect { }
-            onSelectPage(landing.ordinal)
-        } catch (e: CancellationException) {
-            throw e
-        }
-    }
-
     Row(Modifier.fillMaxSize()) {
-        // Left: Home, always — the bar's pills answer for the right pane alone.
+        // Left: Home, always — exactly half the window.
         Box(
             Modifier
-                .width(twoPaneHomeWidth())
+                .weight(1f)
                 .fillMaxHeight(),
         ) {
-            // The bar floats over this pane, so its pages keep the full reservation.
+            // The bar floats over this pane, so its content keeps the full reservation.
             CompositionLocalProvider(LocalBarReservedHeight provides FloatingBottomBarReservedHeight) {
                 HomeScreen(
                     status = tunnelStatus,
@@ -655,67 +627,57 @@ private fun TwoPaneShell(
                 )
             }
         }
-        // Right: whatever the bar picked — fresh identity per pick (see PageTarget), so a
-        // re-pick of a page still leaving in a fade replays the slide instead of just
-        // crossfading it back in.
+        // Right: the pager strip itself. No bar ever passes over this half — its pages
+        // keep nothing reserved below, and their coverage reports fall into fresh states
+        // here, so the bar over Home keeps reading Home's own story alone.
         Box(
             Modifier
                 .weight(1f)
                 .fillMaxHeight(),
         ) {
-            // No bar ever passes over this pane: its pages keep nothing reserved below,
-            // and they stay out of the coverage report — the bar floats over Home alone.
             CompositionLocalProvider(
                 LocalBarReservedHeight provides 0.dp,
-                LocalPageOnStage provides false,
+                LocalBarCoverage provides remember { mutableStateOf(false) },
+                LocalBarUnderlay provides remember { mutableStateOf(false) },
             ) {
-                val target = remember(targetPosition) { PageTarget(targetPosition) }
-                AnimatedContent(
-                    targetState = target,
-                    transitionSpec = {
-                        (fadeIn(motion.defaultEffectsSpec()) +
-                            slideInVertically(motion.defaultSpatialSpec()) { it / 3 }) togetherWith
-                            fadeOut(motion.defaultEffectsSpec())
-                    },
-                    label = "pane page switch",
-                ) { page ->
-                    ShellDestinationPage(
-                        position = page.position,
-                        settingsOffset = settingsOffset,
-                        homeVisible = false,
-                        interfaceScroll = interfaceScroll,
-                        tunnelStatus = tunnelStatus,
-                        subscriptions = subscriptions,
-                        selectedSubscription = selectedSubscription,
-                        servers = servers,
-                        home = home,
-                        statsFlow = statsFlow,
-                        manualProfileCount = manualProfileCount,
-                        uiSettings = uiSettings,
-                        connection = connection,
-                        coreVersion = coreVersion,
-                        coreRunning = coreRunning,
-                        coreLogsFlow = coreLogsFlow,
-                        onUiSettingsChange = onUiSettingsChange,
-                        onChangeConnection = onChangeConnection,
-                        onOpenServers = onOpenServers,
-                        onOpenStats = onOpenStats,
-                        onRefreshPing = onRefreshPing,
-                        onPingServers = onPingServers,
-                        onUpdateSubscription = onUpdateSubscription,
-                        onSelectSubscription = onSelectSubscription,
-                        onAddSubscription = onAddSubscription,
-                        onDeleteSubscription = onDeleteSubscription,
-                        onDeleteManualProfile = onDeleteManualProfile,
-                        onTogglePinned = onTogglePinned,
-                        onToggleSubscriptionPinned = onToggleSubscriptionPinned,
-                        onToggleConcealed = onToggleConcealed,
-                        onToggleAutoUpdate = onToggleAutoUpdate,
-                        onSelect = onSelect,
-                        onConnect = onConnect,
-                        onDisconnect = onDisconnect,
-                    )
-                }
+                MainPagerStrip(
+                    selectedTab = selectedTab,
+                    selectedCategory = selectedCategory,
+                    settingsOpen = settingsOpen,
+                    interfaceScroll = interfaceScroll,
+                    subscriptions = subscriptions,
+                    selectedSubscription = selectedSubscription,
+                    tunnelStatus = tunnelStatus,
+                    servers = servers,
+                    home = home,
+                    statsFlow = statsFlow,
+                    manualProfileCount = manualProfileCount,
+                    uiSettings = uiSettings,
+                    connection = connection,
+                    coreVersion = coreVersion,
+                    coreRunning = coreRunning,
+                    coreLogsFlow = coreLogsFlow,
+                    onUiSettingsChange = onUiSettingsChange,
+                    onChangeConnection = onChangeConnection,
+                    onOpenServers = onOpenServers,
+                    onOpenStats = onOpenStats,
+                    onSelectPage = onSelectPage,
+                    onRefreshPing = onRefreshPing,
+                    onPingServers = onPingServers,
+                    onUpdateSubscription = onUpdateSubscription,
+                    onSelectSubscription = onSelectSubscription,
+                    onAddSubscription = onAddSubscription,
+                    onDeleteSubscription = onDeleteSubscription,
+                    onDeleteManualProfile = onDeleteManualProfile,
+                    onTogglePinned = onTogglePinned,
+                    onToggleSubscriptionPinned = onToggleSubscriptionPinned,
+                    onToggleConcealed = onToggleConcealed,
+                    onToggleAutoUpdate = onToggleAutoUpdate,
+                    onSelect = onSelect,
+                    onConnect = onConnect,
+                    onDisconnect = onDisconnect,
+                    blankHome = true,
+                )
             }
         }
     }
@@ -749,6 +711,11 @@ private fun MainPagerStrip(
     settingsOpen: Boolean,
     /** The interface settings page's scroll, owned above the modes so flips keep it. */
     interfaceScroll: ScrollState,
+    /**
+     * The two-pane split: Home's slot stands empty — the screen it names owns the left
+     * pane there, and picking it parks this strip's half on the wallpaper alone.
+     */
+    blankHome: Boolean = false,
     subscriptions: List<slop.miho.chumpy.db.SubscriptionEntity>,
     selectedSubscription: slop.miho.chumpy.db.SubscriptionEntity?,
     tunnelStatus: TunnelStatus,
@@ -835,7 +802,11 @@ private fun MainPagerStrip(
             // last would win the shared report, leaving the bar wearing the wrong page's
             // story across every switch.
             CompositionLocalProvider(LocalPageOnStage provides (position == targetPositionNow.value)) {
-                ShellDestinationPage(
+                if (blankHome && position == MainTab.HOME.ordinal) {
+                    // The two-pane split's empty Home slot: the screen lives in the left
+                    // pane, so this page leaves the wallpaper to speak for the half.
+                } else {
+                    ShellDestinationPage(
                     position = position,
                     settingsOffset = settingsOffset,
                     homeVisible = selectedTab == MainTab.HOME && !settingsOpen,
@@ -871,6 +842,7 @@ private fun MainPagerStrip(
                     onConnect = onConnect,
                     onDisconnect = onDisconnect,
                 )
+                }
             }
         }
 

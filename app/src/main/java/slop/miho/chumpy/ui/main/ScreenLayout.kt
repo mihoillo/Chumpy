@@ -43,11 +43,6 @@ fun isWideScreen(): Boolean =
     LocalConfiguration.current.screenWidthDp >= WIDE_SCREEN_WIDTH_DP &&
         LocalUiSettings.current.smallScreen != true
 
-/** The Home pane's width in the two-pane layout: 42% of the window, 400..540dp. */
-@Composable
-fun twoPaneHomeWidth(): Dp =
-    (LocalConfiguration.current.screenWidthDp * 0.42f).dp.coerceIn(400.dp, 540.dp)
-
 /**
  * The bottom space the screens keep clear for the floating bar over them: the full
  * reservation wherever the bar floats — the single-column shell, the two-pane Home pane —
