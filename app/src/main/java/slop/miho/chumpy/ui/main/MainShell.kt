@@ -55,7 +55,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -615,6 +618,11 @@ private fun TwoPaneShell(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
+    // How far the right pane's fading edges reach: exactly the pages' own content
+    // padding, so rows at rest never sit inside the fade — only rows in flight do.
+    val topFade = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp
+    val bottomFade = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     Row(
         Modifier
             .fillMaxSize()
@@ -650,7 +658,27 @@ private fun TwoPaneShell(
         Box(
             Modifier
                 .weight(1f)
-                .fillMaxHeight(),
+                .fillMaxHeight()
+                // The rows scroll under the pane's edges and hard-cut there — over a
+                // picture or the plain surface alike they read as vanishing into
+                // nothing. They fade instead: an offscreen layer masks the pane's own
+                // content — never what sits behind it — as far as the pages' own
+                // content padding reaches, so resting rows never sit inside the fade.
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    val top = (topFade.toPx() / size.height).coerceAtMost(0.45f)
+                    val bottom = (1f - bottomFade.toPx() / size.height).coerceAtLeast(top + 0.01f)
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            top to Color.Black,
+                            bottom to Color.Black,
+                            1f to Color.Transparent,
+                        ),
+                        blendMode = BlendMode.DstIn,
+                    )
+                },
         ) {
             CompositionLocalProvider(
                 LocalBarReservedHeight provides 0.dp,
