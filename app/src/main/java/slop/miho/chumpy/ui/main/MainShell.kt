@@ -59,12 +59,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -116,6 +112,7 @@ import slop.miho.chumpy.ui.wallpapers.rememberDecodedWallpaper
 import slop.miho.chumpy.ui.wallpapers.scrimColor
 import slop.miho.chumpy.ui.wallpapers.wallpaperZoomTarget
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun MainShell(viewModel: MainViewModel) {
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
@@ -169,14 +166,16 @@ fun MainShell(viewModel: MainViewModel) {
     // screen is on, and touch keeps it always.
     val atHome = selectedTab == MainTab.HOME && !settingsOpen
     val barVisible = !controller || atHome || barSummoned
-    // Every change of the on-stage destination re-seats the controller's cursor: the
-    // bar keeps it whenever it stays on for the change (Home, the gear's unfold, the
-    // fold back from settings, a BACK-summon, a second BACK landing on Home), and the
-    // stage clears it when a destination's own screen takes over — the next press
-    // walks into the new page from its edge, instead of the cursor lingering on
-    // whatever the old page left it on, hunting its own way there, or dying with the
-    // bar's morphing pill it stood on. Touch is left alone: focus follows the taps
-    // there, as it always has.
+    // Every change of the on-stage destination — and of the controller's own reign —
+    // re-seats the controller's cursor: the bar keeps it whenever it stays on for the
+    // change (Home, the gear's unfold, the fold back from settings, a BACK-summon, a
+    // second BACK landing on Home), and a destination's own page takes it at its top
+    // when its screen takes over. Never is the cursor left adrift on nothing: a stage
+    // with no focus eats the first press on it — the press only plants the cursor,
+    // and the same press lands again — which read as every tab needing two presses.
+    // The mode's arrival plants the anchor the same way: the very first press a
+    // gamepad makes finds the bar already focused. Touch is left alone: focus
+    // follows the taps there, as it always has.
     //
     // One requester per the bar's two faces: the faces morph AnimatedContent-style —
     // the leaving copy composes on beside the arriving one, and a single requester
@@ -187,12 +186,15 @@ fun MainShell(viewModel: MainViewModel) {
     val tabFocusRequester = remember { FocusRequester() }
     val categoryFocusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(selectedTab, settingsOpen, selectedCategory, barSummoned) {
+    LaunchedEffect(controller, selectedTab, settingsOpen, selectedCategory, barSummoned) {
         if (!controller) return@LaunchedEffect
         if (barVisible) {
             (if (settingsOpen) categoryFocusRequester else tabFocusRequester).requestFocus()
         } else {
             focusManager.clearFocus()
+            // Into the new page from its top edge: the search plants the cursor on
+            // the page's first row, ring on, ready for the presses.
+            focusManager.moveFocus(FocusDirection.Down)
         }
     }
     // The controller's back door: one BACK summons the bar over the screen on stage —
@@ -566,21 +568,19 @@ fun MainShell(viewModel: MainViewModel) {
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         // A hidden bar keeps no focus — the dpad's search can't fall into it.
-                        .focusProperties { canFocus = barVisible }
-                        // While a screen works, the summoned bar is a navigation overlay:
-                        // the dpad walks its own pills and stops at its edges — leaving is
-                        // what the picks and BACK are for, not the wander. On Home the bar
-                        // keeps its two-way bond with the screen above it (DOWN from the
-                        // connect button lands here, UP from here climbs back) and nothing
-                        // is held.
-                        .onKeyEvent { event ->
-                            if (controller && !atHome &&
-                                event.type == KeyEventType.KeyDown &&
-                                (event.key == Key.DirectionUp || event.key == Key.DirectionDown)
-                            ) {
-                                true
-                            } else {
-                                false
+                        // And while a screen works, the summoned bar is an island: a focus
+                        // search crossing its edge from the inside stops dead in every
+                        // direction — leaving is the picks' and BACK's job, not the dpad's
+                        // drift sideways into whatever stands over. The key-based wall
+                        // this replaces ate only Up and Down — Left and Right slipped off
+                        // the end pills onto the screen behind. On Home the wall stands
+                        // down: the bar keeps its two-way bond with the screen above it
+                        // (DOWN from the connect button lands here, UP from here climbs
+                        // back) and every side is free.
+                        .focusProperties {
+                            canFocus = barVisible
+                            onExit = {
+                                if (controller && !atHome) cancelFocusChange()
                             }
                         }
                         .then(

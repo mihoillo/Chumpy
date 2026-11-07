@@ -70,6 +70,8 @@ private fun isControllerKey(event: AndroidKeyEvent): Boolean {
         AndroidKeyEvent.KEYCODE_DPAD_RIGHT,
         AndroidKeyEvent.KEYCODE_DPAD_CENTER,
         AndroidKeyEvent.KEYCODE_ENTER,
+        // Some remotes' OK key arrives as the numpad's enter — navigation all the same.
+        AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
         AndroidKeyEvent.KEYCODE_BUTTON_A,
         AndroidKeyEvent.KEYCODE_BUTTON_B,
         AndroidKeyEvent.KEYCODE_BUTTON_X,
