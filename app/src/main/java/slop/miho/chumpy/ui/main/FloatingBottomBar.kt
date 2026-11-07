@@ -66,6 +66,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -73,6 +76,8 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -82,6 +87,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -623,6 +629,9 @@ private fun BarSurface(
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val settings = LocalUiSettings.current
+    // The composition's host: its size is the window's, edge to edge — the measure the
+    // gradient's stretch past the bar needs.
+    val view = LocalView.current
     // Home is the one place the bar follows the surface-opacity setting (turning opaque
     // over scrolling rows, like it always has). Everywhere else it owns its own look
     // instead, whatever the setting says: plain and opaque with the frost off, frosted
@@ -685,6 +694,11 @@ private fun BarSurface(
     // frost can draw the very slice of it that sits behind the pill. Only the frost's draw
     // reads it, so a move costs that redraw and nothing more.
     var window by remember { mutableStateOf(IntOffset.Zero) }
+    // The gradient's reach past the bar's own bounds, in the root's terms: how far the
+    // window stretches to the left and the right of the surface. The classic bar's paint
+    // reads these alone — see the overreach below.
+    var gradientLeft by remember { mutableStateOf(0f) }
+    var gradientRight by remember { mutableStateOf(0f) }
     // The tint the pills inside should wear: the glass's density while the frost is up, the
     // plain surface opacity while it's down, blended through the frost's own fade so the
     // selection indicator never pops. Handed down as readers, for the pills' draw blocks.
@@ -707,7 +721,61 @@ private fun BarSurface(
             .onGloballyPositioned { coordinates ->
                 val position = coordinates.positionInRoot()
                 window = IntOffset(position.x.roundToInt(), position.y.roundToInt())
+                // The gradient's reach: from the surface's own edges to the window's —
+                // the hosting view fills the window edge to edge, cutout included, so a
+                // bar inset from the camera still gets paint behind it.
+                val rootWidth = view.width
+                gradientLeft = position.x
+                gradientRight = (rootWidth - position.x - coordinates.size.width).coerceAtLeast(0f)
             }
+            // The classic bar's gradient, stretched past the bar itself when the split
+            // leaves it half a window: under the cutout to the left, across the strip's
+            // half to the right — where it dissolves to nothing instead of cutting off at
+            // the seam, so Home's boundary stays unreadable and the strip's bottom keeps
+            // itself clear of a tone that belongs to the bar's own half. The stretch draws
+            // ahead of the clipping layer below, and inside a saveLayer of its own making:
+            // the dissolve works by masking with DstIn, which must not touch the screen
+            // beneath it — and the layer's bounds are the stretched paint's, so drawing
+            // outside the bar's own bounds is no concern either.
+            .then(
+                if (!floating) Modifier.drawBehind {
+                    val fade = gradient.value
+                    val left = gradientLeft
+                    val right = gradientRight
+                    if (fade <= 0.01f || (left <= 0.5f && right <= 0.5f)) return@drawBehind
+                    val bottom = opacity.value
+                    val container = lerp(containerLow, containerHigh, lift.value)
+                    val tone = gradientColor?.let { lerp(container, it, fade) } ?: container
+                    val canvas = drawContext.canvas
+                    val stretch = Rect(-left, 0f, size.width + right, size.height)
+                    canvas.saveLayer(stretch, Paint())
+                    try {
+                        // The same vertical profile the bar's own paint wears, held across
+                        // the whole stretched width — the bar's rect draws its slice again
+                        // on top of this, the same tone, seamless.
+                        drawRect(
+                            Brush.verticalGradient(
+                                0f to tone.copy(alpha = bottom * (1f - fade)),
+                                1f to tone.copy(alpha = bottom),
+                            ),
+                            topLeft = Offset(stretch.left, stretch.top),
+                            size = Size(stretch.width, stretch.height),
+                        )
+                        if (right > 0.5f) {
+                            // The dissolve: full at the bar's own edge, gone at the
+                            // window's far one.
+                            drawRect(
+                                Brush.horizontalGradient(listOf(Color.Black, Color.Transparent)),
+                                topLeft = Offset(size.width, 0f),
+                                size = Size(right, size.height),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        }
+                    } finally {
+                        canvas.restore()
+                    }
+                } else Modifier,
+            )
             // Floats over scrolling content, so a shadow is warranted here — but a soft one,
             // since the content behind also fades into the bottom gradient. It fades with
             // the surface's opacity too: a see-through bar has nothing solid left to cast one.
