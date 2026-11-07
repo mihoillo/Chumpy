@@ -25,6 +25,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -788,6 +789,45 @@ private fun BarSurface(
     }
 }
 
+/**
+ * Some screens' touch streams (the Switch's among them) deliver the press and then
+ * starve the release — a cancellation, a change consumed somewhere along the way, a
+ * lift reported past the button's own bounds — and the standard detector calls the
+ * whole gesture off: the press tint arrives, the click never does. [greedyTap] hands
+ * back the bookkeeping for one button, [Modifier.pressProofTap] rides beside the
+ * button's own detector, waits for the fingers to simply be gone, and lands the click
+ * if the detector never did. On a well-behaved screen the detector lands first and the
+ * companion stands down; the two never double up.
+ */
+private class GreedyTap(onClick: () -> Unit) {
+    var onClick = onClick
+    /** The button's own detector's word on the gesture — set as its onClick fires. */
+    var handled = false
+}
+
+@Composable
+private fun greedyTap(onClick: () -> Unit): GreedyTap {
+    val tap = remember { GreedyTap(onClick) }
+    tap.onClick = onClick
+    return tap
+}
+
+@Composable
+private fun Modifier.pressProofTap(tap: GreedyTap): Modifier =
+    pointerInput(Unit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false)
+            // The fingers simply gone — any event with nothing pressed ends the wait,
+            // a cancellation included: its changes report pressed=false like any lift.
+            while (true) {
+                val event = awaitPointerEvent()
+                if (event.changes.none { it.pressed }) break
+            }
+            if (!tap.handled) tap.onClick()
+            tap.handled = false
+        }
+    }
+
 @Composable
 private fun RoundBarButton(
     icon: Int,
@@ -798,6 +838,7 @@ private fun RoundBarButton(
     // No press ripple: the morph into the other shape is already the button's whole
     // response — a ripple on top of it reads as a stutter.
     val interactionSource = remember { MutableInteractionSource() }
+    val tap = greedyTap(onClick)
     Box(
         modifier = Modifier
             .size(BarHeight)
@@ -810,8 +851,12 @@ private fun RoundBarButton(
                 interactionSource = interactionSource,
                 indication = null,
                 role = Role.Button,
-                onClick = onClick,
-            ),
+                onClick = {
+                    tap.handled = true
+                    onClick()
+                },
+            )
+            .pressProofTap(tap),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -891,6 +936,7 @@ private fun PillItem(
         animationSpec = motion.defaultSpatialSpec(),
         label = "tab label reveal",
     )
+    val tap = greedyTap(onClick)
     Row(
         modifier = Modifier
             .height(ItemHeight)
@@ -914,7 +960,15 @@ private fun PillItem(
                     )
                 }
             }
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .selectable(
+                selected = selected,
+                role = Role.Tab,
+                onClick = {
+                    tap.handled = true
+                    onClick()
+                },
+            )
+            .pressProofTap(tap)
             .padding(horizontal = (ItemHeight - 24.dp) / 2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
