@@ -60,6 +60,11 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -164,20 +169,31 @@ fun MainShell(viewModel: MainViewModel) {
     // screen is on, and touch keeps it always.
     val atHome = selectedTab == MainTab.HOME && !settingsOpen
     val barVisible = !controller || atHome || barSummoned
-    val barFocusRequester = remember { FocusRequester() }
-    LaunchedEffect(barSummoned) {
-        if (barSummoned) barFocusRequester.requestFocus()
-    }
     // Every change of the on-stage destination re-seats the controller's cursor: the
     // bar keeps it whenever it stays on for the change (Home, the gear's unfold, the
-    // fold back from settings), and a page switch clears it — the next press walks into
-    // the new page from its edge, instead of the cursor lingering on whatever the old
-    // page left it on or hunting its own way there, which read as wandering. Touch is
-    // left alone: focus follows the taps there, as it always has.
+    // fold back from settings, a BACK-summon, a second BACK landing on Home), and the
+    // stage clears it when a destination's own screen takes over — the next press
+    // walks into the new page from its edge, instead of the cursor lingering on
+    // whatever the old page left it on, hunting its own way there, or dying with the
+    // bar's morphing pill it stood on. Touch is left alone: focus follows the taps
+    // there, as it always has.
+    //
+    // One requester per the bar's two faces: the faces morph AnimatedContent-style —
+    // the leaving copy composes on beside the arriving one, and a single requester
+    // would ride both, landing the cursor on a pill that is on its way out (and taking
+    // the cursor down with it at the morph's end). The face that is coming in always
+    // holds its own, whatever the morph is doing — and on the classic bar, where the
+    // requester had never landed at all, every summons used to throw.
+    val tabFocusRequester = remember { FocusRequester() }
+    val categoryFocusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(selectedTab, settingsOpen, selectedCategory) {
+    LaunchedEffect(selectedTab, settingsOpen, selectedCategory, barSummoned) {
         if (!controller) return@LaunchedEffect
-        if (barVisible) barFocusRequester.requestFocus() else focusManager.clearFocus()
+        if (barVisible) {
+            (if (settingsOpen) categoryFocusRequester else tabFocusRequester).requestFocus()
+        } else {
+            focusManager.clearFocus()
+        }
     }
     // The controller's back door: one BACK summons the bar over the screen on stage —
     // the strip's own touch-wise back (a page back, a settings fold back) stands aside —
@@ -357,9 +373,9 @@ fun MainShell(viewModel: MainViewModel) {
                     selectedCategory = selectedCategory,
                     settingsOpen = settingsOpen,
                     // The controller mode's half-dims and focus gates, flowing from the
-                    // same visibility the bar itself follows (see the bar below).
+                    // same facts the bar itself follows (see the bar below).
                     controller = controller,
-                    barFocusable = barVisible,
+                    homeFocusable = atHome,
                     leftDim = { leftDim.value },
                     rightDim = { rightDim.value },
                     interfaceScroll = interfaceScroll,
@@ -540,8 +556,10 @@ fun MainShell(viewModel: MainViewModel) {
                         selectedCategory = it
                         if (controller) barSummoned = false
                     },
-                    // Where BACK's summon lands: the picked pill takes the focus.
-                    focusRequester = barFocusRequester,
+                    // Where BACK's summon lands: one requester per the bar's faces, so the
+                    // cursor takes the pill that is coming in, never the fading copy.
+                    tabFocusRequester = tabFocusRequester,
+                    categoryFocusRequester = categoryFocusRequester,
                     // What the bar floats over, for its frost: the pills re-draw the slice of
                     // it that sits behind them.
                     backdrop = if (frost) behindBar else null,
@@ -549,6 +567,22 @@ fun MainShell(viewModel: MainViewModel) {
                         .align(Alignment.BottomCenter)
                         // A hidden bar keeps no focus — the dpad's search can't fall into it.
                         .focusProperties { canFocus = barVisible }
+                        // While a screen works, the summoned bar is a navigation overlay:
+                        // the dpad walks its own pills and stops at its edges — leaving is
+                        // what the picks and BACK are for, not the wander. On Home the bar
+                        // keeps its two-way bond with the screen above it (DOWN from the
+                        // connect button lands here, UP from here climbs back) and nothing
+                        // is held.
+                        .onKeyEvent { event ->
+                            if (controller && !atHome &&
+                                event.type == KeyEventType.KeyDown &&
+                                (event.key == Key.DirectionUp || event.key == Key.DirectionDown)
+                            ) {
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         .then(
                             if (wide) {
                                 // The split's halves dim instead of flying, the bar with its own.
@@ -726,8 +760,12 @@ private fun TwoPaneShell(
     settingsOpen: Boolean,
     /** Whether a controller drives the shell right now (see [inputModeTracking]). */
     controller: Boolean,
-    /** Whether the half-dimming bar is on stage — Home or a BACK-summon (controller only). */
-    barFocusable: Boolean,
+    /**
+     * Whether Home's own half takes the controller's walk: it joins only while Home
+     * itself is the destination — over any working screen, settings included, the
+     * left half is out of the walk wherever the bar stands, summoned or not.
+     */
+    homeFocusable: Boolean,
     /** The left half's animated dim, read at layer time; the bar rides the same one. */
     leftDim: () -> Float,
     /** The right half's animated dim, read at layer time. */
@@ -779,11 +817,12 @@ private fun TwoPaneShell(
             Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                // Under the controller the half that is not on stage dims with the bar
-                // and keeps no focus — the dpad's search can't wander into Home while a
-                // screen works.
+                // Under the controller, Home's half takes the walk only while Home is
+                // the destination — the dpad's search can't wander into it while a
+                // screen works, not even from a BACK-summoned bar floating over it:
+                // the walk belongs to the active screen and the bar alone.
                 .graphicsLayer { alpha = leftDim() }
-                .focusProperties { canFocus = !controller || barFocusable },
+                .focusProperties { canFocus = !controller || homeFocusable },
         ) {
             // The bar floats over this pane, so its content keeps the full reservation.
             CompositionLocalProvider(LocalBarReservedHeight provides FloatingBottomBarReservedHeight) {

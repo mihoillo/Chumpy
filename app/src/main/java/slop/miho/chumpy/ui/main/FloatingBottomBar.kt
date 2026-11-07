@@ -209,8 +209,9 @@ fun FloatingBottomBar(
     selectedCategory: SettingsCategory,
     onCategorySelected: (SettingsCategory) -> Unit,
     backdrop: GraphicsLayer?,
-    /** Where the controller's BACK-summon lands: the picked pill takes the focus. */
-    focusRequester: FocusRequester? = null,
+    /** Where the controller's summons land on the bar's two faces: the picked pill of each. */
+    tabFocusRequester: FocusRequester? = null,
+    categoryFocusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier,
 ) {
     val motion = MaterialTheme.motionScheme
@@ -251,7 +252,14 @@ fun FloatingBottomBar(
                             ClassicBarButton(R.drawable.ic_arrow_back, R.string.nav_back) {
                                 onSettingsOpenChange(false)
                             }
-                            ClassicBarItems(SettingsCategory.entries, selectedCategory, onCategorySelected)
+                            // The controller's summons land on the selected item of
+                            // whichever face stands, exactly as they do on the pills.
+                            ClassicBarItems(
+                                SettingsCategory.entries,
+                                selectedCategory,
+                                onCategorySelected,
+                                focusRequester = categoryFocusRequester,
+                            )
                         } else {
                             // On Home itself every icon recolors along with the bare text.
                             val colors = if (LocalBarCanFade.current) {
@@ -268,6 +276,7 @@ fun FloatingBottomBar(
                                 onTabSelected,
                                 colors,
                                 bare = { it == MainTab.HOME },
+                                focusRequester = tabFocusRequester,
                             )
                             ClassicBarButton(R.drawable.ic_settings, R.string.nav_settings, colors) {
                                 onSettingsOpenChange(true)
@@ -285,7 +294,8 @@ fun FloatingBottomBar(
                 selectedCategory = selectedCategory,
                 onCategorySelected = onCategorySelected,
                 backdrop = backdrop,
-                focusRequester = focusRequester,
+                tabFocusRequester = tabFocusRequester,
+                categoryFocusRequester = categoryFocusRequester,
             )
         }
     }
@@ -304,7 +314,8 @@ private fun FloatingMainBar(
     selectedCategory: SettingsCategory,
     onCategorySelected: (SettingsCategory) -> Unit,
     backdrop: GraphicsLayer?,
-    focusRequester: FocusRequester?,
+    tabFocusRequester: FocusRequester?,
+    categoryFocusRequester: FocusRequester?,
 ) {
     val motion = MaterialTheme.motionScheme
     Row(
@@ -343,13 +354,13 @@ private fun FloatingMainBar(
                         onClick = { onSettingsOpenChange(false) },
                     )
                 } else {
-                    // The requester rides the row that owns the stage — never both rows
-                    // of the morphing pair at once.
+                    // The tabs face's own requester: the morph dissolves the face that
+                    // leaves, so a summon landing here always takes the row that holds.
                     PillItems(
                         MainTab.entries,
                         selectedTab,
                         onTabSelected,
-                        focusRequester = if (!settingsOpen) focusRequester else null,
+                        focusRequester = tabFocusRequester,
                     )
                 }
             }
@@ -362,11 +373,12 @@ private fun FloatingMainBar(
                 label = "settings <-> categories",
             ) { open ->
                 if (open) {
+                    // The categories face's own requester, the tabs' mirror (see above).
                     PillItems(
                         SettingsCategory.entries,
                         selectedCategory,
                         onCategorySelected,
-                        focusRequester = if (settingsOpen) focusRequester else null,
+                        focusRequester = categoryFocusRequester,
                     )
                 } else {
                     // The gear spins away as it unfolds into the category pill.
@@ -510,16 +522,22 @@ private fun <T : PillDestination> RowScope.ClassicBarItems(
     onSelect: (T) -> Unit,
     colors: NavigationBarItemColors = NavigationBarItemDefaults.colors(),
     bare: (T) -> Boolean = { false },
+    /** The face's own landing for the controller's summons: the selected item's cell. */
+    focusRequester: FocusRequester? = null,
 ) {
     val bareColors = colors.copy(selectedIndicatorColor = Color.Transparent)
     items.forEach { item ->
         val labeled = !bare(item)
+        val picked = item == selected && focusRequester != null
         NavigationBarItem(
             selected = item == selected,
             onClick = { onSelect(item) },
             // The controller's focus lands on the cell as a whole; the classic bar's own
-            // paint answers only touch, so the ring is what marks it.
-            modifier = Modifier.focusRing(),
+            // paint answers only touch, so the ring is what marks it. The summons land
+            // on the picked cell alone — this build's focusRequester takes no null.
+            modifier = Modifier
+                .focusRing()
+                .then(if (picked) Modifier.focusRequester(focusRequester) else Modifier),
             // The label, shown or not, names the item for accessibility; where it's left
             // out, the icon does instead.
             icon = {
@@ -941,7 +959,7 @@ private fun <T : PillDestination> PillItems(
     items: List<T>,
     selected: T,
     onSelect: (T) -> Unit,
-    /** The BACK-summon's landing, when this row is the one holding the stage. */
+    /** The face's own landing for the controller's summons, taken by the picked pill. */
     focusRequester: FocusRequester? = null,
 ) {
     Row(

@@ -80,6 +80,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.ui.graphics.Color
@@ -392,7 +393,14 @@ fun ServersScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .graphicsLayer { alpha = dimmed },
+                                .graphicsLayer { alpha = dimmed }
+                                // The dimmed rows are out of play while the chooser or a
+                                // row's menu stands over them — out of touch, and out of
+                                // the controller's walk: the dim is the button, and the
+                                // dpad may not stop on what it has taken off the table.
+                                .focusProperties {
+                                    canFocus = menuHost == null && !dropdownOpen
+                                },
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             ServersHeader(
@@ -432,11 +440,14 @@ fun ServersScreen(
                             )
                         }
                         // The catcher over the out-of-play list: no ripple, no press —
-                        // a tap anywhere over the dim is the fold's own close.
+                        // a tap anywhere over the dim is the fold's own close. A touch
+                        // catcher only: the dpad never stops on it (BACK closes the fold
+                        // under the controller instead).
                         if (dropdownOpen) {
                             Box(
                                 modifier = Modifier
                                     .matchParentSize()
+                                    .focusProperties { canFocus = false }
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = null,
