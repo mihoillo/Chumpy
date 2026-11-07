@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -246,7 +247,8 @@ private fun CustomFontTile(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    val family = remember(file) { FontFamily(Font(file)) }
+    val version by FontRegistry.version.collectAsStateWithLifecycle()
+    val family = remember(file, version) { FontFamily(Font(file)) }
     FontTile(
         family = family,
         label = file.nameWithoutExtension,

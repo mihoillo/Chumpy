@@ -19,7 +19,7 @@ object ClashYamlParser {
     /** The profiles found in the `proxies:` list, deduplicated; null when it is not one. */
     fun parse(body: String): List<ProfileEntity>? {
         if (!PROXIES_KEY.containsMatchIn(body)) return null
-        val root = MiniYaml.parse(body) as? Map<*, *> ?: return null
+        val root = runCatching { MiniYaml.parse(body.trim().removePrefix("\uFEFF")) as? Map<*, *> }.getOrNull() ?: return null
         @Suppress("UNCHECKED_CAST")
         val proxies = root["proxies"] as? List<Any?> ?: return null
         val profiles = proxies.mapNotNull { entry ->
@@ -140,6 +140,7 @@ private object MiniYaml {
     fun parse(body: String): Any? {
         val lines = body.lines().mapNotNull(::strip).filterNot { it.text == "---" || it.text == "..." }
         if (lines.isEmpty()) return null
+        require(lines.all { it.indent <= 128 }) { "YAML nesting is too deep" }
         return block(Cursor(lines, 0), lines.first().indent)
     }
 
@@ -154,15 +155,21 @@ private object MiniYaml {
 
     /** A `#` outside quotes starts a comment — but only at line start or after a space. */
     private fun stripComment(text: String): String {
-        var single = false
-        var double = false
-        text.forEachIndexed { i, ch ->
-            when {
-                ch == '\'' && !double -> single = !single
-                ch == '"' && !single -> double = !double
-                ch == '#' && !single && !double && (i == 0 || text[i - 1] == ' ') ->
-                    return text.substring(0, i).trimEnd()
+        var quote: Char? = null
+        var index = 0
+        while (index < text.length) {
+            val char = text[index]
+            if (quote != null) {
+                if (quote == '"' && char == '\\') { index += 2; continue }
+                if (char == quote) {
+                    if (quote == '\'' && text.getOrNull(index + 1) == '\'') { index += 2; continue }
+                    quote = null
+                }
+            } else when {
+                char == '\'' || char == '"' -> quote = char
+                char == '#' && (index == 0 || text[index - 1].isWhitespace()) -> return text.substring(0, index).trimEnd()
             }
+            index++
         }
         return text
     }
@@ -186,7 +193,10 @@ private object MiniYaml {
                 items += cursor.peek()?.takeIf { it.indent > indent }?.let { block(cursor, it.indent) }
             } else {
                 val content = line.text.removePrefix("- ")
-                if (keyValue(content) != null) {
+                if (content.startsWith("{") && content.endsWith("}")) {
+                    cursor.index++
+                    items += scalar(content)
+                } else if (keyValue(content) != null) {
                     // The map opens mid-line, at the column the content starts on; the
                     // whole item line is spent as that opening.
                     cursor.index++
@@ -230,37 +240,69 @@ private object MiniYaml {
 
     /** `key: value` — the first colon outside quotes that ends the key. */
     private fun keyValue(text: String): Pair<String, String>? {
-        var single = false
-        var double = false
-        text.forEachIndexed { i, ch ->
-            when {
-                ch == '\'' && !double -> single = !single
-                ch == '"' && !single -> double = !double
-                ch == ':' && !single && !double -> {
-                    val rest = text.substring(i + 1)
-                    if (rest.isEmpty() || rest.startsWith(" ")) {
-                        return text.substring(0, i) to rest.trim()
-                    }
-                }
-            }
-        }
-        return null
+        val index = delimiter(text, ':')
+        if (index < 0) return null
+        val rest = text.substring(index + 1)
+        if (rest.isNotEmpty() && !rest.first().isWhitespace()) return null
+        return unquote(text.substring(0, index).trim()) to rest.trim()
     }
 
-    /** A scalar, or a `[a, b]` flow list. */
     private fun scalar(text: String): Any {
         if (text.startsWith("[") && text.endsWith("]")) {
-            return text.substring(1, text.length - 1)
-                .split(',')
-                .map { unquote(it.trim()) }
-                .filter { it.isNotEmpty() }
+            return splitFlow(text.substring(1, text.length - 1)).filter { it.isNotBlank() }.map { scalar(it.trim()) }
+        }
+        if (text.startsWith("{") && text.endsWith("}")) {
+            return splitFlow(text.substring(1, text.length - 1)).filter { it.isNotBlank() }.associate { entry ->
+                val colon = delimiter(entry, ':')
+                require(colon >= 0) { "Invalid YAML mapping" }
+                unquote(entry.substring(0, colon).trim()) to scalar(entry.substring(colon + 1).trim())
+            }
         }
         return unquote(text)
     }
 
+    private fun splitFlow(text: String): List<String> {
+        var start = 0
+        return (delimiters(text, ',') + text.length).map { index ->
+            text.substring(start, index).also { start = index + 1 }
+        }
+    }
+
+    private fun delimiter(text: String, target: Char): Int = delimiters(text, target).firstOrNull() ?: -1
+
+    private fun delimiters(text: String, target: Char): List<Int> {
+        val positions = mutableListOf<Int>()
+        var quote: Char? = null
+        var depth = 0
+        var index = 0
+        while (index < text.length) {
+            val char = text[index]
+            if (quote != null) {
+                if (quote == '"' && char == '\\') { index += 2; continue }
+                if (char == quote) {
+                    if (quote == '\'' && text.getOrNull(index + 1) == '\'') { index += 2; continue }
+                    quote = null
+                }
+            } else when {
+                char == '\'' || char == '"' -> quote = char
+                char == '[' || char == '{' -> depth++
+                char == ']' || char == '}' -> depth--
+                char == target && depth == 0 -> positions.add(index)
+            }
+            require(depth in 0..64) { "YAML nesting is too deep" }
+            index++
+        }
+        require(quote == null && depth == 0) { "Unterminated YAML value" }
+        return positions
+    }
+
     private fun unquote(text: String): String = when {
-        text.length >= 2 && text.startsWith("'") && text.endsWith("'") -> text.substring(1, text.length - 1)
-        text.length >= 2 && text.startsWith("\"") && text.endsWith("\"") -> text.substring(1, text.length - 1)
+        text.length >= 2 && text.startsWith("'") && text.endsWith("'") ->
+            text.substring(1, text.length - 1).replace("''", "'")
+        text.length >= 2 && text.startsWith("\"") && text.endsWith("\"") ->
+            kotlinx.serialization.json.Json.parseToJsonElement(text).let {
+                (it as kotlinx.serialization.json.JsonPrimitive).content
+            }
         else -> text
     }
 }

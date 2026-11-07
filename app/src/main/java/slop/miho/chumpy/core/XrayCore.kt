@@ -45,6 +45,8 @@ object XrayCore {
      * whole lines and never grows past this, so a long session costs nothing.
      */
     private const val LOG_CAPACITY = 1000
+    private const val LOG_MAX_CHARS = 48 * 1024
+    private var logChars = 0
 
     private lateinit var appContext: Context
 
@@ -59,6 +61,8 @@ object XrayCore {
 
     @Volatile
     private var controller: CoreController? = null
+
+    @Volatile private var terminating = false
 
     /** Whether the core loop is running (i.e. a config was started and not stopped). */
     @Volatile
@@ -93,10 +97,13 @@ object XrayCore {
             Log.ERROR -> "E/"
             Log.WARN -> "W/"
             else -> "I/"
-        } + message + (error?.let { ": ${it.message}" } ?: "")
+        } + message.take(2048) + (error?.let { ": ${it.message.orEmpty().take(1024)}" } ?: "")
         synchronized(logRing) {
-            if (logRing.size >= LOG_CAPACITY) logRing.removeFirst()
+            while (logRing.isNotEmpty() && (logRing.size >= LOG_CAPACITY || logChars + line.length > LOG_MAX_CHARS)) {
+                logChars -= logRing.removeFirst().length
+            }
             logRing.addLast(line)
+            logChars += line.length
         }
         if (error != null) {
             // Log.println takes no throwable; the exception's own message rides the line.
@@ -108,8 +115,7 @@ object XrayCore {
 
     private var pendingUiRx = 0L
     private var pendingUiTx = 0L
-    private var pendingDailyRx = 0L
-    private var pendingDailyTx = 0L
+    private val pendingDaily = linkedMapOf<Long, LongArray>()
     private var lastDailyFlush = 0L
     private var lastUiTrafficAt = 0L
 
@@ -200,6 +206,7 @@ object XrayCore {
      * up; returns null on success or the failure to show. Must run on the worker.
      */
     fun startLoop(configJson: String, fd: Int): Exception? {
+        if (terminating) return IllegalStateException("Core shutdown is still pending")
         tunFd = fd
         try {
             awaitInit()
@@ -207,9 +214,7 @@ object XrayCore {
             val core = controller ?: Libv2ray.newCoreController(coreCallback).also { controller = it }
             core.startLoop(configJson, fd)
             synchronized(this) {
-                pendingUiRx = 0L
-                pendingUiTx = 0L
-                lastUiTrafficAt = SystemClock.elapsedRealtime()
+                if (lastUiTrafficAt == 0L) lastUiTrafficAt = SystemClock.elapsedRealtime()
             }
             isRunning = true
             return null
@@ -230,11 +235,13 @@ object XrayCore {
      * broadcast), which it always does within a second or two.
      */
     fun stopLoop() {
-        if (!isRunning) return
-        sampleTraffic()
-        flushDailyTraffic()
-        isRunning = false
-        val core = controller ?: return
+        val core = synchronized(this) {
+            if (!isRunning) return
+            sampleTraffic()
+            flushDailyTraffic()
+            isRunning = false
+            controller
+        } ?: return
         val stopper = Thread {
             try {
                 core.stopLoop()
@@ -248,6 +255,7 @@ object XrayCore {
         } catch (_: InterruptedException) {
         }
         if (stopper.isAlive) {
+            terminating = true
             log(Log.ERROR, "Core stopLoop wedged; abandoning the controller and exiting")
             controller = null
             Thread {
@@ -268,7 +276,7 @@ object XrayCore {
     /** When the tunnel last came up (0 while down); the real VPN uptime. */
     fun upSince(): Long = connectedAtMillis
 
-    fun register(callback: ITunnelCallback) {
+    fun register(callback: ITunnelCallback) = synchronized(callbacks) {
         callbacks.register(callback)
         try {
             callback.onStateChanged(status.state.ordinal, status.error)
@@ -332,22 +340,29 @@ object XrayCore {
         val delta = queryTrafficBytes()
         pendingUiRx += delta[0]
         pendingUiTx += delta[1]
-        pendingDailyRx += delta[0]
-        pendingDailyTx += delta[1]
+        if (delta[0] != 0L || delta[1] != 0L) {
+            val day = java.time.LocalDate.now().toEpochDay()
+            val bucket = pendingDaily.getOrPut(day) { longArrayOf(0, 0) }
+            bucket[0] += delta[0]
+            bucket[1] += delta[1]
+        }
         if (System.currentTimeMillis() - lastDailyFlush >= 60_000L) flushDailyTraffic()
     }
 
     @Synchronized
     private fun flushDailyTraffic() {
-        if (pendingDailyRx == 0L && pendingDailyTx == 0L) return
-        try {
-            DailyTrafficStore.addToday(appContext, pendingDailyRx, pendingDailyTx)
-            pendingDailyRx = 0L
-            pendingDailyTx = 0L
-            lastDailyFlush = System.currentTimeMillis()
-        } catch (e: Exception) {
-            log(Log.WARN, "Could not save daily traffic; retaining pending bytes", e)
+        val iterator = pendingDaily.iterator()
+        while (iterator.hasNext()) {
+            val (day, bytes) = iterator.next()
+            try {
+                DailyTrafficStore.addDay(appContext, day, bytes[0], bytes[1])
+                iterator.remove()
+            } catch (e: Exception) {
+                log(Log.WARN, "Could not save daily traffic; retaining pending bytes", e)
+                break
+            }
         }
+        lastDailyFlush = System.currentTimeMillis()
     }
 
     private fun queryTrafficBytes(): LongArray {
@@ -388,7 +403,7 @@ object XrayCore {
         check(initLatch.await(30, TimeUnit.SECONDS)) { "Xray initialization timed out" }
     }
 
-    fun publish(newStatus: TunnelStatus) {
+    fun publish(newStatus: TunnelStatus) = synchronized(callbacks) {
         status = newStatus
         connectedAtMillis = when (newStatus.state) {
             TunnelState.UP -> if (connectedAtMillis == 0L) System.currentTimeMillis() else connectedAtMillis

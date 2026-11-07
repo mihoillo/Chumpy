@@ -39,7 +39,6 @@ import kotlinx.coroutines.withContext
 import slop.miho.chumpy.ChumpyApp
 import slop.miho.chumpy.core.TunnelState
 import slop.miho.chumpy.data.DimTone
-import slop.miho.chumpy.data.WallpaperPalette
 import slop.miho.chumpy.data.WallpaperRegistry
 import slop.miho.chumpy.ui.theme.LocalDarkTheme
 import slop.miho.chumpy.ui.theme.LocalUiSettings
@@ -191,10 +190,10 @@ fun backdropTooDark(wallpaperLuminance: Float, dim: Float, scrim: Color): Boolea
 @Composable
 internal fun rememberDecodedWallpaper(): DecodedWallpaper? {
     val context = LocalContext.current
-    val hues by WallpaperPalette.hues(context).collectAsStateWithLifecycle()
-    return produceState<DecodedWallpaper?>(null, hues) {
+    val revision by WallpaperRegistry.version.collectAsStateWithLifecycle()
+    return produceState<DecodedWallpaper?>(null, revision) {
         val file = WallpaperRegistry.current(context)
-        value = withContext(Dispatchers.IO) { file?.let(::decodeWallpaper) }
+        value = withContext(Dispatchers.IO) { file?.let(::decodeWallpaper) ?: run { releaseWallpaperCache(); null } }
     }.value
 }
 
@@ -345,22 +344,17 @@ internal fun wallpaperBareTextDark(): Boolean {
  *  re-opening the app, the palette's change trigger re-running the state — is a cache
  *  hit instead of the whole pipeline over again.
  */
-internal fun decodeWallpaper(file: File): DecodedWallpaper? {
+internal fun decodeWallpaper(file: File): DecodedWallpaper? = synchronized(decodeLock) {
     val key = Triple(file.absolutePath, file.lastModified(), file.length())
-    synchronized(decodeLock) {
-        val cached = decodeCache
-        if (cached != null && cached.first == key) return cached.second
-    }
-    val decoded = decodeWallpaperUncached(file)
-    synchronized(decodeLock) {
-        decodeCache = key to decoded
-    }
-    return decoded
+    decodeCache?.takeIf { it.first == key }?.let { return@synchronized it.second }
+    decodeWallpaperUncached(file).also { decodeCache = key to it }
 }
 
 /** The last picture's key and decode; see [decodeWallpaper]. */
 private var decodeCache: Pair<Triple<String, Long, Long>, DecodedWallpaper?>? = null
 private val decodeLock = Any()
+
+internal fun releaseWallpaperCache() = synchronized(decodeLock) { decodeCache = null }
 
 private fun decodeWallpaperUncached(file: File): DecodedWallpaper? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -368,7 +362,8 @@ private fun decodeWallpaperUncached(file: File): DecodedWallpaper? {
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
     val options = BitmapFactory.Options().apply {
         var sample = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_DECODE_DIM) sample *= 2
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_DECODE_DIM ||
+            bounds.outWidth.toLong() * bounds.outHeight / sample / sample > MAX_DECODE_PIXELS) sample *= 2
         inSampleSize = sample
     }
     var bitmap = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
@@ -376,12 +371,17 @@ private fun decodeWallpaperUncached(file: File): DecodedWallpaper? {
     // without this the picture decodes sideways and the fill-crop on it reads as broken.
     // The import itself copies the file's bytes untouched; this is purely a decode-time
     // correction of what the camera meant.
-    bitmap = rotateByExif(file, bitmap)
+    fun replace(next: Bitmap) {
+        val previous = bitmap
+        bitmap = next
+        if (previous !== next) previous.recycle()
+    }
+    replace(rotateByExif(file, bitmap))
     // Pictures saved with transparent or ghosted padding — sticker PNGs, rounded exports,
     // a scanner's faint frame — would wear that padding as picture: the screen-filling
     // crop would both cut the real content and leave see-through strips at the screen's
     // edges. Trim to the content first.
-    bitmap = trimTransparent(bitmap)
+    replace(trimTransparent(bitmap))
     // The average luminance drives the adaptive text color: sampled on a sparse grid,
     // still plenty after the decode's own downsampling. Fully transparent pixels don't
     // count — they aren't picture.
@@ -409,14 +409,14 @@ private fun decodeWallpaperUncached(file: File): DecodedWallpaper? {
     val pixels = bitmap.width.toLong() * bitmap.height
     if (pixels > MAX_DECODE_PIXELS) {
         val shrink = kotlin.math.sqrt(MAX_DECODE_PIXELS.toDouble() / pixels)
-        bitmap = Bitmap.createScaledBitmap(
+        replace(Bitmap.createScaledBitmap(
             bitmap,
             (bitmap.width * shrink).roundToInt().coerceAtLeast(1),
             (bitmap.height * shrink).roundToInt().coerceAtLeast(1),
             true,
-        )
+        ))
     }
-    bitmap = bitmap.copy(Bitmap.Config.HARDWARE, false) ?: bitmap
+    replace(bitmap.copy(Bitmap.Config.HARDWARE, false) ?: bitmap)
     return DecodedWallpaper(bitmap.asImageBitmap(), luminance)
 }
 

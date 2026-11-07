@@ -19,6 +19,9 @@ enum class DimTone { AUTO, LIGHT, DARK }
  * file's presence is the "selected" state; rendering it comes later.
  */
 object WallpaperRegistry {
+    private val changes = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    val version: kotlinx.coroutines.flow.StateFlow<Long> = changes
+
     /** The picked wallpaper file, or null when none has been picked yet. */
     fun current(context: Context): File? {
         val file = File(context.filesDir, WALLPAPER_FILE)
@@ -27,7 +30,7 @@ object WallpaperRegistry {
 
     /** Drops the picked wallpaper, if any. */
     fun delete(context: Context) {
-        File(context.filesDir, WALLPAPER_FILE).delete()
+        if (File(context.filesDir, WALLPAPER_FILE).delete()) changes.value++
     }
 
     /**
@@ -46,7 +49,7 @@ object WallpaperRegistry {
                 }
             } ?: return context.getString(R.string.error_unknown)
             when (result) {
-                ImportedFile.Result.SUCCESS -> null
+                ImportedFile.Result.SUCCESS -> { changes.value++; null }
                 ImportedFile.Result.TOO_LARGE -> context.getString(R.string.wallpapers_import_too_large)
                 ImportedFile.Result.INVALID -> context.getString(R.string.wallpapers_import_not_image)
             }

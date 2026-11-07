@@ -63,4 +63,27 @@ class StoreRegressionTest {
         assertEquals(300L, day.rx)
         assertEquals(50L, day.tx)
     }
+
+    @Test fun `tile snapshot includes custom color and privacy setting`() {
+        val context = RuntimeEnvironment.getApplication()
+        SettingsStore.update(context) {
+            it.copy(accent = Accent.CUSTOM, customAccent = 0xFF314159.toInt(), maskAddresses = true)
+        }
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while (SettingsStore.tileSettings(context).customAccent != 0xFF314159.toInt() && System.nanoTime() < deadline) Thread.sleep(10)
+        assertEquals(0xFF314159.toInt(), SettingsStore.tileSettings(context).customAccent)
+        assertTrue(SettingsStore.tileSettings(context).maskAddresses)
+    }
+
+    @Test fun `day buckets retain the original sampling day`() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getFileStreamPath("daily-traffic.json").delete()
+        val today = java.time.LocalDate.now().toEpochDay()
+        DailyTrafficStore.addDay(context, today - 1, 100, 20)
+        DailyTrafficStore.addToday(context, 300, 40)
+        val days = DailyTrafficStore.readWeek(context)
+        assertEquals(100L, days.single { it.epochDay == today - 1 }.rx)
+        assertEquals(300L, days.single { it.epochDay == today }.rx)
+    }
+
 }

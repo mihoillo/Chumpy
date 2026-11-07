@@ -17,6 +17,9 @@ import android.graphics.Typeface
  * [INTER_ID] or the imported file's name.
  */
 object FontRegistry {
+    private val changes = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    val version: kotlinx.coroutines.flow.StateFlow<Long> = changes
+
     const val SYSTEM_ID = "system"
     const val INTER_ID = "inter"
 
@@ -83,7 +86,7 @@ object FontRegistry {
                 }
             } ?: return context.getString(R.string.fonts_import_not_font)
             when (result) {
-                ImportedFile.Result.SUCCESS -> null
+                ImportedFile.Result.SUCCESS -> { changes.value++; null }
                 ImportedFile.Result.TOO_LARGE -> context.getString(R.string.fonts_import_too_large)
                 ImportedFile.Result.INVALID -> context.getString(R.string.fonts_import_not_font)
             }
@@ -97,7 +100,7 @@ object FontRegistry {
      * resolved through [customFontFile], which refuses anything with a path in it.
      */
     fun delete(context: Context, id: String): Boolean =
-        customFontFile(context, id)?.delete() ?: false
+        (customFontFile(context, id)?.delete() ?: false).also { if (it) changes.value++ }
 
     private fun customDir(context: Context): File = File(context.filesDir, "fonts")
 

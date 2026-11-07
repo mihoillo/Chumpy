@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.content.Context
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -211,23 +212,49 @@ object SettingsStore {
      */
     private val settingsState = MutableStateFlow(UiSettings())
 
+    @Synchronized
     fun settings(context: Context): StateFlow<UiSettings> {
         if (!seeded) {
             settingsState.value = read(context)
-            writeTileSnapshot(context, settingsState.value)
+            publishTile(context, settingsState.value)
             seeded = true
         }
         return settingsState.asStateFlow()
     }
 
+    @Synchronized
     fun update(context: Context, transform: (UiSettings) -> UiSettings) {
         val old = settings(context).value
         val updated = transform(old)
         write(context, updated)
         settingsState.value = updated
+        if (old.iconVariant != updated.iconVariant || old.accent != updated.accent ||
+            old.themeMode != updated.themeMode || old.customAccent != updated.customAccent ||
+            old.maskAddresses != updated.maskAddresses) {
+            publishTile(context, updated)
+        }
         // The launcher icon flips the moment the variant is picked — the aliases swap
         // under the launcher without a reinstall.
         if (updated.iconVariant != old.iconVariant) LauncherIcon.apply(context, updated.iconVariant)
+    }
+
+    private val tileUpdates = kotlinx.coroutines.channels.Channel<Pair<Context, UiSettings>>(
+        kotlinx.coroutines.channels.Channel.CONFLATED,
+    )
+    private val tileWriter = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob(),
+    ).launch {
+        for (update in tileUpdates) {
+            kotlinx.coroutines.delay(50)
+            var latest = update
+            while (true) latest = tileUpdates.tryReceive().getOrNull() ?: break
+            runCatching { writeTileSnapshot(latest.first, latest.second) }
+                .onFailure { android.util.Log.w("Chumpy/Settings", "Could not publish tile settings", it) }
+        }
+    }
+
+    private fun publishTile(context: Context, settings: UiSettings) {
+        tileUpdates.trySend(context.applicationContext to settings)
     }
 
     private var seeded = false
@@ -240,6 +267,8 @@ object SettingsStore {
         UiSettings(
             iconVariant = enumEntry(json.optString(KEY_ICON_VARIANT), IconVariant.CHUMPY),
             accent = enumEntry(json.optString(KEY_ACCENT), Accent.ADAPTIVE),
+            customAccent = json.optInt(KEY_CUSTOM_ACCENT, 0xFF6FACED.toInt()),
+            maskAddresses = json.optBoolean(KEY_MASK_ADDRESSES, false),
             themeMode = enumEntry(json.optString(KEY_THEME), ThemeMode.SYSTEM),
         )
     }.getOrDefault(UiSettings())
@@ -247,6 +276,7 @@ object SettingsStore {
     private fun writeTileSnapshot(context: Context, settings: UiSettings) {
         val json = JSONObject().put(KEY_ICON_VARIANT, settings.iconVariant.name)
             .put(KEY_ACCENT, settings.accent.name).put(KEY_THEME, settings.themeMode.name)
+            .put(KEY_CUSTOM_ACCENT, settings.customAccent).put(KEY_MASK_ADDRESSES, settings.maskAddresses)
         AtomicSnapshot.write(File(context.filesDir, TILE_SETTINGS_FILE), json.toString())
     }
 
@@ -322,7 +352,6 @@ object SettingsStore {
     }
 
     private fun write(context: Context, settings: UiSettings) {
-        writeTileSnapshot(context, settings)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_THEME, settings.themeMode.name)
             .putString(KEY_ACCENT, settings.accent.name)

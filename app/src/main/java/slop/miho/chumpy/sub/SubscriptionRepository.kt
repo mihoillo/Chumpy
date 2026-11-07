@@ -7,7 +7,6 @@ import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequest
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkRequest
 import androidx.work.WorkManager
@@ -16,6 +15,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 import slop.miho.chumpy.db.ChumpyDatabase
 import slop.miho.chumpy.db.ProfileEntity
 import slop.miho.chumpy.db.ProfileType
@@ -47,6 +49,8 @@ class SubscriptionRepository(
         const val MAX_UPDATE_HOURS = 24L * 14
         const val WORK_PREFIX = "subscription-update-"
     }
+
+    private val refreshLocks = ConcurrentHashMap<String, Mutex>()
 
     private val fetcher = SubscriptionFetcher(tunnelUp, happSpoof)
     private val subscriptions = db.subscriptionDao()
@@ -101,42 +105,44 @@ class SubscriptionRepository(
     /** Re-fetches a subscription and swaps its profiles in place. */
     suspend fun updateSubscription(id: String): Result<SubscriptionEntity> =
         withContext(Dispatchers.IO) {
-            runCatching {
-                val entity = subscriptions.byId(id) ?: error("Subscription not found")
-                val attemptAt = System.currentTimeMillis()
-                try {
-                    val (body, metadata) = fetchWithNestedExpansion(entity.url)
-                    val parsed = SubscriptionParser.parse(body)
-                    require(parsed.isNotEmpty()) { "No server links found in the response" }
+            refreshLocks.getOrPut(id) { Mutex() }.withLock {
+                runCatching {
+                    val entity = subscriptions.byId(id) ?: error("Subscription not found")
+                    val attemptAt = System.currentTimeMillis()
+                    try {
+                        val (body, metadata) = fetchWithNestedExpansion(entity.url)
+                        val parsed = SubscriptionParser.parse(body)
+                        require(parsed.isNotEmpty()) { "No server links found in the response" }
 
-                    val updated = db.withTransaction {
-                        val current = subscriptions.byId(id) ?: error("Subscription not found")
-                        val old = profiles.bySubscriptionOnce(id)
-                        val updated = current.copy(
-                            name = metadata.title ?: current.name,
-                            lastUpdateAttempt = attemptAt,
-                            lastUpdateSuccess = attemptAt,
-                            updateIntervalHours = metadata.updateIntervalHours,
-                            uploadBytes = metadata.uploadBytes,
-                            downloadBytes = metadata.downloadBytes,
-                            totalBytes = metadata.totalBytes,
-                            expireEpochSeconds = metadata.expireEpochSeconds,
-                            lastError = null,
-                        )
-                        subscriptions.upsert(updated)
-                        profiles.replaceProfiles(id, stamped(parsed, id, old))
+                        val updated = db.withTransaction {
+                            val current = subscriptions.byId(id) ?: error("Subscription not found")
+                            val old = profiles.bySubscriptionOnce(id)
+                            val updated = current.copy(
+                                name = metadata.title ?: current.name,
+                                lastUpdateAttempt = attemptAt,
+                                lastUpdateSuccess = attemptAt,
+                                updateIntervalHours = metadata.updateIntervalHours,
+                                uploadBytes = metadata.uploadBytes,
+                                downloadBytes = metadata.downloadBytes,
+                                totalBytes = metadata.totalBytes,
+                                expireEpochSeconds = metadata.expireEpochSeconds,
+                                lastError = null,
+                            )
+                            subscriptions.upsert(updated)
+                            profiles.replaceProfiles(id, stamped(parsed, id, old))
+                            updated
+                        }
+                        scheduleAutoUpdate(updated)
+                        Log.i(TAG, "Updated subscription $id: ${parsed.size} profiles")
                         updated
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        // The failure lands on the card, not in a toast that is gone in a second.
+                        subscriptions.setUpdateError(id, attemptAt, e.message ?: e.javaClass.simpleName)
+                        throw e
                     }
-                    scheduleAutoUpdate(updated)
-                    Log.i(TAG, "Updated subscription $id: ${parsed.size} profiles")
-                    updated
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    // The failure lands on the card, not in a toast that is gone in a second.
-                    subscriptions.setUpdateError(id, attemptAt, e.message ?: e.javaClass.simpleName)
-                    throw e
-                }
-            }.onFailure { logFailure("update", id, it) }
+                }.onFailure { logFailure("update", id, it) }
+            }
         }
 
     suspend fun deleteSubscription(id: String) = withContext(Dispatchers.IO) {
@@ -172,20 +178,32 @@ class SubscriptionRepository(
             require(drafts.isNotEmpty()) { "No recognizable server link found" }
             db.withTransaction {
                 val old = profiles.bySubscriptionOnce(null)
+                val keyed = drafts.associateBy { it.computeLinkKey() }
                 val existing = old.map { it.linkKey }.toSet()
-                val visibleKeys = drafts.filterNot { it.hidden }.map { it.computeLinkKey() }.toSet()
-                val restored = old.filter { it.hidden && it.linkKey in visibleKeys }.map { it.id }.toSet()
-                val fresh = drafts.distinctBy { it.computeLinkKey() }.filter { it.computeLinkKey() !in existing }
-                if (fresh.isNotEmpty() || restored.isNotEmpty()) {
-                    profiles.replaceProfiles(
-                        null,
-                        old.map { if (it.id in restored) it.copy(hidden = false) else it } +
-                        stamped(fresh, null, oldProfiles = emptyList()).mapIndexed { index, profile ->
-                            profile.copy(order = (old.maxOfOrNull { it.order } ?: -1L) + 1 + index)
-                        },
-                    )
+                val fresh = keyed.filterKeys { it !in existing }.values.toList()
+                var changed = 0
+                val updated = old.map { row ->
+                    val draft = keyed[row.linkKey]
+                    when {
+                        draft != null && row.type == ProfileType.BALANCER -> row.copy(
+                            balancerMembers = draft.balancerMembers, routingRules = draft.routingRules,
+                        ).also { if (it != row) changed++ }
+                        draft != null && row.hidden && !draft.hidden -> row.copy(
+                            hidden = false, remarks = draft.remarks, sourceLink = draft.sourceLink,
+                            routingRules = draft.routingRules,
+                        ).also { changed++ }
+                        else -> row
+                    }
                 }
-                fresh.size + restored.size
+                if (fresh.isNotEmpty() || changed > 0) {
+                    val nextOrder = (old.maxOfOrNull { it.order } ?: -1L) + 1
+                    val combined = updated + stamped(fresh, null, oldProfiles = emptyList()).mapIndexed { index, row ->
+                        row.copy(order = nextOrder + index)
+                    }
+                    val referenced = combined.filter { it.type == ProfileType.BALANCER }.flatMap { it.balancerMemberKeys }.toSet()
+                    profiles.replaceProfiles(null, combined.filter { !it.hidden || it.linkKey in referenced })
+                }
+                fresh.size + changed
             }
         }.onFailure { logFailure("import", null, it) }
     }
@@ -209,6 +227,11 @@ class SubscriptionRepository(
     }
 
     /** Stores a measured ping on a profile row, for the list and the home screen. */
+    suspend fun setProfileDelays(results: List<Pair<String, Long?>>, testedAt: Long) =
+        withContext(Dispatchers.IO) {
+            db.withTransaction { results.forEach { (id, delay) -> profiles.setDelay(id, delay, testedAt) } }
+        }
+
     suspend fun setProfileDelay(id: String, delayMillis: Long?, testedAt: Long) =
         withContext(Dispatchers.IO) { profiles.setDelay(id, delayMillis, testedAt) }
 
@@ -260,7 +283,7 @@ class SubscriptionRepository(
      * subscription. One level of expansion, Hiddify-style, covers the panels that do it.
      * The second fetch dresses up the same way the first did — the fingerprint is global.
      */
-    private fun fetchWithNestedExpansion(url: String): Pair<String, SubscriptionMetadata> {
+    private suspend fun fetchWithNestedExpansion(url: String): Pair<String, SubscriptionMetadata> {
         val first = fetcher.fetch(url)
         val nested = SubscriptionParser.isNestedSubscriptionUrl(first.body)
             ?.takeIf { it != url }

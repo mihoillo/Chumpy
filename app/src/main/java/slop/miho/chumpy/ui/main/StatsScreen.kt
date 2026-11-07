@@ -3,9 +3,6 @@ package slop.miho.chumpy.ui.main
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
@@ -190,7 +187,8 @@ fun StatsScreen(
         var logsOpen by rememberSaveable { mutableStateOf(false) }
         // The tail follows the tunnel while the fold stands open; once a second is
         // plenty for prose. The flow's own collector starts only here, under the fold.
-        val coreLogs by coreLogsFlow.collectAsStateWithLifecycle()
+        val coreLogs by (if (logsOpen) coreLogsFlow else remember { kotlinx.coroutines.flow.MutableStateFlow<String?>(null) })
+            .collectAsStateWithLifecycle()
         // The copy hands the whole tail to the clipboard, straight from the flow's own
         // snapshot — the same text the card below shows.
         val clipboard = LocalClipboardManager.current

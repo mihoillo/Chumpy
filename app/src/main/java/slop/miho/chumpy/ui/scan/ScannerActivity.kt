@@ -16,9 +16,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -129,6 +127,8 @@ private fun ScannerScreen(
     val main = remember { ContextCompat.getMainExecutor(context) }
     // The frames decode off the main thread, one at a time — the latest frame wins.
     val executor = remember { Executors.newSingleThreadExecutor() }
+    val decoder = remember { QrDecoder() }
+    val reported = remember { java.util.concurrent.atomic.AtomicBoolean() }
     DisposableEffect(Unit) {
         onDispose { executor.shutdown() }
     }
@@ -158,9 +158,8 @@ private fun ScannerScreen(
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
             analysis.setAnalyzer(executor) { frame ->
-                val text = decodeQr(frame)
-                frame.close()
-                if (text != null) main.execute { onResult(text) }
+                val text = try { decoder.decode(frame) } finally { frame.close() }
+                if (text != null && reported.compareAndSet(false, true)) main.execute { onResult(text) }
             }
             provider.unbindAll()
             provider.bindToLifecycle(
@@ -222,22 +221,29 @@ private fun ScannerScreen(
  * the sensor's rotation never matters — only the pixels do. TRY_HARDER costs a little
  * per frame and buys the skewed, small, half-lit codes a real screen throws at a camera.
  */
-private fun decodeQr(frame: ImageProxy): String? = runCatching {
-    val plane = frame.planes[0]
-    val buffer = plane.buffer
-    val data = ByteArray(buffer.remaining()).also { buffer.get(it) }
-    val source = PlanarYUVLuminanceSource(
-        data,
-        plane.rowStride,
-        frame.height,
-        0,
-        0,
-        frame.width,
-        frame.height,
-        false,
-    )
-    QRCodeReader().decode(
-        BinaryBitmap(HybridBinarizer(source)),
-        mapOf(DecodeHintType.TRY_HARDER to true),
-    ).text
-}.getOrNull()
+private class QrDecoder {
+    private var data = ByteArray(0)
+    private val reader = QRCodeReader()
+
+    fun decode(frame: ImageProxy): String? = try {
+        val plane = frame.planes[0]
+        val buffer = plane.buffer.duplicate()
+        val width = frame.width
+        val height = frame.height
+        if (data.size != width * height) data = ByteArray(width * height)
+        val initial = buffer.position()
+        for (row in 0 until height) {
+            val offset = initial + row * plane.rowStride
+            if (plane.pixelStride == 1) {
+                buffer.position(offset)
+                buffer.get(data, row * width, width)
+            } else {
+                for (column in 0 until width) data[row * width + column] = buffer.get(offset + column * plane.pixelStride)
+            }
+        }
+        reader.decode(BinaryBitmap(HybridBinarizer(PlanarYUVLuminanceSource(
+            data, width, height, 0, 0, width, height, false,
+        ))), mapOf(DecodeHintType.TRY_HARDER to true)).text
+    } catch (_: Exception) { null }
+    finally { reader.reset() }
+}
