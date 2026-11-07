@@ -398,8 +398,12 @@ fun ServersScreen(
                                 // row's menu stands over them — out of touch, and out of
                                 // the controller's walk: the dim is the button, and the
                                 // dpad may not stop on what it has taken off the table.
+                                // The entry wall makes it law at the grant itself — a
+                                // move aimed under the dim dies at its edge.
                                 .focusProperties {
-                                    canFocus = menuHost == null && !dropdownOpen
+                                    val out = menuHost != null || dropdownOpen
+                                    canFocus = !out
+                                    onEnter = { if (out) cancelFocusChange() }
                                 },
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
@@ -442,12 +446,16 @@ fun ServersScreen(
                         // The catcher over the out-of-play list: no ripple, no press —
                         // a tap anywhere over the dim is the fold's own close. A touch
                         // catcher only: the dpad never stops on it (BACK closes the fold
-                        // under the controller instead).
+                        // under the controller instead) — the entry wall turns the walk
+                        // away at its edge.
                         if (dropdownOpen) {
                             Box(
                                 modifier = Modifier
                                     .matchParentSize()
-                                    .focusProperties { canFocus = false }
+                                    .focusProperties {
+                                        canFocus = false
+                                        onEnter = { cancelFocusChange() }
+                                    }
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = null,

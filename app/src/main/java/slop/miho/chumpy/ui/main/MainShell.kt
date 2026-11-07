@@ -19,6 +19,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -34,6 +35,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -59,15 +61,14 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -112,7 +113,6 @@ import slop.miho.chumpy.ui.wallpapers.rememberDecodedWallpaper
 import slop.miho.chumpy.ui.wallpapers.scrimColor
 import slop.miho.chumpy.ui.wallpapers.wallpaperZoomTarget
 
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun MainShell(viewModel: MainViewModel) {
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
@@ -185,16 +185,25 @@ fun MainShell(viewModel: MainViewModel) {
     // requester had never landed at all, every summons used to throw.
     val tabFocusRequester = remember { FocusRequester() }
     val categoryFocusRequester = remember { FocusRequester() }
-    val focusManager = LocalFocusManager.current
+    // The on-stage page's own landing: a letterbox-sized anchor at its top corner,
+    // planted by the strip on the page that holds the stage (see destinationPage).
+    // The cursor it takes is invisible — nothing draws on it — but it is REAL: focus
+    // never crosses a null window between destinations, and the first dpad press
+    // folds it into the page's own rows. Without it, a destination change dropped
+    // the cursor into nothing, and the system's own initial-focus hunt (a corner
+    // search that walks right past the controller's gates) planted it on Home's
+    // dimmed half — which read as the walk never having left the main screen.
+    val pageEntranceRequester = remember { FocusRequester() }
     LaunchedEffect(controller, selectedTab, settingsOpen, selectedCategory, barSummoned) {
         if (!controller) return@LaunchedEffect
         if (barVisible) {
             (if (settingsOpen) categoryFocusRequester else tabFocusRequester).requestFocus()
         } else {
-            focusManager.clearFocus()
-            // Into the new page from its top edge: the search plants the cursor on
-            // the page's first row, ring on, ready for the presses.
-            focusManager.moveFocus(FocusDirection.Down)
+            // Straight onto the page's own anchor: a direct grant, no search, no
+            // null window for the initial-focus hunt to fill with Home. focus was
+            // standing on the bar pill that is now leaving; the grant moves it here
+            // before the bar's own gates get to drop it.
+            pageEntranceRequester.requestFocus()
         }
     }
     // The controller's back door: one BACK summons the bar over the screen on stage —
@@ -378,6 +387,7 @@ fun MainShell(viewModel: MainViewModel) {
                     // same facts the bar itself follows (see the bar below).
                     controller = controller,
                     homeFocusable = atHome,
+                    pageEntranceRequester = pageEntranceRequester,
                     leftDim = { leftDim.value },
                     rightDim = { rightDim.value },
                     interfaceScroll = interfaceScroll,
@@ -434,6 +444,7 @@ fun MainShell(viewModel: MainViewModel) {
                     selectedCategory = selectedCategory,
                     settingsOpen = settingsOpen,
                     interfaceScroll = interfaceScroll,
+                    pageEntranceRequester = pageEntranceRequester,
                     subscriptions = subscriptions,
                     selectedSubscription = selectedSubscription,
                     tunnelStatus = tunnelStatus,
@@ -567,18 +578,22 @@ fun MainShell(viewModel: MainViewModel) {
                     backdrop = if (frost) behindBar else null,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        // A hidden bar keeps no focus — the dpad's search can't fall into it.
-                        // And while a screen works, the summoned bar is an island: a focus
-                        // search crossing its edge from the inside stops dead in every
-                        // direction — leaving is the picks' and BACK's job, not the dpad's
-                        // drift sideways into whatever stands over. The key-based wall
-                        // this replaces ate only Up and Down — Left and Right slipped off
-                        // the end pills onto the screen behind. On Home the wall stands
-                        // down: the bar keeps its two-way bond with the screen above it
-                        // (DOWN from the connect button lands here, UP from here climbs
-                        // back) and every side is free.
+                        // The bar's two walls, both inherited by everything it holds.
+                        // The entry wall: a hidden bar is out of the walk entirely —
+                        // canFocus drops whatever stands on it, and the wall stops any
+                        // focus search from granting a landing on it in the first place
+                        // (the candidate checks honor canFocus only so far — the walls
+                        // are the boundary's own law, checked at the grant itself).
+                        // The exit wall: while a screen works, the summoned bar is an
+                        // island — a focus search crossing its edge from the inside
+                        // stops dead in every direction, leaving being the picks' and
+                        // BACK's job, not the dpad's drift sideways into whatever
+                        // stands over. On Home both walls stand down: the bar keeps its
+                        // two-way bond with the screen above it (DOWN from the connect
+                        // button lands here, UP from here climbs back).
                         .focusProperties {
                             canFocus = barVisible
+                            onEnter = { if (!barVisible) cancelFocusChange() }
                             onExit = {
                                 if (controller && !atHome) cancelFocusChange()
                             }
@@ -766,6 +781,8 @@ private fun TwoPaneShell(
      * left half is out of the walk wherever the bar stands, summoned or not.
      */
     homeFocusable: Boolean,
+    /** The on-stage page's own landing anchor (see MainShell's cursor re-seat). */
+    pageEntranceRequester: FocusRequester,
     /** The left half's animated dim, read at layer time; the bar rides the same one. */
     leftDim: () -> Float,
     /** The right half's animated dim, read at layer time. */
@@ -820,9 +837,17 @@ private fun TwoPaneShell(
                 // Under the controller, Home's half takes the walk only while Home is
                 // the destination — the dpad's search can't wander into it while a
                 // screen works, not even from a BACK-summoned bar floating over it:
-                // the walk belongs to the active screen and the bar alone.
+                // the walk belongs to the active screen and the bar alone. The entry
+                // wall carries the law to the grant itself — a move bound for the
+                // dimmed half dies at its edge, however promising a candidate the
+                // search finds inside it.
                 .graphicsLayer { alpha = leftDim() }
-                .focusProperties { canFocus = !controller || homeFocusable },
+                .focusProperties {
+                    canFocus = !controller || homeFocusable
+                    onEnter = {
+                        if (controller && !homeFocusable) cancelFocusChange()
+                    }
+                },
         ) {
             // The bar floats over this pane, so its content keeps the full reservation.
             CompositionLocalProvider(LocalBarReservedHeight provides FloatingBottomBarReservedHeight) {
@@ -859,6 +884,7 @@ private fun TwoPaneShell(
                     selectedCategory = selectedCategory,
                     settingsOpen = settingsOpen,
                     interfaceScroll = interfaceScroll,
+                    pageEntranceRequester = pageEntranceRequester,
                     subscriptions = subscriptions,
                     selectedSubscription = selectedSubscription,
                     tunnelStatus = tunnelStatus,
@@ -930,6 +956,11 @@ private fun MainPagerStrip(
      * pane there, and picking it parks this strip's half on the wallpaper alone.
      */
     blankHome: Boolean = false,
+    /**
+     * The landing anchor the strip plants on the page holding the stage: the shell
+     * re-seats the controller's cursor straight onto it between destinations.
+     */
+    pageEntranceRequester: FocusRequester,
     subscriptions: List<slop.miho.chumpy.db.SubscriptionEntity>,
     selectedSubscription: slop.miho.chumpy.db.SubscriptionEntity?,
     tunnelStatus: TunnelStatus,
@@ -1015,13 +1046,41 @@ private fun MainPagerStrip(
             // the settings pages idle beside — and without the gate whichever recomposed
             // last would win the shared report, leaving the bar wearing the wrong page's
             // story across every switch.
-            CompositionLocalProvider(LocalPageOnStage provides (position == targetPositionNow.value)) {
+            val onStage = position == targetPositionNow.value
+            CompositionLocalProvider(LocalPageOnStage provides onStage) {
                 // And only the page on stage takes focus, either: the neighbors stay
                 // composed for the strip's rides, translated just off the pane, and a
                 // dpad's search would happily wander into them — into a screen that is
-                // not on. The gate holds for touch as well: nothing hidden should ever
-                // answer a focus traversal, whatever asks for it.
-                Box(Modifier.fillMaxSize().focusProperties { canFocus = position == targetPositionNow.value }) {
+                // not on. canFocus drops whatever lingers there and cancels what the
+                // candidate checks believe; the entry wall stops the grant itself at
+                // the group's edge — a move off the stage simply fails, wherever it
+                // was headed. The gate holds for touch as well: nothing hidden should
+                // ever answer a focus traversal, whatever asks for it.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .focusProperties {
+                            canFocus = onStage
+                            onEnter = { if (!onStage) cancelFocusChange() }
+                        },
+                ) {
+                    // The on-stage page's own landing anchor: a letterbox-sized dot
+                    // at its top corner, invisible (nothing draws on it) but a real
+                    // focus target. The shell grants the controller's cursor straight
+                    // onto it when the destination changes — fewer null-focus windows
+                    // for the system's own initial-focus hunt to fill from outside
+                    // the walk — and the first dpad press folds the cursor into the
+                    // page's rows from the top. The blank Home slot never hosts one:
+                    // at Home the bar owns the landing.
+                    if (onStage && !(blankHome && position == MainTab.HOME.ordinal)) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopStart)
+                                .size(1.dp)
+                                .focusRequester(pageEntranceRequester)
+                                .focusable(),
+                        )
+                    }
                     if (blankHome && position == MainTab.HOME.ordinal) {
                         // The two-pane split's empty Home slot: the screen lives in the left
                         // pane, so this page leaves the wallpaper to speak for the half.
