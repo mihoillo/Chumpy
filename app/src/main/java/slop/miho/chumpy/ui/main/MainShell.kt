@@ -517,7 +517,6 @@ fun MainShell(viewModel: MainViewModel) {
                 // slab or the glass — and the items wear Home's colors with it.
                 CompositionLocalProvider(LocalBarCanFade provides (homeLook || wide)) {
                 FloatingBottomBar(
-                    wide = wide,
                     selectedTab = selectedTab,
                     onTabSelected = {
                         selectedTab = it
@@ -568,12 +567,11 @@ fun MainShell(viewModel: MainViewModel) {
                 Box(
                     Modifier
                         .align(Alignment.BottomStart)
-                        // The same available width the panes split — cutouts and all —
-                        // not the raw window: the bar paints edge to edge in this width
-                        // (the classic bar's gradient runs the window's whole bottom),
-                        // while what sits in it keeps to Home's own half.
+                        // The same available width the panes split: the bar centers over
+                        // Home's own half of it — cutouts and all — not the raw window,
+                        // so it stays true to the content it floats over.
                         .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                        .fillMaxWidth(),
+                        .fillMaxWidth(0.5f),
                 ) {
                     bar()
                 }
