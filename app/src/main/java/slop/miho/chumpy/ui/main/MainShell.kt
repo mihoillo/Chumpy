@@ -55,11 +55,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -69,6 +71,7 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -194,6 +197,7 @@ fun MainShell(viewModel: MainViewModel) {
     // search that walks right past the controller's gates) planted it on Home's
     // dimmed half — which read as the walk never having left the main screen.
     val pageEntranceRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
     LaunchedEffect(controller, selectedTab, settingsOpen, selectedCategory, barSummoned) {
         if (!controller) return@LaunchedEffect
         if (barVisible) {
@@ -202,8 +206,16 @@ fun MainShell(viewModel: MainViewModel) {
             // Straight onto the page's own anchor: a direct grant, no search, no
             // null window for the initial-focus hunt to fill with Home. focus was
             // standing on the bar pill that is now leaving; the grant moves it here
-            // before the bar's own gates get to drop it.
+            // before the bar's own gates get to drop it. And off the anchor at once:
+            // one frame later — the anchor and the page it marks take their places
+            // with the frame's layout, and a search run before that would see no
+            // geometry to walk into — the cursor folds one step down onto the page's
+            // first real row, ring on, OK answering from the first press. Landing on
+            // the anchor alone left the cursor invisible and idle — an OK into
+            // nothing, and a dpad detour before anything answered.
             pageEntranceRequester.requestFocus()
+            withFrameNanos { }
+            focusManager.moveFocus(FocusDirection.Down)
         }
     }
     // The controller's back door: one BACK summons the bar over the screen on stage —
@@ -1069,9 +1081,10 @@ private fun MainPagerStrip(
                     // focus target. The shell grants the controller's cursor straight
                     // onto it when the destination changes — fewer null-focus windows
                     // for the system's own initial-focus hunt to fill from outside
-                    // the walk — and the first dpad press folds the cursor into the
-                    // page's rows from the top. The blank Home slot never hosts one:
-                    // at Home the bar owns the landing.
+                    // the walk — then folds it one step down, onto the page's first
+                    // real row: the cursor arrives ring-on, OK answering from the
+                    // first press. The blank Home slot never hosts one: at Home the
+                    // bar owns the landing.
                     if (onStage && !(blankHome && position == MainTab.HOME.ordinal)) {
                         Box(
                             Modifier
