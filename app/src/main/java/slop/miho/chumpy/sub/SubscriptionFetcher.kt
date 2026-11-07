@@ -1,16 +1,24 @@
 package slop.miho.chumpy.sub
 
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
+import java.util.zip.GZIPInputStream
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import android.net.Uri
-import android.util.Log
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Proxy
-import java.util.zip.GZIPInputStream
 
 import slop.miho.chumpy.xray.XrayConfigBuilder.LOCAL_SOCKS_PORT
 
 /**
- * Fetches a subscription body over plain HttpURLConnection. When the tunnel is up the
+ * Fetches a subscription body with cancellation and an overall deadline. When the tunnel is up the
  * request goes through the running core's loopback SOCKS inbound — the app package is
  * excluded from the VPN routes, so this is the only way a blocked panel stays reachable
  * (the arrangement Hiddify uses, and the reason the config always listens on it).
@@ -23,8 +31,6 @@ class SubscriptionFetcher(
     private val happSpoof: () -> HappSpoof.Fingerprint?,
 ) {
     private companion object {
-        const val TAG = "Chumpy/SubFetch"
-
         /**
          * A deliberately chatty client UA: panels key their response format off it. The
          * v2rayNG keyword buys the generic link list, the plain name the raw-config
@@ -38,6 +44,19 @@ class SubscriptionFetcher(
 
         /** Panels that serve anything larger are doing something else; do not OOM the app. */
         const val MAX_BODY_BYTES = 8 * 1024 * 1024
+        val directClient by lazy {
+            OkHttpClient.Builder()
+            .connectTimeout(CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+            .readTimeout(READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+            .callTimeout(45, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(false)
+            .build()
+        }
+        val tunnelClient by lazy {
+            directClient.newBuilder()
+            .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", LOCAL_SOCKS_PORT)))
+            .build()
+        }
     }
 
     data class FetchResult(
@@ -50,43 +69,36 @@ class SubscriptionFetcher(
      * when the settings carry one, takes the UA and the x- headers over from the app's
      * own identity.
      */
-    fun fetch(rawUrl: String): FetchResult {
-        val url = normalizeUrl(rawUrl)
-        // openConnection(Proxy) throws IllegalArgumentException on a null proxy, so the
-        // no-tunnel path takes the plain overload instead of passing null in.
-        val connection = (open(url) as java.net.HttpURLConnection).apply {
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            instanceFollowRedirects = true
-            useCaches = false
-            val fingerprint = happSpoof()
-            if (fingerprint != null) {
-                HappSpoof.apply(this, fingerprint)
-            } else {
-                setRequestProperty("User-Agent", USER_AGENT)
-                setRequestProperty("Accept", "*/*")
-                setRequestProperty("Accept-Encoding", "gzip")
+    suspend fun fetch(rawUrl: String): FetchResult = suspendCancellableCoroutine { continuation ->
+        val client = if (tunnelUp()) tunnelClient else directClient
+        val request = Request.Builder().url(normalizeUrl(rawUrl)).get()
+        val fingerprint = happSpoof()
+        if (fingerprint != null) HappSpoof.headers(fingerprint).forEach { (name, value) -> request.header(name, value) }
+        else request.header("User-Agent", USER_AGENT).header("Accept", "*/*")
+        val call = client.newCall(request.build())
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                if (continuation.isActive) continuation.resumeWithException(e)
             }
-        }
-        try {
-            val code = connection.responseCode
-            if (code !in 200..299) {
-                throw IOException("HTTP $code")
+
+            override fun onResponse(call: Call, response: Response) {
+                try {
+                    val result = response.use {
+                        if (!it.isSuccessful) throw IOException("HTTP ${it.code}")
+                        val input = it.body?.byteStream() ?: throw IOException("Empty subscription body")
+                        val bytes = (if (it.header("Content-Encoding").equals("gzip", true)) GZIPInputStream(input) else input)
+                            .use { stream -> stream.readNBytesCompat(MAX_BODY_BYTES) }
+                        val body = String(bytes, Charsets.UTF_8)
+                        if (body.isBlank()) throw IOException("Empty subscription body")
+                        FetchResult(body, SubscriptionHeaders.parse(it.headers.toMultimap()))
+                    }
+                    if (continuation.isActive) continuation.resume(result)
+                } catch (e: Exception) {
+                    if (continuation.isActive) continuation.resumeWithException(e)
+                }
             }
-            val bytes = (if (connection.contentEncoding.equals("gzip", ignoreCase = true)) {
-                GZIPInputStream(connection.inputStream)
-            } else {
-                connection.inputStream
-            }).use { it.readNBytesCompat(MAX_BODY_BYTES) }
-            val headers = connection.headerFields.entries
-                .filter { it.key != null }
-                .associate { (key, values) -> key to values }
-            val body = String(bytes, Charsets.UTF_8)
-            if (body.isBlank()) throw IOException("Empty subscription body")
-            return FetchResult(body, SubscriptionHeaders.parse(headers))
-        } finally {
-            connection.disconnect()
-        }
+        })
     }
 
     /**
@@ -100,18 +112,6 @@ class SubscriptionFetcher(
         } else {
             "https://$trimmed"
         }
-    }
-
-    /**
-     * The loopback SOCKS inbound of the running core while the tunnel is up; the plain
-     * connection otherwise.
-     */
-    private fun open(url: String): java.net.URLConnection {
-        if (!tunnelUp()) return java.net.URL(url).openConnection()
-        Log.d(TAG, "Fetching through the running tunnel")
-        return java.net.URL(url).openConnection(
-            Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", LOCAL_SOCKS_PORT)),
-        )
     }
 
     private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {

@@ -218,7 +218,7 @@ class ChumpyVpnService : VpnService() {
     @Volatile
     private var tunInterface: ParcelFileDescriptor? = null
 
-    private var appliedAppFilter: Pair<Boolean, Set<String>>? = null
+    private var appliedAppFilter: Triple<Boolean, Set<String>, Boolean>? = null
 
     /** All VPN setup/teardown runs here; concurrent commands are collapsed by the lock. */
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "vpn-worker") }
@@ -376,6 +376,16 @@ class ChumpyVpnService : VpnService() {
         val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
         StrictMode.setThreadPolicy(policy)
         XrayCore.init(this)
+        @Suppress("DEPRECATION")
+        val observer = object : android.os.FileObserver(filesDir.absolutePath, MOVED_TO or CLOSE_WRITE) {
+            override fun onEvent(event: Int, path: String?) {
+                if (path == slop.miho.chumpy.data.SettingsStore.TILE_SETTINGS_FILE) {
+                    mainHandler.post { if (!destroyed && XrayCore.isRunning) ensureForeground() }
+                }
+            }
+        }
+        settingsObserver = observer
+        observer.startWatching()
     }
 
     override fun onBind(intent: Intent) =
@@ -414,13 +424,16 @@ class ChumpyVpnService : VpnService() {
         Log.w(TAG, "VPN revoked")
         stopVpn(
             getString(R.string.notif_interrupted_revoked),
-            reconnectAfter = ConnectionStore.autoReconnectFresh(this),
+            reconnectAfter = ConnectionStore.autoReconnectFresh(this) &&
+                ++autoReconnectAttempts <= AUTO_RECONNECT_ATTEMPT_CAP,
         )
     }
 
     override fun onDestroy() {
         super.onDestroy()
         destroyed = true
+        settingsObserver?.stopWatching()
+        settingsObserver = null
         commandGeneration.incrementAndGet()
         stopTunnelWatch()
         worker.execute {
@@ -447,7 +460,7 @@ class ChumpyVpnService : VpnService() {
                 val config = CoreConfigFile.readConfig(this)
                     ?: throw IllegalStateException(getString(R.string.error_no_config))
                 val connection = ConnectionStore.current(this)
-                val appFilter = connection.perAppEnabled to connection.bypassedApps
+                val appFilter = Triple(connection.perAppEnabled, connection.bypassedApps, connection.bypassLan)
                 if (XrayCore.isRunning && appliedAppFilter == appFilter) {
                     // Reload: the interface stays up, only the core loop restarts with the
                     // fresh config — server switch while connected.
@@ -459,7 +472,7 @@ class ChumpyVpnService : VpnService() {
                     // The interface a soft fall kept standing retires here, right before
                     // its replacement — never standing alone, never mid-fall.
                     closeKeptTun()
-                    val tun = establishTun(appFilter, connection.bypassLan)
+                    val tun = establishTun(appFilter.first to appFilter.second, appFilter.third)
                         ?: throw IllegalStateException(getString(R.string.error_tun_creation))
                     tunInterface = tun
                     XrayCore.startLoop(config, tun.fd)?.let { throw it }
@@ -573,6 +586,7 @@ class ChumpyVpnService : VpnService() {
     }
 
     private var pendingHandover: Runnable? = null
+    private var settingsObserver: android.os.FileObserver? = null
 
     /**
      * The handover re-dial itself, v2rayNG's reload: silent — the interface, the

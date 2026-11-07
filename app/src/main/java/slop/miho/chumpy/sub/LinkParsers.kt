@@ -32,7 +32,7 @@ object LinkParsers {
 
     /** Dispatches on the scheme; accepts trimmed lines with surrounding junk spaces. */
     fun parse(link: String): ProfileEntity? {
-        val raw = link.trim()
+        val raw = link.trim().removePrefix("\uFEFF").trim()
         val schemeEnd = raw.indexOf("://")
         if (schemeEnd <= 0) return null
         val trimmed = raw.substring(0, schemeEnd).lowercase() + raw.substring(schemeEnd)
@@ -52,7 +52,14 @@ object LinkParsers {
         // The link itself rides along, verbatim — the row's copy gives it back the
         // way it came in, and everything that parses through here is a link by
         // definition. Configs and balancers arrive by other doors, carrying none.
-        return parsed?.takeIf { it.server.isNotBlank() && it.serverPort in 1..65535 }
+        return parsed?.takeIf {
+            it.server.isNotBlank() && it.serverPort in 1..65535 && when (it.type) {
+                ProfileType.VMESS, ProfileType.VLESS, ProfileType.TROJAN -> it.password.isNotBlank()
+                ProfileType.WIREGUARD -> it.wgSecretKey.isNotBlank() && it.publicKey.isNotBlank()
+                ProfileType.SHADOWSOCKS -> it.method.isNotBlank() && it.password.isNotEmpty()
+                else -> true
+            }
+        }
             ?.copy(sourceLink = raw)
     }
 
@@ -61,12 +68,17 @@ object LinkParsers {
         val interfaceParams = mutableMapOf<String, String>()
         val peerParams = mutableMapOf<String, String>()
         var section: String? = null
+        var peers = 0
         text.lines().forEach { line ->
             val trimmed = line.trim()
             if (trimmed.isEmpty() || trimmed.startsWith("#")) return@forEach
             when {
                 trimmed.startsWith("[Interface]", ignoreCase = true) -> section = "interface"
-                trimmed.startsWith("[Peer]", ignoreCase = true) -> section = "peer"
+                trimmed.startsWith("[Peer]", ignoreCase = true) -> {
+                    if (++peers > 1) return null
+                    section = "peer"
+                }
+                trimmed.startsWith("[") -> section = null
                 section != null -> {
                     val idx = trimmed.indexOf('=')
                     if (idx > 0) {
@@ -266,9 +278,10 @@ object LinkParsers {
             server = uri.idnHost,
             serverPort = uri.port,
         )
-        val userInfo = uri.userInfo.orEmpty()
+        val userInfo = uri.rawUserInfo.orEmpty()
         return if (userInfo.contains(":")) {
-            profile.copy(username = userInfo.substringBefore(":"), password = userInfo.substringAfter(":"))
+            profile.copy(username = decodeURIComponent(userInfo.substringBefore(":")),
+                password = decodeURIComponent(userInfo.substringAfter(":")))
         } else {
             profile
         }

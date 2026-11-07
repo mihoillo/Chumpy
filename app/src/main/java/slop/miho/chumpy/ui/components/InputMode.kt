@@ -8,7 +8,6 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
@@ -57,9 +56,9 @@ fun Modifier.inputModeTracking(mode: MutableState<InputMode>): Modifier =
         }
 
 private fun isControllerKey(event: AndroidKeyEvent): Boolean {
-    val source = event.source
-    if (source and (InputDevice.SOURCE_DPAD or InputDevice.SOURCE_GAMEPAD or
-            InputDevice.SOURCE_JOYSTICK) != 0
+    if (event.isFromSource(InputDevice.SOURCE_DPAD) ||
+        event.isFromSource(InputDevice.SOURCE_GAMEPAD) ||
+        event.isFromSource(InputDevice.SOURCE_JOYSTICK)
     ) {
         return true
     }

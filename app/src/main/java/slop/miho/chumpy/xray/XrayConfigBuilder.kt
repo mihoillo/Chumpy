@@ -86,6 +86,7 @@ object XrayConfigBuilder {
         members: List<ProfileEntity> = emptyList(),
         testUrl: String = DEFAULT_TEST_URL,
     ): String {
+        require(profile.type != ProfileType.BALANCER || members.isNotEmpty()) { "Balancer has no usable servers" }
         val balancerMembers = if (profile.type == ProfileType.BALANCER) members else emptyList()
         val strategy = profile.balancerStrategy.ifEmpty { "random" }
         return buildJsonObject {

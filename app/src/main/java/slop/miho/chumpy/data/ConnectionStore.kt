@@ -154,6 +154,7 @@ object ConnectionStore {
             .putString(KEY_TEST_URL, settings.delayTestUrl)
             .putBoolean(KEY_PER_APP, settings.perAppEnabled)
             .putBoolean(KEY_AUTO_RECONNECT, settings.autoReconnect)
+            .putBoolean(KEY_BYPASS_LAN, settings.bypassLan)
             .apply()
     }
 

@@ -24,6 +24,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
@@ -141,11 +142,9 @@ private fun themeColorScheme(
         settings.accent == Accent.MONO -> monoColorScheme(darkTheme)
         settings.accent == Accent.RAINBOW ->
             (if (darkTheme) darkColorScheme() else lightColorScheme()).withHue(rainbowHue)
-        // The user's own color, re-hued like a fixed accent: the wheel's hue with the
-        // saturation and lightness the scheme's roles carry.
         settings.accent == Accent.CUSTOM ->
             (if (darkTheme) darkColorScheme() else lightColorScheme())
-                .withHue(hueOf(settings.customAccent))
+                .withSeed(settings.customAccent)
         else -> accentColorScheme(settings.accent, monetHues, darkTheme)
     }
     return if (darkTheme && settings.themeMode == ThemeMode.AMOLED) scheme.amoled() else scheme
@@ -195,8 +194,9 @@ private fun appFontFamily(fontId: String): FontFamily? = when {
     fontId == FontRegistry.INTER_ID -> FontRegistry.inter
     else -> {
         val context = LocalContext.current
-        val file: File? = remember(fontId) { FontRegistry.customFontFile(context, fontId) }
-        file?.let { remember(file) { FontFamily(Font(it)) } }
+        val version by FontRegistry.version.collectAsStateWithLifecycle()
+        val file: File? = remember(fontId, version) { FontRegistry.customFontFile(context, fontId) }
+        file?.let { remember(file, version) { FontFamily(Font(it)) } }
     }
 }
 
@@ -299,10 +299,49 @@ private fun Color.desaturated(): Color {
  * The wheel's hue of an ARGB int, in the 0..360 HSL terms [reHued] works in. A gray picks
  * no side — the sky hue stands in, the CUSTOM accent's fallback.
  */
-private fun hueOf(argb: Int): Float {
-    val hsl = FloatArray(3)
-    ColorUtils.colorToHSL(argb, hsl)
-    return if (hsl[1] < 0.02f) Accent.SKY.hue else hsl[0]
+private fun ColorScheme.withSeed(argb: Int): ColorScheme {
+    val seed = FloatArray(3)
+    ColorUtils.colorToHSL(argb, seed)
+    val seeded = mapped { color ->
+        val hsl = FloatArray(3)
+        ColorUtils.colorToHSL(color.toArgb(), hsl)
+        if (hsl[1] >= 0.02f) {
+            hsl[0] = seed[0]
+            hsl[1] = (hsl[1] * seed[1] / 0.62f).coerceIn(0f, 1f)
+            if (hsl[2] in 0.2f..0.8f) hsl[2] = (hsl[2] + (seed[2] - 0.5f) * 0.12f).coerceIn(0f, 1f)
+        }
+        Color(ColorUtils.HSLToColor(hsl))
+    }
+    fun readable(color: Color, background: Color): Color {
+        if (ColorUtils.calculateContrast(color.toArgb(), background.toArgb()) >= 4.5) return color
+        return if (ColorUtils.calculateContrast(android.graphics.Color.BLACK, background.toArgb()) >=
+            ColorUtils.calculateContrast(android.graphics.Color.WHITE, background.toArgb())) Color.Black else Color.White
+    }
+    fun accent(color: Color): Color {
+        val hsl = FloatArray(3)
+        ColorUtils.colorToHSL(color.toArgb(), hsl)
+        var candidate = color
+        repeat(50) {
+            if (ColorUtils.calculateContrast(candidate.toArgb(), seeded.surface.toArgb()) >= 3) return candidate
+            hsl[2] = (hsl[2] + if (seeded.surface.luminance() < 0.5f) 0.02f else -0.02f).coerceIn(0f, 1f)
+            candidate = Color(ColorUtils.HSLToColor(hsl))
+        }
+        return candidate
+    }
+    val primary = accent(seeded.primary)
+    val secondary = accent(seeded.secondary)
+    val tertiary = accent(seeded.tertiary)
+    return seeded.copy(
+        primary = primary, onPrimary = readable(seeded.onPrimary, primary),
+        secondary = secondary, onSecondary = readable(seeded.onSecondary, secondary),
+        tertiary = tertiary, onTertiary = readable(seeded.onTertiary, tertiary),
+        onPrimaryContainer = readable(seeded.onPrimaryContainer, seeded.primaryContainer),
+        onSecondaryContainer = readable(seeded.onSecondaryContainer, seeded.secondaryContainer),
+        onTertiaryContainer = readable(seeded.onTertiaryContainer, seeded.tertiaryContainer),
+        onSurface = readable(seeded.onSurface, seeded.surface),
+        onSurfaceVariant = readable(seeded.onSurfaceVariant, seeded.surfaceVariant),
+    )
+
 }
 
 /**

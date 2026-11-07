@@ -33,7 +33,7 @@ object ConfigParser {
     private const val REALITY = "reality"
 
     /** The protocols that mark a real proxy outbound; everything else is plumbing. */
-    private val PROXY_PROTOCOLS = setOf("vless", "vmess", "trojan", "shadowsocks", "socks", "hysteria")
+    private val PROXY_PROTOCOLS = setOf("vless", "vmess", "trojan", "shadowsocks", "socks", "hysteria", "wireguard")
 
     /** The strategies this core runs, normalized to the names it switches on. */
     private val STRATEGIES = setOf("random", "roundrobin", "leastping", "leastload")
@@ -53,7 +53,7 @@ object ConfigParser {
 
     /** The profiles found in a raw-config body, deduplicated; null when it is not one. */
     fun parse(body: String): List<ProfileEntity>? {
-        val trimmed = body.trim()
+        val trimmed = body.trim().removePrefix("\uFEFF").trim()
         if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return null
         val root = try {
             lenientJson.parseToJsonElement(trimmed)
@@ -213,9 +213,27 @@ object ConfigParser {
             "shadowsocks" -> ProfileType.SHADOWSOCKS
             "socks" -> ProfileType.SOCKS
             "hysteria" -> ProfileType.HYSTERIA2
+            "wireguard" -> ProfileType.WIREGUARD
             else -> return null
         }
         val settings = outbound.obj("settings") ?: JsonObject(emptyMap())
+        if (type == ProfileType.WIREGUARD) {
+            val peers = settings.array("peers")?.arrayOfObjects().orEmpty()
+            if (peers.size != 1) return null
+            val peer = peers.single()
+            val endpoint = peer.str("endpoint") ?: return null
+            val host = endpoint.substringBeforeLast(':').removeSurrounding("[", "]")
+            val port = endpoint.substringAfterLast(':').toIntOrNull() ?: return null
+            val secret = settings.str("secretKey")?.takeIf { it.isNotBlank() } ?: return null
+            val key = peer.str("publicKey")?.takeIf { it.isNotBlank() } ?: return null
+            if (host.isBlank() || port !in 1..65535) return null
+            return ProfileEntity(id = "", subscriptionId = null, type = type,
+                server = host, serverPort = port, wgSecretKey = secret, publicKey = key,
+                wgPresharedKey = peer.str("preSharedKey").orEmpty(),
+                wgLocalAddress = settings.array("address")?.strings()?.joinToString(",").orEmpty(),
+                wgMtu = settings.int("mtu") ?: 1420,
+                wgReserved = settings.array("reserved")?.strings()?.joinToString(",").orEmpty())
+        }
         // The nested dialect nests the endpoint in vnext/servers with a users list
         // inside; the flat one (our own) keeps address/port/id directly in settings.
         val endpoint = settings.array("vnext")?.arrayOfObjects()?.firstOrNull()
@@ -284,6 +302,8 @@ object ConfigParser {
 
             else -> return null
         }
+        if (type in setOf(ProfileType.VLESS, ProfileType.VMESS, ProfileType.TROJAN) && profile.password.isBlank()) return null
+        if (type == ProfileType.SHADOWSOCKS && (profile.method.isBlank() || profile.password.isEmpty())) return null
         val streamed = withStream(profile, outbound.obj("streamSettings"))
         return if (type == ProfileType.HYSTERIA2) streamed.copy(network = "hysteria") else streamed
     }
@@ -385,6 +405,13 @@ object ConfigParser {
      * becomes "outboundTag" so the build-side rewrite sees one key.
      */
     private fun routingRulesOf(config: JsonObject): String {
+        val targets = config.array("outbounds")?.arrayOfObjects().orEmpty().associate { outbound ->
+            outbound.str("tag").orEmpty() to when (outbound.str("protocol")) {
+                "freedom" -> "direct"
+                "blackhole" -> "block"
+                else -> outbound.str("tag").orEmpty()
+            }
+        }
         val raw = config.obj("routing")?.array("rules")?.arrayOfObjects().orEmpty()
         val carried = raw.mapNotNull { rule ->
             val type = rule.str("type")?.trim()?.lowercase().orEmpty()
@@ -436,7 +463,7 @@ object ConfigParser {
             }
             if (matchers.size == 1) return@mapNotNull null
 
-            if (outboundTarget != null) matchers["outboundTag"] = JsonPrimitive(outboundTarget)
+            if (outboundTarget != null) matchers["outboundTag"] = JsonPrimitive(targets[outboundTarget] ?: outboundTarget)
             else matchers["balancerTag"] = JsonPrimitive(balancerTarget!!)
             JsonObject(matchers)
         }

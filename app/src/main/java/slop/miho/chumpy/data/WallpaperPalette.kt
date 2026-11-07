@@ -28,9 +28,20 @@ object WallpaperPalette {
     }
 
     /** Recomputes after the wallpaper changed: a tiny decode, off the main thread. */
+    @Synchronized
     fun refresh(context: Context) {
-        scope.launch { huesState.value = extract(context) }
+        val generation = ++refreshGeneration
+        refreshJob?.cancel()
+        refreshJob = scope.launch {
+            val result = extract(context.applicationContext)
+            synchronized(this@WallpaperPalette) {
+                if (generation == refreshGeneration) huesState.value = result
+            }
+        }
     }
+
+    private var refreshJob: kotlinx.coroutines.Job? = null
+    private var refreshGeneration = 0L
 
     private val huesState = MutableStateFlow<List<Float>?>(null)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())

@@ -25,6 +25,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -32,7 +38,6 @@ import slop.miho.chumpy.ChumpyApp
 import slop.miho.chumpy.Graph
 import slop.miho.chumpy.R
 import slop.miho.chumpy.core.CoreConfigFile
-import slop.miho.chumpy.core.TunnelClient
 import slop.miho.chumpy.core.TunnelState
 import slop.miho.chumpy.core.TunnelStatus
 import slop.miho.chumpy.data.ConnectionSettings
@@ -48,7 +53,6 @@ import slop.miho.chumpy.db.STANDALONE_SUBSCRIPTION_ID
 import slop.miho.chumpy.db.SubscriptionEntity
 import slop.miho.chumpy.db.balancerMemberKeys
 import slop.miho.chumpy.sub.SubscriptionRepository
-import slop.miho.chumpy.xray.RoutingMode
 import slop.miho.chumpy.xray.XrayConfigBuilder
 
 /** Home screen extras: everything besides the tunnel status itself. */
@@ -187,6 +191,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val tunnelStatus: StateFlow<TunnelStatus> = tunnelClient.status
 
+    private var connectJob: Job? = null
+    private val connectGeneration = java.util.concurrent.atomic.AtomicInteger()
+    private val configurationMutex = Mutex()
+    private var sweepJob: Job? = null
+    @Volatile private var sweepGeneration = 0L
+    private val pingSemaphore = Semaphore(PING_CONCURRENCY)
+
+
     init {
         // The app filter lives outside the config — it rides the TUN interface itself —
         // so a change to it asks for a full restart rather than a reload. The store
@@ -196,7 +208,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             connection.drop(1).collect { current ->
                 val bypassChanged = previous.bypassedApps != current.bypassedApps ||
-                    previous.perAppEnabled != current.perAppEnabled
+                    previous.perAppEnabled != current.perAppEnabled || previous.bypassLan != current.bypassLan
                 if (bypassChanged && tunnelStatus.value.state in setOf(TunnelState.UP, TunnelState.CONNECTING)) {
                     applyConfigAndConnect()
                 }
@@ -219,7 +231,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             emit(tunnelClient.coreLogs())
             delay(1000)
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(1000), null)
+    }.flowOn(Dispatchers.IO).distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(1000), null)
 
     /** Whether the core's loop is up — the about screen's status half. */
     val coreRunning: StateFlow<Boolean> = tunnelStatus
@@ -285,6 +298,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** Home screen extras: identity chips, ping, uptime, loss. */
+    private data class ActiveIdentity(val profile: ProfileEntity, val subscription: SubscriptionEntity?)
+    private val activeIdentity = MutableStateFlow<ActiveIdentity?>(null)
+
     private val _home = MutableStateFlow(HomeUiState())
     val home: StateFlow<HomeUiState> = _home.asStateFlow()
 
@@ -294,6 +310,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * the constructor, so it must already exist when observeTunnelForStats() runs. The week
      * is seeded from disk; the graphs themselves start empty.
      */
+    private var pingJob: Job? = null
+    private var trafficJob: Job? = null
+    private var sessionStartMillis = 0L
+    private var lastFlushAtMillis = 0L
+
     private val _stats = MutableStateFlow(StatsUiState(week = DailyTrafficStore.readWeek(app)))
     val stats: StateFlow<StatsUiState> = _stats.asStateFlow()
 
@@ -301,6 +322,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Nothing has a profile until something is imported; the welcome screen watches this
      * gate and the main shell never renders before it opens.
      */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private fun observeProfiles() {
         viewModelScope.launch {
             selectedSubscriptionId
@@ -315,38 +337,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // bucket. The user's own hide — the concealed flag — keeps its rows
                     // in the store too, but those the reveal mode can call back.
                     repository.profilesOf(id?.takeUnless { it == STANDALONE_SUBSCRIPTION_ID })
-                        .map { rows ->
-                            rows.filterNot { it.hidden || it.concealed } to
-                                rows.filter { it.concealed && !it.hidden }
+                        .map { rows -> id to rows }
+                        .flowOn(Dispatchers.Default)
+                }
+                .combine(connection) { (id, rows), conn -> Triple(id, rows, conn) }
+                .collect { (id, rows, conn) ->
+                    val requested = conn.selectedSubscriptionId
+                    if (requested != null && requested != id &&
+                        (requested == STANDALONE_SUBSCRIPTION_ID || subscriptions.value.any { it.id == requested })) {
+                        return@collect
+                    }
+                    val (visible, concealed) = withContext(Dispatchers.Default) {
+                        rows.filterNot { it.hidden || it.concealed }.sortedBy { !it.pinned } to
+                            rows.filter { it.concealed && !it.hidden }.sortedBy { !it.pinned }
+                    }
+                    if (visible.none { it.id == conn.selectedProfileId } && visible.isNotEmpty()) {
+                        ConnectionStore.update(app) { current ->
+                            if (current.selectedSubscriptionId == requested) current.copy(selectedProfileId = visible.first().id)
+                            else current
                         }
-                }
-                .combine(connection) { (visible, concealed), conn ->
-                    val selected = visible.firstOrNull { it.id == conn.selectedProfileId }
-                    // A selection that no longer exists falls back to the list's head —
-                    // persisted the moment it is made, so it survives restarts.
-                    if (selected == null && visible.isNotEmpty()) {
-                        ConnectionStore.update(app) { it.copy(selectedProfileId = visible.first().id) }
                     }
-                    // The pinned rows stand the list's ground floor, first among
-                    // themselves in the panel's own order; the rest follow as they
-                    // always did. Room's list is stable, so the sort only ever moves
-                    // the rows the pin actually moved. The concealed keep the same
-                    // order for the reveal mode's own block.
-                    visible.sortedBy { !it.pinned } to concealed.sortedBy { !it.pinned }
-                }
-                .collect { (visible, concealed) ->
                     _servers.update { state ->
-                        state.copy(
-                            profiles = visible,
-                            concealed = concealed,
+                        state.copy(profiles = visible, concealed = concealed,
                             selectedProfileId = visible.firstOrNull { it.id == connection.value.selectedProfileId }?.id
-                                ?: visible.firstOrNull()?.id,
-                        )
+                                ?: visible.firstOrNull()?.id)
                     }
-                    // A brand-new list with nothing pinged yet gets one silent sweep, so
-                    // the screen opens with answers instead of question marks.
                     if (visible.any { it.type != ProfileType.BALANCER && it.lastTestAt == null }) {
-                        pingServers()
+                        startServerSweep(true)
                     }
                 }
         }
@@ -394,25 +411,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }.getOrDefault(0L)
             val lastSeen = prefs.getLong("version_code", 0L)
-            prefs.edit().putLong("version_code", versionCode).apply()
-            if (lastSeen == 0L || lastSeen >= versionCode) return@launch
-            repository.subscriptions().first().forEach { subscription ->
-                repository.updateSubscription(subscription.id)
+            if (lastSeen >= versionCode) return@launch
+            val pending = repository.subscriptions().first()
+            if (lastSeen == 0L && pending.isEmpty()) {
+                prefs.edit().putLong("version_code", versionCode).apply()
+                return@launch
             }
+            var succeeded = true
+            pending.forEach { subscription ->
+                if (repository.updateSubscription(subscription.id).isFailure) succeeded = false
+            }
+            if (succeeded) prefs.edit().putLong("version_code", versionCode).apply()
         }
     }
 
     /** Home's server card follows the selection and the selected subscription. */
     private fun observeIdentityChips() {
         viewModelScope.launch {
-            combine(selectedSubscription, selectedProfile) { subscription, profile ->
+            val liveIdentity = combine(activeIdentity, subscriptions) { active, current ->
+                active?.copy(subscription = active.subscription?.let { saved ->
+                    current.firstOrNull { it.id == saved.id } ?: saved
+                })
+            }
+            val clock = flow {
+                while (currentCoroutineContext().isActive) {
+                    val now = System.currentTimeMillis()
+                    emit(now)
+                    val expiry = (activeIdentity.value?.subscription ?: selectedSubscription.value)?.expireEpochSeconds ?: 0
+                    delay(if (expiry > now / 1000) ((expiry * 1000 - now) + 1).coerceIn(1, 60_000) else 60_000)
+                }
+            }
+            combine(selectedSubscription, selectedProfile, settings, liveIdentity, clock) { selectedSub, selected, ui, active, now ->
+                val subscription = if (active != null) active.subscription else selectedSub
+                val profile = active?.profile ?: selected
                 // The flag panels put at the front of the name moves into the card's icon
                 // slot; the card's header says subscription first, region second.
-                val split = profile?.let { p -> splitLeadingFlag(p.remarks.ifEmpty { p.server }) }
+                val split = profile?.let { p -> splitLeadingFlag(p.remarks.ifEmpty { if (ui.maskAddresses) "" else p.server }) }
                 // The addresses' curtain reaches Home too: a nameless server's card
                 // keeps the address out of sight — the region line stands empty
                 // rather than saying where it goes.
-                val fallback = if (settings.value.maskAddresses) "" else profile?.server
+                val fallback = if (ui.maskAddresses) "" else profile?.server
                 _home.update {
                     it.copy(
                         subscriptionName = subscription?.name,
@@ -422,7 +460,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         // whose expiry has already passed wears the red chip.
                         subscriptionExpired = subscription != null &&
                             subscription.expireEpochSeconds > 0 &&
-                            subscription.expireEpochSeconds <= System.currentTimeMillis() / 1000,
+                            subscription.expireEpochSeconds <= now / 1000,
                     )
                 }
             }.collect { }
@@ -440,11 +478,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun disconnect() {
+        val generation = connectGeneration.incrementAndGet()
         connectJob?.cancel()
-        tunnelClient.disconnect()
+        viewModelScope.launch(Dispatchers.IO) {
+            configurationMutex.withLock {
+                if (generation == connectGeneration.get()) tunnelClient.disconnect()
+            }
+        }
     }
-
-    private var connectJob: Job? = null
 
     private fun applyConfigAndConnect(
         profile: ProfileEntity? = _servers.value.profiles.firstOrNull { it.id == connection.value.selectedProfileId }
@@ -452,50 +493,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         profile ?: return
         val requestedConnection = connection.value
+        val generation = connectGeneration.incrementAndGet()
         connectJob?.cancel()
         connectJob = viewModelScope.launch(Dispatchers.IO) {
-            try {
-                // A balancer's members are resolved against the store, not the screen's
-                // list — the screen hides the members, the store keeps them: linkKeys from
-                // the column, rows from the subscription. A balancer whose members have all
-                // fallen away degrades to the whole subscription — still a pick, just a
-                // wider one.
-                val members = if (profile.type == ProfileType.BALANCER) {
-                    val keys = profile.balancerMemberKeys.toSet()
-                    val rows = repository
-                        .profilesOf(profile.subscriptionId)
-                        .first()
-                    val resolved = rows.filter {
-                        it.type != ProfileType.BALANCER && it.linkKey in keys
+            configurationMutex.withLock {
+                try {
+                    val resolvedProfile = repository.profileById(profile.id)
+                        ?: throw IllegalStateException("Selected server no longer exists")
+                    require(!resolvedProfile.hidden && !resolvedProfile.concealed) { "Selected server is hidden" }
+                    // A balancer's members are resolved against the store, not the screen's
+                    // list — the screen hides the members, the store keeps them: linkKeys from
+                    // the column, rows from the subscription. A balancer whose members have all
+                    // fallen away degrades to the whole subscription — still a pick, just a
+                    // wider one.
+                    val members = if (resolvedProfile.type == ProfileType.BALANCER) {
+                        val keys = resolvedProfile.balancerMemberKeys.toSet()
+                        val rows = repository
+                            .profilesOf(resolvedProfile.subscriptionId)
+                            .first()
+                        val resolved = rows.filter {
+                            it.type != ProfileType.BALANCER && it.linkKey in keys
+                        }
+                        resolved.ifEmpty { rows.filter { it.type != ProfileType.BALANCER } }
+                    } else {
+                        emptyList()
                     }
-                    resolved.ifEmpty { rows.filter { it.type != ProfileType.BALANCER } }
-                } else {
-                    emptyList()
+                    val config = XrayConfigBuilder.buildFull(
+                        resolvedProfile,
+                        requestedConnection.routingMode,
+                        members,
+                        requestedConnection.delayTestUrl,
+                    )
+                    val subscriptionName = resolvedProfile.subscriptionId?.let { repository.subscriptionById(it)?.name }
+                    currentCoroutineContext().ensureActive()
+                    val requestContext = currentCoroutineContext()
+                    synchronized(CoreConfigFile) {
+                        requestContext.ensureActive()
+                        if (generation == connectGeneration.get()) {
+                            CoreConfigFile.write(app, config,
+                                resolvedProfile.remarks.ifEmpty { if (settings.value.maskAddresses) "" else resolvedProfile.server },
+                                subscriptionName, resolvedProfile.id, resolvedProfile.subscriptionId, resolvedProfile.server)
+                            tunnelClient.connect()
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (generation == connectGeneration.get()) _servers.update { it.copy(error = e.message ?: app.getString(R.string.error_unknown)) }
                 }
-                val config = XrayConfigBuilder.buildFull(
-                    profile,
-                    requestedConnection.routingMode,
-                    members,
-                    requestedConnection.delayTestUrl,
-                )
-                currentCoroutineContext().ensureActive()
-                CoreConfigFile.write(
-                    app,
-                    config,
-                    // The addresses' curtain reaches the system's own notification: a
-                    // nameless server would have named the address there, so the name
-                    // stands empty instead.
-                    profile.remarks.ifEmpty {
-                        if (settings.value.maskAddresses) "" else profile.server
-                    },
-                    profile.subscriptionId?.let { repository.subscriptionById(it)?.name },
-                )
-                currentCoroutineContext().ensureActive()
-                tunnelClient.connect()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _servers.update { it.copy(error = e.message ?: app.getString(R.string.error_unknown)) }
             }
         }
     }
@@ -507,7 +552,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun selectProfile(id: String) {
         if (_servers.value.selectedProfileId == id) return
         ConnectionStore.update(app) { it.copy(selectedProfileId = id) }
-        if (tunnelStatus.value.state == TunnelState.UP) {
+        if (tunnelStatus.value.state in setOf(TunnelState.UP, TunnelState.CONNECTING)) {
             applyConfigAndConnect(_servers.value.profiles.firstOrNull { it.id == id })
         }
     }
@@ -575,13 +620,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Deletes a subscription and everything it brought in — or the standalone group. */
     fun deleteSubscription(id: String) {
         viewModelScope.launch {
-            if (id == STANDALONE_SUBSCRIPTION_ID) {
-                repository.deleteManualProfiles()
-            } else {
-                repository.deleteSubscription(id)
-            }
-            if (connection.value.selectedSubscriptionId == id) {
-                ConnectionStore.update(app) { it.copy(selectedSubscriptionId = null, selectedProfileId = null) }
+            configurationMutex.withLock {
+                invalidateConfiguration(subscriptionId = id)
+                if (id == STANDALONE_SUBSCRIPTION_ID) {
+                    repository.deleteManualProfiles()
+                } else {
+                    repository.deleteSubscription(id)
+                }
+                if (connection.value.selectedSubscriptionId == id) {
+                    ConnectionStore.update(app) { it.copy(selectedSubscriptionId = null, selectedProfileId = null) }
+                }
             }
         }
     }
@@ -592,9 +640,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun deleteManualProfile(id: String) {
         viewModelScope.launch {
-            repository.deleteManualProfile(id)
-            if (connection.value.selectedProfileId == id) {
-                ConnectionStore.update(app) { it.copy(selectedProfileId = null) }
+            configurationMutex.withLock {
+                invalidateConfiguration(profileId = id)
+                repository.deleteManualProfile(id)
+                if (connection.value.selectedProfileId == id) {
+                    ConnectionStore.update(app) { it.copy(selectedProfileId = null) }
+                }
+            }
+        }
+    }
+
+    private suspend fun invalidateConfiguration(profileId: String? = null, subscriptionId: String? = null) {
+        withContext(Dispatchers.IO) {
+            synchronized(CoreConfigFile) {
+                val snapshot = CoreConfigFile.snapshot(app)
+                val selectionMatches = profileId != null && connection.value.selectedProfileId == profileId ||
+                    subscriptionId != null && connection.value.selectedSubscriptionId == subscriptionId
+                if (selectionMatches) {
+                    connectGeneration.incrementAndGet()
+                    connectJob?.cancel()
+                }
+                val matches = snapshot != null && (
+                    profileId != null && (snapshot.profileId == profileId ||
+                        snapshot.profileId == null && connection.value.selectedProfileId == profileId) ||
+                    subscriptionId != null && (snapshot.subscriptionId == subscriptionId ||
+                        subscriptionId == STANDALONE_SUBSCRIPTION_ID && snapshot.subscriptionId == null ||
+                        snapshot.profileId == null && connection.value.selectedSubscriptionId == subscriptionId))
+                if (matches) {
+                    connectGeneration.incrementAndGet()
+                    connectJob?.cancel()
+                    CoreConfigFile.clear(app)
+                    tunnelClient.disconnect()
+                }
             }
         }
     }
@@ -617,6 +694,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Switches the servers screen to another subscription. */
     fun selectSubscription(id: String) {
         if (selectedSubscriptionId.value == id) return
+        sweepGeneration++
+        sweepJob?.cancel()
         ConnectionStore.update(app) { it.copy(selectedSubscriptionId = id, selectedProfileId = null) }
         _servers.update { ServersUiState() }
     }
@@ -660,34 +739,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * every profile's chip answers with its own number — or a dash, when the server is
      * unreachable.
      */
-    fun pingServers() {
-        // Balancers have no endpoint to measure: their "ping" is whichever member the
-        // live routing is on, which the live loop reads anyway.
-        val profiles = _servers.value.profiles.filter { it.type != ProfileType.BALANCER }
-        if (profiles.isEmpty() || _servers.value.isPinging) return
+    fun pingServers() = startServerSweep(false)
+
+    private fun startServerSweep(onlyUntested: Boolean) {
+        if (sweepJob?.isActive == true) return
+        val profiles = _servers.value.profiles.filter {
+            it.type != ProfileType.BALANCER && (!onlyUntested || it.lastTestAt == null)
+        }
+        if (profiles.isEmpty()) return
+        val generation = ++sweepGeneration
         _servers.update { it.copy(isPinging = true) }
-        viewModelScope.launch(Dispatchers.IO) {
-            val testUrl = connection.value.delayTestUrl
-            val semaphore = Semaphore(PING_CONCURRENCY)
-            val now = System.currentTimeMillis()
-            val jobs = profiles.map { profile ->
-                launch {
-                    semaphore.withPermit {
-                        val config = XrayConfigBuilder.buildTest(profile)
-                        val delay = tunnelClient.measureDelay(config, testUrl)
-                        if (currentCoroutineContext().isActive) {
-                            repository.setProfileDelay(profile.id, delay, now)
+        sweepJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val testUrl = connection.value.delayTestUrl
+                coroutineScope {
+                    val results = Channel<Pair<String, Long?>>(Channel.UNLIMITED)
+                    val writer = launch {
+                        while (true) {
+                            val first = results.receiveCatching().getOrNull() ?: break
+                            val batch = mutableListOf(first)
+                            delay(150)
+                            while (true) batch.add(results.tryReceive().getOrNull() ?: break)
+                            repository.setProfileDelays(batch, System.currentTimeMillis())
                         }
                     }
+                    try {
+                        val next = java.util.concurrent.atomic.AtomicInteger()
+                        List(minOf(PING_CONCURRENCY, profiles.size)) {
+                            launch {
+                                while (currentCoroutineContext().isActive) {
+                                    val profile = profiles.getOrNull(next.getAndIncrement()) ?: break
+                                    pingSemaphore.withPermit {
+                                        currentCoroutineContext().ensureActive()
+                                        val measured = try {
+                                            tunnelClient.measureDelay(XrayConfigBuilder.buildTest(profile), testUrl)
+                                        } catch (e: CancellationException) { throw e }
+                                        catch (_: Exception) { null }
+                                        currentCoroutineContext().ensureActive()
+                                        results.send(profile.id to measured)
+                                    }
+                                }
+                            }
+                        }.joinAll()
+                    } finally { results.close() }
+                    writer.join()
                 }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                if (generation == sweepGeneration) _servers.update { it.copy(error = e.message ?: app.getString(R.string.error_unknown)) }
+            } finally {
+                if (generation == sweepGeneration) _servers.update { it.copy(isPinging = false) }
             }
-            jobs.joinAllSafe()
-            _servers.update { it.copy(isPinging = false) }
         }
-    }
-
-    private suspend fun List<Job>.joinAllSafe() {
-        forEach { runCatching { it.join() } }
     }
 
     /**
@@ -721,6 +824,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .collect { status ->
                     when (status.state) {
                         TunnelState.UP -> {
+                            val active = withContext(Dispatchers.IO) {
+                                val snapshot = CoreConfigFile.snapshot(app)
+                                val profile = snapshot?.profileId?.let { repository.profileById(it) }
+                                    ?: selectedProfile.value
+                                profile?.let { ActiveIdentity(it, it.subscriptionId?.let { id -> repository.subscriptionById(id) }) }
+                            }
+                            if (tunnelStatus.value.state != TunnelState.UP) return@collect
+                            activeIdentity.value = active
                             _home.update {
                                 it.copy(uptimeStartMillis = tunnelClient.connectedAtMillis() ?: System.currentTimeMillis())
                             }
@@ -728,6 +839,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
 
                         else -> {
+                            if (status.state == TunnelState.DOWN) activeIdentity.value = null
                             pingJob?.cancel()
                             _home.update {
                                 it.copy(pingMillis = null, uptimeStartMillis = null, recentLossPercent = null)
@@ -738,7 +850,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private var pingJob: Job? = null
 
     /**
      * Runs the live probe every 15 s while the tunnel is up: each round refreshes Home's
@@ -758,13 +869,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while (isActive && tunnelStatus.value.state == TunnelState.UP) {
                 val now = System.currentTimeMillis()
                 val delay = tunnelClient.measureLiveDelay(connection.value.delayTestUrl)
-                if (tunnelStatus.value.state == TunnelState.UP && delay != null) {
-                    if (delay >= 0) {
-                        _home.update { it.copy(pingMillis = delay) }
-                    } else {
-                        _home.update { it.copy(pingMillis = null) }
-                    }
-                    recordProbe(now, lost = delay < 0)
+                currentCoroutineContext().ensureActive()
+                if (tunnelStatus.value.state == TunnelState.UP) {
+                    _home.update { it.copy(pingMillis = delay?.takeIf { value -> value >= 0 }) }
+                    recordProbe(now, lost = delay == null || delay < 0)
                 }
                 pacedDelay(
                     if (appInForeground) PING_INTERVAL_MILLIS else BACKGROUND_PROBE_MILLIS,
@@ -772,11 +880,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-
-    // The stats session's bookkeeping.
-    private var sessionStartMillis = 0L
-
-    private var lastFlushAtMillis = 0L
 
     /**
      * Whether the app's UI is on screen, told by the activity's start/stop. The stats loops
@@ -953,12 +1056,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     private suspend fun pacedDelay(totalMillis: Long) {
         var remaining = totalMillis
+        val startedInForeground = appInForeground
         while (remaining > 0 && currentCoroutineContext().isActive) {
             kotlinx.coroutines.delay(minOf(1_000L, remaining))
             remaining -= 1_000L
-            if (appInForeground && remaining > TRAFFIC_SAMPLE_MILLIS) {
-                remaining = TRAFFIC_SAMPLE_MILLIS
-            }
+            if (!startedInForeground && appInForeground) return
         }
     }
 
@@ -966,7 +1068,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * The stats screen's live history, kept in memory only. The week is seeded from disk;
      * the graphs themselves start empty.
      */
-    private var trafficJob: Job? = null
 
     private companion object {
         /** How many one-off measurement cores may run at once in ":core". */

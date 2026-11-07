@@ -21,39 +21,75 @@ object CoreConfigFile {
 
     private fun dir(context: Context): File = File(context.filesDir, DIR).also { it.mkdirs() }
 
-    /** The last config the UI rendered, or null when there is nothing to connect with. */
-    fun readConfig(context: Context): String? {
-        return readAtomic(File(dir(context), CONFIG))
-    }
+    data class Snapshot(
+        val config: String,
+        val profileName: String?,
+        val subscriptionName: String?,
+        val profileId: String? = null,
+        val subscriptionId: String? = null,
+        val server: String? = null,
+    )
 
-    /** The connected profile's display name, for the notification and the tile. */
-    fun readProfileName(context: Context): String? {
-        return readAtomic(File(dir(context), PROFILE))?.trim()?.takeIf { it.isNotEmpty() }
-    }
-
-    /** The connected profile's subscription name — the hop the notification tells
-     *  before the region. Null for manual profiles: no subscription to name. */
-    fun readSubscriptionName(context: Context): String? {
-        return readAtomic(File(dir(context), SUBSCRIPTION))?.trim()?.takeIf { it.isNotEmpty() }
-    }
-
-    fun has(context: Context): Boolean = !readConfig(context).isNullOrBlank()
-
-    private fun readAtomic(file: File): String? = runCatching {
-        AtomicSnapshot.read(file)
-    }.getOrNull()
+    private var cachedKey: String? = null
+    private var cachedSnapshot: Snapshot? = null
 
     @Synchronized
-    fun write(context: Context, configJson: String, profileName: String?, subscriptionName: String?) {
+    fun snapshot(context: Context): Snapshot? = runCatching { readSnapshot(context) }.getOrNull()
+
+    private fun readSnapshot(context: Context): Snapshot? {
         val directory = dir(context)
-        writeAtomic(File(directory, CONFIG), configJson)
-        writeAtomic(File(directory, PROFILE), profileName.orEmpty())
-        writeAtomic(File(directory, SUBSCRIPTION), subscriptionName.orEmpty())
+        val bundle = File(directory, "session.json")
+        if (bundle.exists()) return runCatching {
+            val attributes = java.nio.file.Files.readAttributes(bundle.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java)
+            val key = "${bundle.absolutePath}:${attributes.fileKey()}:${attributes.size()}:${attributes.lastModifiedTime()}"
+            if (cachedKey == key) return cachedSnapshot
+            val json = org.json.JSONObject(AtomicSnapshot.read(bundle) ?: return null)
+            val config = json.getString("config")
+            if (config.isBlank()) {
+                cachedKey = key
+                cachedSnapshot = null
+                return null
+            }
+            fun field(key: String) = json.optString(key).takeIf { it.isNotEmpty() }
+            Snapshot(config, field("profile"), field("subscription"), field("profileId"), field("subscriptionId"), field("server")).also {
+                cachedKey = key
+                cachedSnapshot = it
+            }
+        }.getOrNull()
+        val config = AtomicSnapshot.read(File(directory, CONFIG))?.takeIf { it.isNotBlank() } ?: return null
+        return Snapshot(config, AtomicSnapshot.read(File(directory, PROFILE)),
+            AtomicSnapshot.read(File(directory, SUBSCRIPTION)))
     }
 
-    private fun writeAtomic(target: File, content: String) {
-        AtomicSnapshot.write(target, content)
+    fun readConfig(context: Context): String? = snapshot(context)?.config
+    fun readProfileName(context: Context): String? = snapshot(context)?.let { saved ->
+        saved.profileName?.trim()?.takeIf {
+            it.isNotEmpty() && !(slop.miho.chumpy.data.SettingsStore.tileSettings(context).maskAddresses && it == saved.server)
+        }
     }
+    fun readSubscriptionName(context: Context): String? = snapshot(context)?.subscriptionName?.trim()?.takeIf { it.isNotEmpty() }
+    fun has(context: Context): Boolean = snapshot(context) != null
+
+    @Synchronized
+    fun write(context: Context, configJson: String, profileName: String?, subscriptionName: String?,
+        profileId: String? = null, subscriptionId: String? = null, server: String? = null) {
+        cachedKey = null
+        val json = org.json.JSONObject().put("config", configJson)
+            .put("profile", profileName.orEmpty()).put("subscription", subscriptionName.orEmpty())
+            .put("profileId", profileId.orEmpty()).put("subscriptionId", subscriptionId.orEmpty())
+            .put("server", server.orEmpty())
+        AtomicSnapshot.write(File(dir(context), "session.json"), json.toString())
+    }
+
+    @Synchronized
+    fun clear(context: Context) {
+        val directory = dir(context)
+        cachedKey = null
+        cachedSnapshot = null
+        AtomicSnapshot.write(File(directory, "session.json"), org.json.JSONObject().put("config", "").toString())
+        listOf(CONFIG, PROFILE, SUBSCRIPTION).forEach { File(directory, it).delete() }
+    }
+
 }
 
 /** The profile name the way the server list shows it: the leading flag lifted off —

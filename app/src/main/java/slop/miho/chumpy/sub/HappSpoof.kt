@@ -79,13 +79,17 @@ object HappSpoof {
      * Dresses the connection up as the Happ client: the UA carries the version, OS and
      * user id; the x- headers carry the rest of the fingerprint.
      */
+    fun headers(fingerprint: Fingerprint): Map<String, String> = mapOf(
+        "User-Agent" to "Happ/${fingerprint.appVersion}/${fingerprint.os}/${fingerprint.userId}",
+        "x-device-locale" to fingerprint.locale,
+        "x-hwid" to fingerprint.hwid,
+        "x-device-os" to fingerprint.os,
+        "x-ver-os" to fingerprint.osVersion,
+        "x-device-model" to fingerprint.deviceModel,
+        "accept-encoding" to "gzip",
+    )
+
     fun apply(connection: HttpURLConnection, fingerprint: Fingerprint) {
-        connection.setRequestProperty("User-Agent", "Happ/${fingerprint.appVersion}/${fingerprint.os}/${fingerprint.userId}")
-        connection.setRequestProperty("x-device-locale", fingerprint.locale)
-        connection.setRequestProperty("x-hwid", fingerprint.hwid)
-        connection.setRequestProperty("x-device-os", fingerprint.os)
-        connection.setRequestProperty("x-ver-os", fingerprint.osVersion)
-        connection.setRequestProperty("x-device-model", fingerprint.deviceModel)
-        connection.setRequestProperty("accept-encoding", "gzip")
+        headers(fingerprint).forEach { (name, value) -> connection.setRequestProperty(name, value) }
     }
 }
