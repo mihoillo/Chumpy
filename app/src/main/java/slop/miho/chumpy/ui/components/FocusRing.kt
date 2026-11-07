@@ -15,6 +15,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -65,11 +66,15 @@ fun Modifier.focusRing(
                 val reach = gap.toPx() + stroke / 2
                 val color = ringColor.copy(alpha = ringColor.alpha * reveal)
                 if (path != null) {
-                    drawPath(
-                        path = path(Size(size.width + reach * 2f, size.height + reach * 2f)),
-                        color = color,
-                        style = Stroke(stroke),
-                    )
+                    // The path is built for the ring's own bounds; the node's corner is
+                    // where those bounds begin, outset by the reach.
+                    translate(-reach, -reach) {
+                        drawPath(
+                            path = path(Size(size.width + reach * 2f, size.height + reach * 2f)),
+                            color = color,
+                            style = Stroke(stroke),
+                        )
+                    }
                 } else {
                     val pad = if (inset) -reach else reach
                     val radius = if (circular) {

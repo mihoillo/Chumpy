@@ -1,5 +1,6 @@
 package slop.miho.chumpy.ui.main
 
+import android.app.Activity
 import android.net.VpnService
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
@@ -79,6 +80,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import slop.miho.chumpy.R
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import slop.miho.chumpy.core.TunnelState
 import slop.miho.chumpy.core.TunnelStatus
 import slop.miho.chumpy.ui.MainViewModel
@@ -135,6 +139,25 @@ fun MainShell(viewModel: MainViewModel) {
     LaunchedEffect(controller) {
         // Touch takes the bar back the moment it arrives.
         if (!controller) barSummoned = false
+    }
+    // The system's own navigation bar owns a strip along the bottom of the screen, and
+    // on the couch devices — the Switch, the Quest — that strip is dead land for the
+    // app: every touch meant for the floating bar (and the connect button beside it)
+    // is eaten by the system's navigation first, the app seeing the press but never
+    // the click. While the controller drives the shell, the system bar stands down —
+    // the controller needs no on-screen buttons, BACK rides its own key — and the
+    // strip hands its land back. A finger on the glass brings the bar up again, as it
+    // brings everything else back.
+    LaunchedEffect(controller) {
+        val window = (context as? Activity)?.window ?: return@LaunchedEffect
+        val insets = WindowCompat.getInsetsController(window, window.decorView)
+        if (controller) {
+            insets.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            insets.hide(WindowInsetsCompat.Type.navigationBars())
+        } else {
+            insets.show(WindowInsetsCompat.Type.navigationBars())
+        }
     }
     // The bar's own visibility under the controller: Home keeps it (it is Home's look,
     // and DOWN from the connect button reaches it), a BACK-summon shows it over whatever

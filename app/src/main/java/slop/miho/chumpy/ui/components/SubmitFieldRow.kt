@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -66,6 +67,10 @@ fun SubmitFieldRow(
     loading: Boolean = false,
 ) {
     val clipboard = LocalClipboardManager.current
+    // The controller's word on the field's manners: no focus from the dpad's walk, no
+    // keyboard from passing over — and no autofocus below. Touch keeps every bit of
+    // the field's old ways.
+    val dpadDriven = LocalInputMode.current == InputMode.CONTROLLER
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val closeInteraction = remember { MutableInteractionSource() }
@@ -119,7 +124,14 @@ fun SubmitFieldRow(
             modifier = Modifier
                 .weight(1f)
                 .offset(x = (-8).dp)
-                .focusRequester(focusRequester),
+                .focusRequester(focusRequester)
+                // Under the controller the field sits out of the dpad's walk: the
+                // cursor passing over it must not stop to raise the keyboard, and the
+                // tiles beside it are the row's own stops. Touch keeps the field as it
+                // always was — a tap, and the caret is there.
+                .then(
+                    if (dpadDriven) Modifier.focusProperties { canFocus = false } else Modifier,
+                ),
         )
         val colors = MaterialTheme.colorScheme
         val motion = MaterialTheme.motionScheme
@@ -228,7 +240,6 @@ fun SubmitFieldRow(
     }
     // The controller's word on the field's opening move, read here in composition so
     // the effect below stays a plain suspend block.
-    val dpadDriven = LocalInputMode.current == InputMode.CONTROLLER
     LaunchedEffect(autofocus) {
         // The add row's opening move in touch: the field ready for typing. Under the
         // controller it stays put instead — a keyboard barging open over the dpad's own

@@ -98,6 +98,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
@@ -115,6 +116,8 @@ import slop.miho.chumpy.data.UiSettings
 import slop.miho.chumpy.ui.components.FlipTriangleTile
 import slop.miho.chumpy.ui.components.FoldingGroup
 import slop.miho.chumpy.ui.components.InfoChip
+import slop.miho.chumpy.ui.components.InputMode
+import slop.miho.chumpy.ui.components.LocalInputMode
 import slop.miho.chumpy.ui.components.TriangleTilePolygon
 import slop.miho.chumpy.ui.components.TriangleTileRingPath
 import slop.miho.chumpy.ui.components.AccentRow
@@ -1437,7 +1440,17 @@ private fun TestUrlRow(
                 modifier = Modifier
                     .weight(1f)
                     .onFocusChanged { focused = it.isFocused }
-                    .bringIntoViewRequester(requester),
+                    .bringIntoViewRequester(requester)
+                    // Under the controller the field sits out of the dpad's walk — the
+                    // cursor passing over it must not stop to raise the keyboard. Touch
+                    // keeps the field as it always was.
+                    .then(
+                        if (LocalInputMode.current == InputMode.CONTROLLER) {
+                            Modifier.focusProperties { canFocus = false }
+                        } else {
+                            Modifier
+                        },
+                    ),
             )
             Surface(
                 shape = CircleShape,
@@ -1758,7 +1771,17 @@ private fun HappFieldRow(
             modifier = Modifier
                 .weight(1f)
                 .onFocusChanged { focused = it.isFocused }
-                .bringIntoViewRequester(requester),
+                .bringIntoViewRequester(requester)
+                // Under the controller the field sits out of the dpad's walk — the
+                // cursor passing over it must not stop to raise the keyboard. Touch
+                // keeps the field as it always was.
+                .then(
+                    if (LocalInputMode.current == InputMode.CONTROLLER) {
+                        Modifier.focusProperties { canFocus = false }
+                    } else {
+                        Modifier
+                    },
+                ),
         )
         // The pencil, asleep: a pencil, no press, marking the row for a text field.
         Surface(
