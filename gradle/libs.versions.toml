@@ -16,6 +16,7 @@ serialization = "1.11.0"
 camera = "1.4.2"
 
 [libraries]
+okhttp = "com.squareup.okhttp3:okhttp:4.12.0"
 androidx-annotation = "androidx.annotation:annotation:1.9.1"
 androidx-collection = "androidx.collection:collection:1.6.0"
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }

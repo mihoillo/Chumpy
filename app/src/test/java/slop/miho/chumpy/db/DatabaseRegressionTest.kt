@@ -1,5 +1,6 @@
 package slop.miho.chumpy.db
 
+import org.robolectric.RuntimeEnvironment
 import android.app.Application
 import androidx.room.Room
 import androidx.room.withTransaction
@@ -11,7 +12,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import slop.miho.chumpy.sub.SubscriptionRepository
 import slop.miho.chumpy.sub.LinkUtils
@@ -155,4 +155,26 @@ class DatabaseRegressionTest {
         assertNull(db.profileDao().byId("profile"))
         assertNotNull(db.profileDao().byId("manual"))
     }
+
+    @Test fun `manual balancer refresh replaces members and removes orphan internals`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val database = Room.inMemoryDatabaseBuilder(context, ChumpyDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val repository = SubscriptionRepository(context, database, { false }, { null })
+            fun group(a: String, b: String) = """{"remarks":"Group","outbounds":[
+                {"tag":"proxy-a","protocol":"socks","settings":{"address":"$a","port":1080}},
+                {"tag":"proxy-b","protocol":"socks","settings":{"address":"$b","port":1080}}],
+                "routing":{"balancers":[{"tag":"pool","selector":["proxy-"]}]}}"""
+            repository.addManualProfiles(group("one.example", "two.example")).getOrThrow()
+            val before = database.profileDao().bySubscriptionOnce(null).single { it.type == ProfileType.BALANCER }
+            repository.addManualProfiles(group("three.example", "four.example")).getOrThrow()
+            val rows = database.profileDao().bySubscriptionOnce(null)
+            assertEquals(3, rows.size)
+            val after = rows.single { it.type == ProfileType.BALANCER }
+            assertEquals(before.id, after.id)
+            assertNotEquals(before.balancerMembers, after.balancerMembers)
+            assertEquals(setOf("three.example", "four.example"), rows.filter { it.hidden }.map { it.server }.toSet())
+        } finally { database.close() }
+    }
+
 }

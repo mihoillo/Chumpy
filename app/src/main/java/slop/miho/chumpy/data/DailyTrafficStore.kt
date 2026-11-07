@@ -38,9 +38,12 @@ object DailyTrafficStore {
 
     /** Adds [rx]/[tx] to today's bucket, keeps at most the last seven days, and returns the
      *  fresh week for the state flow. */
-    fun addToday(context: Context, rx: Long, tx: Long): List<DailyTraffic> {
-        if (rx < 0 || tx < 0) return readWeek(context)
-        val today = LocalDate.now().toEpochDay()
+    fun addToday(context: Context, rx: Long, tx: Long): List<DailyTraffic> =
+        addDay(context, LocalDate.now().toEpochDay(), rx, tx)
+
+    @Synchronized
+    fun addDay(context: Context, today: Long, rx: Long, tx: Long): List<DailyTraffic> {
+        if (rx < 0 || tx < 0 || today !in (LocalDate.now().toEpochDay() - 6)..LocalDate.now().toEpochDay()) return readWeek(context)
         val days = readWeek(context).toMutableList()
         val index = days.indexOfFirst { it.epochDay == today }
         if (index >= 0) {

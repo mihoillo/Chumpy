@@ -1,6 +1,7 @@
 package slop.miho.chumpy.ui.main
 
 import android.content.Intent
+
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,6 +50,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -273,6 +275,7 @@ fun ServersScreen(
 
     // Both menus' copies ride the same hand: whatever a row was born from, verbatim.
     val clipboard = LocalClipboardManager.current
+    val foldPoke = rememberHapticPoke()
 
     // Rows sit under the floating bar while the list outgrows the screen.
     val listState = rememberLazyListState()
@@ -296,73 +299,47 @@ fun ServersScreen(
             .calculateTopPadding() + 24.dp
         val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues()
             .calculateBottomPadding() + LocalBarReservedHeight.current
+        val rows = remember(state.profiles, state.concealed, revealConcealed) {
+            if (revealConcealed) (state.profiles + state.concealed).sortedWith(
+                compareBy({ !it.pinned }, { it.order }, { it.remarks }),
+            ) else state.profiles
+        }
+        val foldAlpha = lerp(1f, 0.45f, foldShown())
+        val headerAlpha by animateFloatAsState(
+            targetValue = if (menuHost != null) 0.45f else foldAlpha,
+            animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(), label = "servers dim",
+        )
         LazyColumn(
             state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .screenPadding(),
-            // The pull pushes the rows down through this top padding (see WavyPullToRefreshBox).
+            modifier = Modifier.fillMaxSize().screenPadding(),
             contentPadding = remember(topContentPadding, bottomContentPadding, pullShift) {
                 pullShiftedPadding(topContentPadding, bottomContentPadding, pullShift)
             },
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            // An update failure sits above everything, shaped like a server row itself.
             state.error?.let { error ->
-                item { ErrorCard(message = stringResource(R.string.subscription_update_failed, error)) }
+                item(key = "error") {
+                    Box(Modifier.padding(bottom = 6.dp)) {
+                        ErrorCard(message = stringResource(R.string.subscription_update_failed, error))
+                    }
+                }
             }
-
-            item {
-                SubscriptionCard(
-                    subscription = selectedSubscription,
-                    isUpdating = state.isUpdating,
-                    expanded = dropdownOpen,
-                    dimmed = menuHost != null,
-                    week = week,
-                    onToggle = { dropdownOpen = !dropdownOpen },
-                    onUpdate = onUpdate,
-                )
+            item(key = "subscription") {
+                Box(Modifier.padding(bottom = 6.dp)) {
+                    SubscriptionCard(subscription = selectedSubscription, isUpdating = state.isUpdating,
+                        expanded = dropdownOpen, dimmed = menuHost != null, week = week,
+                        onToggle = { dropdownOpen = !dropdownOpen }, onUpdate = onUpdate)
+                }
             }
-
-            // The chooser unrolls under the card and the servers stay: the Happ fold's
-            // own ride, opening to push the list down and closing to let it climb back
-            // — one piece, never leaving the slot empty. While the chooser stands open
-            // the servers are out of play: drawn dim — the dim following the fold's own
-            // stand — taken out of touch, and any tap on them folds the chooser back
-            // up — the dim itself is the button. A row's open menu keeps the same dim
-            // lit — one formula, so the two never stack on top of each other.
-            item {
-                val motion = MaterialTheme.motionScheme
-                val dimmed by animateFloatAsState(
-                    targetValue = if (menuHost != null) 0.45f else lerp(1f, 0.45f, foldShown()),
-                    animationSpec = motion.fastEffectsSpec(),
-                    label = "servers dim",
-                )
-                val poke = rememberHapticPoke()
-                Column(Modifier.fillMaxWidth()) {
-                    // The fold on its own two clocks — the same pairing the
-                    // AnimatedVisibility ran it by, so an open and a close play the
-                    // same ride they always did. The window clips the content at
-                    // whatever of it stands revealed, and the content rides the
-                    // window's bottom edge — bottom-anchored the way the stock
-                    // expandVertically anchors it, so the list slides out from
-                    // under the card rather than being unveiled in place; the fade
-                    // rides its own quicker clock and runs ahead of the height, the
-                    // way the fold's own close keeps them.
+            item(key = "header") {
+                Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
                     if (foldShown() > 0f) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clipToBounds()
-                                .layout { measurable, constraints ->
-                                    val placeable = measurable.measure(constraints)
-                                    val height = (placeable.height * foldShown()).roundToInt()
-                                    layout(placeable.width, height) {
-                                        placeable.place(0, height - placeable.height)
-                                    }
-                                }
-                                .graphicsLayer { alpha = foldFade() },
-                        ) {
+                        Box(Modifier.fillMaxWidth().clipToBounds()
+                            .layout { measurable, constraints ->
+                                val placeable = measurable.measure(constraints)
+                                val height = (placeable.height * foldShown()).roundToInt()
+                                layout(placeable.width, height) { placeable.place(0, height - placeable.height) }
+                            }.graphicsLayer { alpha = foldFade() }) {
                             Column(Modifier.padding(bottom = 8.dp)) {
                                 SubscriptionDropdown(
                                     subscriptions = subscriptions,
@@ -390,81 +367,97 @@ fun ServersScreen(
                         }
                     }
                     Box {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .graphicsLayer { alpha = dimmed }
-                                // The dimmed rows are out of play while the chooser or a
-                                // row's menu stands over them — out of touch, and out of
-                                // the controller's walk: the dim is the button, and the
-                                // dpad may not stop on what it has taken off the table.
-                                // The entry wall makes it law at the grant itself — a
-                                // move aimed under the dim dies at its edge.
-                                .focusProperties {
-                                    val out = menuHost != null || dropdownOpen
-                                    canFocus = !out
-                                    onEnter = { if (out) cancelFocusChange() }
-                                },
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            ServersHeader(
-                                state = state,
-                                expired = selectedSubscription?.let { isExpired(it) } == true,
-                                onToggleReveal = { revealConcealed = !revealConcealed },
-                            )
-                            // The reveal mode's own list: the concealed rows come back
-                            // at the places the panel keeps them in — not a block of
-                            // their own above the list, but their own seats in it —
-                            // wearing the half-light and the slashed eye until the chip
-                            // puts them away again. The merge repeats the store's own
-                            // order (the pin's ground floor, then the panel's own
-                            // sequence), so a revealed row lands exactly where it
-                            // always stood.
-                            val rows = if (revealConcealed && state.concealed.isNotEmpty()) {
-                                (state.profiles + state.concealed).sortedWith(
-                                    compareBy({ !it.pinned }, { it.order }, { it.remarks }),
-                                )
-                            } else {
-                                state.profiles
-                            }
-                            ServerGroup(
-                                profiles = rows,
-                                selectedId = state.selectedProfileId,
-                                flagStyle = flagStyle,
-                                tunnelUp = tunnelUp,
-                                onSelect = onSelect,
-                                onDelete = { onDeleteManualProfile(it.id) },
-                                onTogglePinned = onTogglePinned,
-                                onToggleConcealed = onToggleConcealed,
-                                menuHost = menuHost,
-                                onMenuHostChange = { openMenu(it) },
-                                menuAskingDelete = menuAskingDelete,
-                                onMenuAskingChange = { menuAskingDelete = it },
-                                onCopyText = { text -> clipboard.setText(AnnotatedString(text)) },
-                            )
+                        // The header under the fold or a row's menu is out of play — out of
+                        // touch, and out of the controller's walk: the dim is the button, and
+                        // the dpad may not stop on what the fold has taken off the table. The
+                        // entry wall makes it law at the grant itself — a move aimed under
+                        // the dim dies at its edge.
+                        Box(Modifier.graphicsLayer { alpha = headerAlpha }
+                            .focusProperties {
+                                val out = menuHost != null || dropdownOpen
+                                canFocus = !out
+                                onEnter = { if (out) cancelFocusChange() }
+                            }) {
+                            ServersHeader(state = state, expired = selectedSubscription?.let { isExpired(it) } == true,
+                                onToggleReveal = { revealConcealed = !revealConcealed })
                         }
-                        // The catcher over the out-of-play list: no ripple, no press —
-                        // a tap anywhere over the dim is the fold's own close. A touch
-                        // catcher only: the dpad never stops on it (BACK closes the fold
-                        // under the controller instead) — the entry wall turns the walk
-                        // away at its edge.
                         if (dropdownOpen) {
-                            Box(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .focusProperties {
-                                        canFocus = false
-                                        onEnter = { cancelFocusChange() }
-                                    }
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                    ) {
-                                        poke()
-                                        dropdownOpen = false
-                                    },
-                            )
+                            // The catcher over the dimmed list: no ripple, no press — a tap
+                            // anywhere over the dim is the fold's own close. A touch catcher
+                            // only: the dpad never stops on it (BACK closes the fold under
+                            // the controller instead) — the entry wall turns the walk away
+                            // at its edge.
+                            Box(Modifier.matchParentSize()
+                                .focusProperties {
+                                    canFocus = false
+                                    onEnter = { cancelFocusChange() }
+                                }
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() }, indication = null,
+                                ) { foldPoke(); dropdownOpen = false })
                         }
+                    }
+                }
+            }
+            if (rows.isEmpty()) item(key = "empty") {
+                // The empty state sits under the fold's dim with the rows: same law.
+                Box(Modifier.graphicsLayer { alpha = headerAlpha }
+                    .focusProperties {
+                        val out = menuHost != null || dropdownOpen
+                        canFocus = !out
+                        onEnter = { if (out) cancelFocusChange() }
+                    }) {
+                    ServersEmpty()
+                    if (dropdownOpen) {
+                        Box(Modifier.matchParentSize()
+                            .focusProperties {
+                                canFocus = false
+                                onEnter = { cancelFocusChange() }
+                            }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() }, indication = null,
+                            ) { foldPoke(); dropdownOpen = false })
+                    }
+                }
+            }
+            itemsIndexed(rows, key = { _, profile -> "profile:${profile.id}" }, contentType = { _, _ -> "server" }) { index, profile ->
+                // The rows under the fold or a row's menu are out of play — out of
+                // touch, and out of the controller's walk: the dim is the button, and
+                // the dpad may not stop on what it has taken off the table. The entry
+                // wall makes it law at the grant itself — a move aimed under the dim
+                // dies at its edge, wherever in the list it was headed.
+                Box(Modifier.graphicsLayer { alpha = foldAlpha }
+                    .focusProperties {
+                        val out = menuHost != null || dropdownOpen
+                        canFocus = !out
+                        onEnter = { if (out) cancelFocusChange() }
+                    }) {
+                    ServerGroupRow(
+                        profile = profile,
+                        index = index,
+                        total = rows.size,
+                        selectedId = state.selectedProfileId,
+                        flagStyle = flagStyle,
+                        tunnelUp = tunnelUp,
+                        onSelect = onSelect,
+                        onDelete = { onDeleteManualProfile(it.id) },
+                        onTogglePinned = onTogglePinned,
+                        onToggleConcealed = onToggleConcealed,
+                        menuHost = menuHost,
+                        onMenuHostChange = { openMenu(it) },
+                        menuAskingDelete = menuAskingDelete,
+                        onMenuAskingChange = { menuAskingDelete = it },
+                        onCopyText = { text -> clipboard.setText(AnnotatedString(text)) },
+                    )
+                    if (dropdownOpen) {
+                        Box(Modifier.matchParentSize()
+                            .focusProperties {
+                                canFocus = false
+                                onEnter = { cancelFocusChange() }
+                            }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() }, indication = null,
+                            ) { foldPoke(); dropdownOpen = false })
                     }
                 }
             }
@@ -497,7 +490,7 @@ private fun ServersHeader(
                 icon = R.drawable.ic_servers,
                 animateValue = true,
             )
-            val reachable = servers.count { (it.testDelayMillis ?: -1L) > 0L }
+            val reachable = servers.count { (it.testDelayMillis ?: -1L) >= 0L }
             if (reachable > 0) {
                 InfoChip(
                     value = stringResource(R.string.servers_online, reachable),
@@ -1851,8 +1844,10 @@ private fun updatedText(subscription: SubscriptionEntity): String? {
  * corners and a 2dp gap between rows instead of dividers.
  */
 @Composable
-private fun ServerGroup(
-    profiles: List<ProfileEntity>,
+private fun ServerGroupRow(
+    profile: ProfileEntity,
+    index: Int,
+    total: Int,
     selectedId: String?,
     flagStyle: FlagStyle,
     tunnelUp: Boolean,
@@ -1866,79 +1861,55 @@ private fun ServerGroup(
     onMenuAskingChange: (Boolean) -> Unit,
     onCopyText: (String) -> Unit,
 ) {
-    if (profiles.isEmpty()) {
-        ServersEmpty()
-        return
-    }
-    val rows = buildList<@Composable (Shape) -> Unit> {
-        profiles.forEach { profile ->
-            add { shape ->
-                ServerRow(
-                    profile = profile,
-                    selected = profile.id == selectedId,
-                    flagStyle = flagStyle,
-                    tunnelUp = tunnelUp,
-                    // A concealed row, called back by the chip, stands where it always
-                    // stood but stays out of play: the tap that would pick it does
-                    // nothing — the menu's own Показать is its way back.
-                    onSelect = if (profile.concealed) {
-                        {}
-                    } else {
-                        { onSelect(profile.id) }
-                    },
-                    // Every config row carries the menu, but not every one the same
-                    // menu: the loose configs own themselves — the pin, the hide and
-                    // the delete are theirs, the copy of the link they were born from
-                    // too — while a subscription's configs answer to the subscription,
-                    // and their menu is the pin and the hide alone.
-                    menu = RowMenu(
-                        open = menuHost == profile.id,
-                        onOpenChange = { open -> onMenuHostChange(profile.id.takeIf { open }) },
-                        askingDelete = menuAskingDelete,
-                        onAskingDeleteChange = onMenuAskingChange,
-                        deleteQuestion = stringResource(R.string.config_delete_title),
-                        canDelete = profile.subscriptionId == null,
-                        canCopy = profile.subscriptionId == null,
-                        copyEnabled = profile.sourceLink != null,
-                        onCopy = { profile.sourceLink?.let(onCopyText) },
-                        onDelete = { onDelete(profile) },
-                        pinned = profile.pinned,
-                        onTogglePinned = { onTogglePinned(profile.id, it) },
-                        // Every server row hides — the whole list is the user's own
-                        // shelf. The subscriptions' own rows (the dropdown) keep the
-                        // door shut: their menu never passes one.
-                        canHide = true,
-                        concealed = profile.concealed,
-                        onToggleConcealed = { onToggleConcealed(profile.id, it) },
-                    ),
-                    dimmed = menuHost != null && menuHost != profile.id,
-                    shape = shape,
-                )
-            }
-        }
-    }
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.extraSmall
-    // No clip on the block: a pinned row wears its pin half over the edge, and the
-    // block's own outline would take it. The rows clip themselves — each to its own
-    // shape — which is all the segmented look ever asked of it.
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        rows.forEachIndexed { index, row ->
-            val first = index == 0
-            val last = index == rows.lastIndex
-            row(
-                RoundedCornerShape(
-                    topStart = if (first) outer.topStart else inner.topStart,
-                    topEnd = if (first) outer.topEnd else inner.topEnd,
-                    bottomStart = if (last) outer.bottomStart else inner.bottomStart,
-                    bottomEnd = if (last) outer.bottomEnd else inner.bottomEnd,
-                ),
-            )
-        }
-    }
+    val shape = RoundedCornerShape(
+        topStart = if (index == 0) outer.topStart else inner.topStart,
+        topEnd = if (index == 0) outer.topEnd else inner.topEnd,
+        bottomStart = if (index == total - 1) outer.bottomStart else inner.bottomStart,
+        bottomEnd = if (index == total - 1) outer.bottomEnd else inner.bottomEnd,
+    )
+    ServerRow(
+        profile = profile,
+        selected = profile.id == selectedId,
+        flagStyle = flagStyle,
+        tunnelUp = tunnelUp,
+        // A concealed row, called back by the chip, stands where it always
+        // stood but stays out of play: the tap that would pick it does
+        // nothing — the menu's own Показать is its way back.
+        onSelect = if (profile.concealed) {
+            {}
+        } else {
+            { onSelect(profile.id) }
+        },
+        // Every config row carries the menu, but not every one the same
+        // menu: the loose configs own themselves — the pin, the hide and
+        // the delete are theirs, the copy of the link they were born from
+        // too — while a subscription's configs answer to the subscription,
+        // and their menu is the pin and the hide alone.
+        menu = RowMenu(
+            open = menuHost == profile.id,
+            onOpenChange = { open -> onMenuHostChange(profile.id.takeIf { open }) },
+            askingDelete = menuAskingDelete,
+            onAskingDeleteChange = onMenuAskingChange,
+            deleteQuestion = stringResource(R.string.config_delete_title),
+            canDelete = profile.subscriptionId == null,
+            canCopy = profile.subscriptionId == null,
+            copyEnabled = profile.sourceLink != null,
+            onCopy = { profile.sourceLink?.let(onCopyText) },
+            onDelete = { onDelete(profile) },
+            pinned = profile.pinned,
+            onTogglePinned = { onTogglePinned(profile.id, it) },
+            // Every server row hides — the whole list is the user's own
+            // shelf. The subscriptions' own rows (the dropdown) keep the
+            // door shut: their menu never passes one.
+            canHide = true,
+            concealed = profile.concealed,
+            onToggleConcealed = { onToggleConcealed(profile.id, it) },
+        ),
+        dimmed = menuHost != null && menuHost != profile.id,
+        shape = shape,
+    )
 }
 
 /** Nothing to pick yet: the quiet card that says what a pull or an update would do. */
@@ -1994,7 +1965,9 @@ private fun ServerRow(
     // whole row drifting through the rainbow — the RAINBOW accent's slow cycle, on this
     // one row instead of the whole scheme. The flag itself rides the icon slot, like the
     // country flags do, and comes off the name.
-    val (pride, prideStripped) = splitLeadingPrideFlag(profile.remarks.ifEmpty { profile.server })
+    val (pride, prideStripped) = splitLeadingPrideFlag(
+        profile.remarks.ifEmpty { if (LocalUiSettings.current.maskAddresses) "" else profile.server },
+    )
     // The flag the panel put at the front of the name moves into the icon slot; the
     // headline shows the name without it.
     val (flag, splitTitle) = splitLeadingFlag(prideStripped)
@@ -2138,9 +2111,9 @@ private fun ServerRow(
                         },
                         label = "ping",
                     ) { (delay, _) ->
-                        if (delay != null) {
+                        if (delay != null || profile.lastTestAt != null) {
                             val text = when {
-                                delay < 0 -> stringResource(R.string.servers_offline)
+                                delay == null || delay < 0 -> stringResource(R.string.servers_offline)
                                 else -> stringResource(R.string.servers_ping_ms, delay.toInt())
                             }
                             Text(

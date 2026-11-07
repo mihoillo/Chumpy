@@ -40,7 +40,7 @@ object SubscriptionParser {
     }
 
     private fun decodeBody(body: String): String {
-        val trimmed = body.trim()
+        val trimmed = body.trim().removePrefix("\uFEFF").trim()
         if (trimmed.startsWith("{") || trimmed.startsWith("[") ||
             Regex("(?m)^proxies:").containsMatchIn(trimmed)) return trimmed
         // Plain link lists announce themselves; base64 bodies don't.

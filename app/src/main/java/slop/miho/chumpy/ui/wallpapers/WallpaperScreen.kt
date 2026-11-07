@@ -69,6 +69,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -173,32 +175,35 @@ fun WallpaperScreen(
     var editOffsetY by remember { mutableFloatStateOf(0f) }
     var editScale by remember { mutableFloatStateOf(1f) }
     BackHandler(enabled = editPosition) { editPosition = false }
+    val importScope = rememberCoroutineScope()
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) {
-            importError = onSetWallpaper(uri)
-            wallpaperSelected = WallpaperRegistry.current(context) != null
-            wallpaperVersion++
-            // The accent seeds follow the picture: recompute right away.
-            WallpaperPalette.refresh(context)
-            // A fresh picture lands on its own look: its first seed as the accent, a
-            // gentle dim on Home, a stronger dim with a touch of blur everywhere else,
-            // and the menu surfaces a touch see-through. The pan resets to centered and
-            // the text's recolor decision starts over.
-            if (importError == null) {
-                onSettings {
-                    it.copy(
-                        accent = Accent.WALLPAPER_1,
-                        wallpaperDim = 0.10f,
-                        wallpaperDimScreens = 0.60f,
-                        wallpaperBlur = 0.30f,
-                        wallpaperTextDark = false,
-                        wallpaperOffsetX = 0f,
-                        wallpaperOffsetY = 0f,
-                        wallpaperUserScale = 1f,
-                        surfaceOpacity = 0.85f,
-                    )
+            importScope.launch {
+                importError = withContext(Dispatchers.IO) { onSetWallpaper(uri) }
+                wallpaperSelected = WallpaperRegistry.current(context) != null
+                wallpaperVersion++
+                // The accent seeds follow the picture: recompute right away.
+                WallpaperPalette.refresh(context)
+                // A fresh picture lands on its own look: its first seed as the accent, a
+                // gentle dim on Home, a stronger dim with a touch of blur everywhere else,
+                // and the menu surfaces a touch see-through. The pan resets to centered and
+                // the text's recolor decision starts over.
+                if (importError == null) {
+                    onSettings {
+                        it.copy(
+                            accent = Accent.WALLPAPER_1,
+                            wallpaperDim = 0.10f,
+                            wallpaperDimScreens = 0.60f,
+                            wallpaperBlur = 0.30f,
+                            wallpaperTextDark = false,
+                            wallpaperOffsetX = 0f,
+                            wallpaperOffsetY = 0f,
+                            wallpaperUserScale = 1f,
+                            surfaceOpacity = 0.85f,
+                        )
+                    }
                 }
             }
         }
@@ -206,7 +211,7 @@ fun WallpaperScreen(
     // Decoding happens off the main thread; a camera shot can be tens of megapixels.
     val wallpaper by produceState<DecodedWallpaper?>(null, wallpaperVersion) {
         val file = WallpaperRegistry.current(context)
-        value = withContext(Dispatchers.IO) { file?.let(::decodeWallpaper) }
+        value = withContext(Dispatchers.IO) { file?.let(::decodeWallpaper) ?: run { releaseWallpaperCache(); null } }
     }
 
     // The wide window splits like the main shell's: the preview — Home's stand-in — in a
