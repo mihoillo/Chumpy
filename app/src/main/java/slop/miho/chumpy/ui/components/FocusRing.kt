@@ -13,6 +13,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -26,6 +27,13 @@ import androidx.compose.ui.unit.dp
  * [cornerRadius] shapes them otherwise (tiles and their 16dp corners). The ring follows
  * its node's focus on its own, unless [focused] hands it a borrowed one — a row's tile
  * wearing the ring while the row itself carries the focus.
+ *
+ * [inset] flips the ring inside the bounds instead of past them — for the tiles whose
+ * paint is clipped by the surface they sit in (the bar's round buttons, whose frost
+ * surface cuts everything past its own circle). [path] takes the ring off the rounded
+ * rectangle entirely: the lambda is handed the ring's own bounds — the node outset by
+ * its reach — and its path is stroked as is, for the tiles whose own shape is neither
+ * a circle nor a rounded square (the fold's triangle).
  */
 fun Modifier.focusRing(
     cornerRadius: Dp = 16.dp,
@@ -33,6 +41,8 @@ fun Modifier.focusRing(
     gap: Dp = 4.dp,
     strokeWidth: Dp = 3.dp,
     focused: (() -> Boolean)? = null,
+    inset: Boolean = false,
+    path: ((Size) -> Path)? = null,
 ): Modifier = composed {
     var ownFocused by remember { mutableStateOf(false) }
     val controller = LocalInputMode.current == InputMode.CONTROLLER
@@ -50,19 +60,31 @@ fun Modifier.focusRing(
             drawContent()
             if (reveal > 0.01f) {
                 val stroke = strokeWidth.toPx()
-                val out = gap.toPx() + stroke / 2
-                val radius = if (circular) {
-                    size.minDimension / 2f + out
+                // How far the ring's centerline sits past the node's own bounds — or,
+                // inset, short of them.
+                val reach = gap.toPx() + stroke / 2
+                val color = ringColor.copy(alpha = ringColor.alpha * reveal)
+                if (path != null) {
+                    drawPath(
+                        path = path(Size(size.width + reach * 2f, size.height + reach * 2f)),
+                        color = color,
+                        style = Stroke(stroke),
+                    )
                 } else {
-                    cornerRadius.toPx() + out
+                    val pad = if (inset) -reach else reach
+                    val radius = if (circular) {
+                        (size.minDimension + pad * 2f) / 2f
+                    } else {
+                        (cornerRadius.toPx() + pad).coerceAtLeast(0f)
+                    }
+                    drawRoundRect(
+                        color = color,
+                        topLeft = Offset(-pad, -pad),
+                        size = Size(size.width + pad * 2f, size.height + pad * 2f),
+                        cornerRadius = CornerRadius(radius, radius),
+                        style = Stroke(stroke),
+                    )
                 }
-                drawRoundRect(
-                    color = ringColor.copy(alpha = ringColor.alpha * reveal),
-                    topLeft = Offset(-out, -out),
-                    size = Size(size.width + out * 2f, size.height + out * 2f),
-                    cornerRadius = CornerRadius(radius, radius),
-                    style = Stroke(stroke),
-                )
             }
         }
 }

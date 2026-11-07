@@ -29,8 +29,12 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asComposePath
 import androidx.graphics.shapes.CornerRounding
 import androidx.graphics.shapes.RoundedPolygon
+import androidx.graphics.shapes.toPath
 import slop.miho.chumpy.ui.wallpapers.withSurfaceOpacity
 
 /**
@@ -131,6 +135,17 @@ internal val TriangleTilePolygon =
     RoundedPolygon(numVertices = 3, rounding = CornerRounding(0.25f)).normalized()
 
 /**
+ * The same triangle, spread over whatever bounds it is handed — focusRing's path for the
+ * triangle tiles, so the ring wears the tile's own shape instead of a square around it.
+ * The polygon is normalized to the unit square; toPath hands it over in those terms, and
+ * the matrix spreads that square over the ring's own bounds.
+ */
+internal fun TriangleTileRingPath(bounds: Size): Path =
+    TriangleTilePolygon.toPath().asComposePath().apply {
+        transform(Matrix().apply { scale(bounds.width, bounds.height) })
+    }
+
+/**
  * The triangle tile flipping its point: down while the fold is closed, up while it is
  * open — the trip runs through the per-app row's own right-pointing pose, 180 degrees
  * on a spring a touch looser than the scheme's own, so the point swings just past its
@@ -163,14 +178,18 @@ fun FlipTriangleTile(
         ),
         label = "flip triangle rotation",
     )
-    // The ring rides ahead of the flip's own rotation, so the point swings inside a
-    // ring that stands still — the tile turns, the focus does not.
+    // The ring rides inside the flip's own rotation and takes the tile's own shape: a
+    // triangle pointing where the tile points, swinging with it — a standing square
+    // around a turning triangle read as a bug, not a mark.
     Surface(
         shape = TriangleTilePolygon.toShape(),
         color = container,
         modifier = Modifier
             .size(48.dp)
-            .focusRing(focused = focused)
-            .graphicsLayer { rotationZ = rotation },
+            .graphicsLayer { rotationZ = rotation }
+            .focusRing(
+                focused = focused,
+                path = { TriangleTileRingPath(it) },
+            ),
     ) {}
 }

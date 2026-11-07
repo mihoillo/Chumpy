@@ -226,8 +226,17 @@ fun SubmitFieldRow(
             }
         }
     }
+    // The controller's word on the field's opening move, read here in composition so
+    // the effect below stays a plain suspend block.
+    val dpadDriven = LocalInputMode.current == InputMode.CONTROLLER
     LaunchedEffect(autofocus) {
-        if (autofocus) focusRequester.requestFocus()
+        // The add row's opening move in touch: the field ready for typing. Under the
+        // controller it stays put instead — a keyboard barging open over the dpad's own
+        // ride is a door slammed in the face; the field takes its focus the way
+        // everything else does, when the dpad walks into it.
+        if (autofocus && !dpadDriven) {
+            focusRequester.requestFocus()
+        }
     }
 }
 

@@ -116,6 +116,7 @@ import slop.miho.chumpy.ui.components.FlipTriangleTile
 import slop.miho.chumpy.ui.components.FoldingGroup
 import slop.miho.chumpy.ui.components.InfoChip
 import slop.miho.chumpy.ui.components.TriangleTilePolygon
+import slop.miho.chumpy.ui.components.TriangleTileRingPath
 import slop.miho.chumpy.ui.components.AccentRow
 import slop.miho.chumpy.ui.components.CountryFlag
 import slop.miho.chumpy.ui.components.RainbowFlag
@@ -907,7 +908,12 @@ private fun TriangleTile(
         color = container,
         modifier = Modifier
             .size(48.dp)
-            .focusRing(focused = focused),
+            // The ring takes the tile's own shape — a triangle around the triangle,
+            // outset past its points — rather than a square around them both.
+            .focusRing(
+                focused = focused,
+                path = { TriangleTileRingPath(it) },
+            ),
     ) {}
 }
 
@@ -2232,9 +2238,6 @@ private fun IconPreviewButton(
         modifier = Modifier
             .size(ICON_PREVIEW_SIZE)
             .pressBounce(pressed, taps)
-            // The controller's ring rides before the clip — outside it, as every ring
-            // sits outside what it marks — round, like the icon it circles.
-            .focusRing(circular = true)
             .clip(CircleShape)
             .drawBehind {
                 // Drawn only once there's width to draw: a zero-width stroke would still

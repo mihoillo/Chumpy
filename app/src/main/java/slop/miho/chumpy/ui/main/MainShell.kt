@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -143,6 +144,17 @@ fun MainShell(viewModel: MainViewModel) {
     val barFocusRequester = remember { FocusRequester() }
     LaunchedEffect(barSummoned) {
         if (barSummoned) barFocusRequester.requestFocus()
+    }
+    // Every change of the on-stage destination re-seats the controller's cursor: the
+    // bar keeps it whenever it stays on for the change (Home, the gear's unfold, the
+    // fold back from settings), and a page switch clears it — the next press walks into
+    // the new page from its edge, instead of the cursor lingering on whatever the old
+    // page left it on or hunting its own way there, which read as wandering. Touch is
+    // left alone: focus follows the taps there, as it always has.
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(selectedTab, settingsOpen, selectedCategory) {
+        if (!controller) return@LaunchedEffect
+        if (barVisible) barFocusRequester.requestFocus() else focusManager.clearFocus()
     }
     // The controller's back door: one BACK summons the bar over the screen on stage —
     // the strip's own touch-wise back (a page back, a settings fold back) stands aside —

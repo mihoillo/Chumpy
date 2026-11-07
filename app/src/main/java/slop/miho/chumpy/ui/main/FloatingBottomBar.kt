@@ -75,6 +75,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -306,11 +307,13 @@ private fun FloatingMainBar(
             // The bar's whole footprint — the gaps between the pills included — belongs to
             // the bar: a press there is consumed here instead of falling through to the
             // page beneath. The pills still win their own touches: children see the events
-            // first, so this only eats what lands on the empty stretches.
+            // first, so this only eats what lands on the empty stretches — and the eating
+            // itself runs in the final pass, after everyone's main-pass handling, so no
+            // device's particular event stream can find a tap half-processed here.
             .pointerInput(Unit) {
                 awaitEachGesture {
                     while (true) {
-                        val event = awaitPointerEvent()
+                        val event = awaitPointerEvent(PointerEventPass.Final)
                         event.changes.forEach { it.consume() }
                         if (event.changes.none { it.pressed }) break
                     }
@@ -408,11 +411,13 @@ fun <T : PillDestination> SubScreenBottomBar(
         modifier = modifier
             .navigationBarsPadding()
             .padding(horizontal = floatingBarMargin(), vertical = BarVerticalPadding)
-            // The whole footprint belongs to the bar, as on the main one.
+            // The whole footprint belongs to the bar, as on the main one — and the eating
+            // runs in the final pass there too, after every main-pass handler has had
+            // its own look.
             .pointerInput(Unit) {
                 awaitEachGesture {
                     while (true) {
-                        val event = awaitPointerEvent()
+                        val event = awaitPointerEvent(PointerEventPass.Final)
                         event.changes.forEach { it.consume() }
                         if (event.changes.none { it.pressed }) break
                     }
@@ -796,7 +801,11 @@ private fun RoundBarButton(
     Box(
         modifier = Modifier
             .size(BarHeight)
-            .focusRing(circular = true)
+            // The ring rides inset: the bar's frost surface clips its content to its
+            // own circle, and a ring drawn past the button's edge would be cut down
+            // to slivers there. Inside the bounds it stays whole — a rim just short
+            // of the button's own edge.
+            .focusRing(circular = true, inset = true)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,

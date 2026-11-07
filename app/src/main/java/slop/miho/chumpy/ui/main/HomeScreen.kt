@@ -65,7 +65,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -410,9 +409,6 @@ private fun ServerCard(
     val colors = MaterialTheme.colorScheme
     // The flag follows the picked flag style: Twemoji, the system emoji, or the globe.
     val flagStyle = LocalUiSettings.current.flagStyle
-    // The controller's eye on the card: the card itself carries the focus, and its
-    // chevron — the arrow pointing where the tap leads — wears the ring for it.
-    var cardFocused by remember { mutableStateOf(false) }
     Surface(
         // Rounder than the rows it mirrors: a lone full-width card can afford the soft
         // extra-large corners, while its icon tile stays squarer (the servers' 12dp).
@@ -421,7 +417,10 @@ private fun ServerCard(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .onFocusChanged { cardFocused = it.isFocused },
+            // The controller's pick of the card is the whole card: the ring runs its
+            // full outline, as the connect button's does — a mark on the chevron alone
+            // read as something else to press first.
+            .focusRing(cornerRadius = 28.dp),
     ) {
         Row(
             // The same inset all around the icon tile, so the tile sits centered in its
@@ -486,9 +485,7 @@ private fun ServerCard(
             Icon(
                 painter = painterResource(R.drawable.ic_chevron_right),
                 contentDescription = null,
-                modifier = Modifier
-                    .size(20.dp)
-                    .focusRing(circular = true, focused = { cardFocused }),
+                modifier = Modifier.size(20.dp),
                 tint = colors.onSurfaceVariant,
             )
         }
@@ -521,17 +518,16 @@ private fun ConnectButton(
     val poke = rememberHapticPoke()
     Button(
         onClick = {
+            // Busy is answered with silence here rather than a disabled button: a
+            // disabled one gives up its focus, and the controller's cursor would drop
+            // off the screen's loudest button exactly when it starts working.
+            if (busy) return@Button
             poke()
             if (up) onDisconnect() else onConnect()
         },
-        enabled = !busy,
         colors = ButtonDefaults.buttonColors(
             containerColor = container,
             contentColor = content,
-            // Keep the same colors while disabled (connecting), otherwise the button
-            // greys out and the bar becomes invisible.
-            disabledContainerColor = container,
-            disabledContentColor = content,
         ),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
         modifier = modifier
