@@ -512,7 +512,12 @@ fun MainShell(viewModel: MainViewModel) {
             // the controller it also leaves the stage while a screen works — the dims
             // and the flight were settled right above the layouts.
             val bar: @Composable BoxScope.() -> Unit = {
+                // In the split the bar floats over Home's half whatever the right pane
+                // shows: its paint keeps Home's own look — the thin gradient, never the
+                // slab or the glass — and the items wear Home's colors with it.
+                CompositionLocalProvider(LocalBarCanFade provides (homeLook || wide)) {
                 FloatingBottomBar(
+                    wide = wide,
                     selectedTab = selectedTab,
                     onTabSelected = {
                         selectedTab = it
@@ -557,16 +562,18 @@ fun MainShell(viewModel: MainViewModel) {
                             },
                         ),
                 )
+                }
             }
             if (wide) {
                 Box(
                     Modifier
                         .align(Alignment.BottomStart)
-                        // The same available width the panes split: the bar centers over
-                        // Home's own half of it — cutouts and all — not the raw window,
-                        // so it stays true to the content it floats over.
+                        // The same available width the panes split — cutouts and all —
+                        // not the raw window: the bar paints edge to edge in this width
+                        // (the classic bar's gradient runs the window's whole bottom),
+                        // while what sits in it keeps to Home's own half.
                         .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                        .fillMaxWidth(0.5f),
+                        .fillMaxWidth(),
                 ) {
                     bar()
                 }

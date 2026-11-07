@@ -196,6 +196,8 @@ fun rememberContentUnderBar(list: LazyListState): State<Boolean> {
  */
 @Composable
 fun FloatingBottomBar(
+    /** The split layout: the window is wide enough for Home and the strip side by side. */
+    wide: Boolean = false,
     selectedTab: MainTab,
     onTabSelected: (MainTab) -> Unit,
     settingsOpen: Boolean,
@@ -221,7 +223,11 @@ fun FloatingBottomBar(
         label = "bar style",
     ) { classic ->
         if (classic) {
-            ClassicBar(backdrop = backdrop) {
+            // Edge to edge: in the split the classic bar's paint — the thin gradient of
+            // Home's look, always Home's look there — runs the window's whole width,
+            // while the items themselves keep to Home's half, where the content they
+            // belong to sits.
+            ClassicBar(backdrop = backdrop, wide = wide) {
                 // The classic form of the morph: the bar's items scroll over, as the pages
                 // do — the settings categories come in from the right, where they sit in the
                 // strip, and the tabs return from the left — fading as they go.
@@ -240,7 +246,7 @@ fun FloatingBottomBar(
                     },
                     label = "classic tabs <-> categories",
                 ) { open ->
-                    ClassicBarRow {
+                    ClassicBarRow(wide = wide) {
                         if (open) {
                             ClassicBarButton(R.drawable.ic_arrow_back, R.string.nav_back) {
                                 onSettingsOpenChange(false)
@@ -271,16 +277,23 @@ fun FloatingBottomBar(
                 }
             }
         } else {
-            FloatingMainBar(
-                selectedTab = selectedTab,
-                onTabSelected = onTabSelected,
-                settingsOpen = settingsOpen,
-                onSettingsOpenChange = onSettingsOpenChange,
-                selectedCategory = selectedCategory,
-                onCategorySelected = onCategorySelected,
-                backdrop = backdrop,
-                focusRequester = focusRequester,
-            )
+            // In the split the pill keeps to Home's own half of the window — centered
+            // where the half's content is, never straddling the seam into the strip.
+            Box(
+                modifier = if (wide) Modifier.fillMaxWidth(0.5f) else Modifier,
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                FloatingMainBar(
+                    selectedTab = selectedTab,
+                    onTabSelected = onTabSelected,
+                    settingsOpen = settingsOpen,
+                    onSettingsOpenChange = onSettingsOpenChange,
+                    selectedCategory = selectedCategory,
+                    onCategorySelected = onCategorySelected,
+                    backdrop = backdrop,
+                    focusRequester = focusRequester,
+                )
+            }
         }
     }
 }
@@ -451,6 +464,8 @@ fun <T : PillDestination> SubScreenBottomBar(
 @Composable
 private fun ClassicBar(
     backdrop: GraphicsLayer?,
+    /** The split layout: the items keep to Home's half while the paint runs edge to edge. */
+    wide: Boolean = false,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
@@ -481,13 +496,21 @@ private class NoBounceMotionScheme(private val base: MotionScheme) : MotionSchem
 /**
  * The classic bar's items row: M3's own navigation bar, transparent over [ClassicBar]'s
  * paint, its items kept off the screen edges by the same margins as the floating pills.
+ * In the split [wide] it keeps to Home's own half of the window — the paint runs edge to
+ * edge past it, but the destinations sit where the content they switch lives.
  */
 @Composable
-private fun ClassicBarRow(content: @Composable RowScope.() -> Unit) {
+private fun ClassicBarRow(
+    /** The split layout: the row spans Home's half, not the whole window. */
+    wide: Boolean = false,
+    content: @Composable RowScope.() -> Unit,
+) {
     NavigationBar(
         containerColor = Color.Transparent,
         tonalElevation = 0.dp,
-        modifier = Modifier.padding(horizontal = floatingBarMargin()),
+        modifier = Modifier
+            .padding(horizontal = floatingBarMargin())
+            .then(if (wide) Modifier.fillMaxWidth(0.5f) else Modifier),
         content = content,
     )
 }
