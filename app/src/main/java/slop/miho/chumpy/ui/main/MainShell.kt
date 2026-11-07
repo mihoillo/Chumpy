@@ -198,24 +198,35 @@ fun MainShell(viewModel: MainViewModel) {
     // dimmed half — which read as the walk never having left the main screen.
     val pageEntranceRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
+    // The reseat's own door through the bar's exit wall, held open for exactly the
+    // moves below: the plant pill → anchor crosses out of the bar's subtree, and the
+    // island below cannot tell that crossing from a dpad's drift — left standing, it
+    // swallowed the landing whole, the cursor stayed on the leaving pill, got dropped
+    // by the bar's own gate, and the system's hunt filled the gap from Home again.
+    val reseating = remember { mutableStateOf(false) }
     LaunchedEffect(controller, selectedTab, settingsOpen, selectedCategory, barSummoned) {
         if (!controller) return@LaunchedEffect
         if (barVisible) {
             (if (settingsOpen) categoryFocusRequester else tabFocusRequester).requestFocus()
         } else {
-            // Straight onto the page's own anchor: a direct grant, no search, no
-            // null window for the initial-focus hunt to fill with Home. focus was
-            // standing on the bar pill that is now leaving; the grant moves it here
-            // before the bar's own gates get to drop it. And off the anchor at once:
-            // one frame later — the anchor and the page it marks take their places
-            // with the frame's layout, and a search run before that would see no
-            // geometry to walk into — the cursor folds one step down onto the page's
-            // first real row, ring on, OK answering from the first press. Landing on
-            // the anchor alone left the cursor invisible and idle — an OK into
-            // nothing, and a dpad detour before anything answered.
-            pageEntranceRequester.requestFocus()
-            withFrameNanos { }
-            focusManager.moveFocus(FocusDirection.Down)
+            reseating.value = true
+            try {
+                // Straight onto the page's own anchor: a direct grant, no search, no
+                // null window for the initial-focus hunt to fill with Home. This is the
+                // pill → anchor crossing the door above is held open for; with it shut,
+                // the island swallowed this grant and the cursor never left the bar.
+                pageEntranceRequester.requestFocus()
+                // One frame later the anchor and the page it marks have their places
+                // — a search run any earlier sees no geometry to walk into — and the
+                // cursor folds one step down onto the page's top element: ring on,
+                // OK answering from the first press, no detours. The same landing
+                // serves the touch → controller handover: the first dpad press re-seats
+                // the cursor wherever touch left it, top of the page, one input later.
+                withFrameNanos { }
+                focusManager.moveFocus(FocusDirection.Down)
+            } finally {
+                reseating.value = false
+            }
         }
     }
     // The controller's back door: one BACK summons the bar over the screen on stage —
@@ -600,14 +611,18 @@ fun MainShell(viewModel: MainViewModel) {
                         // island — a focus search crossing its edge from the inside
                         // stops dead in every direction, leaving being the picks' and
                         // BACK's job, not the dpad's drift sideways into whatever
-                        // stands over. On Home both walls stand down: the bar keeps its
-                        // two-way bond with the screen above it (DOWN from the connect
-                        // button lands here, UP from here climbs back).
+                        // stands over. But the wall hears no direction, and a leaving
+                        // means a leaving: the reseat's own pill → anchor crossing is
+                        // an exit too, so the shell holds its door open for the moves
+                        // it makes itself (the reseat pass above). On Home both walls
+                        // stand down anyway: the bar keeps its two-way bond with the
+                        // screen above it (DOWN from the connect button lands here,
+                        // UP from here climbs back).
                         .focusProperties {
                             canFocus = barVisible
                             onEnter = { if (!barVisible) cancelFocusChange() }
                             onExit = {
-                                if (controller && !atHome) cancelFocusChange()
+                                if (controller && !atHome && !reseating.value) cancelFocusChange()
                             }
                         }
                         .then(
