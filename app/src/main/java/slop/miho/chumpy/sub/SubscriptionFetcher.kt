@@ -10,6 +10,7 @@ import java.util.zip.GZIPInputStream
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import android.net.Uri
 import java.io.IOException
 import java.net.InetSocketAddress
@@ -97,6 +98,47 @@ class SubscriptionFetcher(
                 } catch (e: Exception) {
                     if (continuation.isActive) continuation.resumeWithException(e)
                 }
+            }
+        })
+    }
+
+    suspend fun fetchGeodata(url: String, target: java.io.File): Unit = suspendCancellableCoroutine { continuation ->
+        val parsed = url.toHttpUrlOrNull()
+        if (parsed == null || !parsed.isHttps || parsed.username.isNotEmpty() || parsed.password.isNotEmpty()) {
+            continuation.resumeWithException(IOException("Geodata requires an HTTPS URL without embedded credentials"))
+            return@suspendCancellableCoroutine
+        }
+        val base = if (tunnelUp()) tunnelClient else directClient
+        val client = base.newBuilder().followSslRedirects(false).callTimeout(45, java.util.concurrent.TimeUnit.SECONDS).build()
+        val call = client.newCall(Request.Builder().url(parsed).header("User-Agent", USER_AGENT).build())
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) { if (continuation.isActive) continuation.resumeWithException(e) }
+            override fun onResponse(call: Call, response: Response) {
+                try {
+                    response.use {
+                        if (!it.isSuccessful || !it.request.url.isHttps) throw IOException("Geodata HTTP ${it.code}")
+                        val input = it.body?.byteStream()?.buffered() ?: throw IOException("Empty geodata")
+                        input.mark(2)
+                        val gzip = input.read() == 0x1f && input.read() == 0x8b
+                        input.reset()
+                        val stream = if (gzip) GZIPInputStream(input) else input
+                        stream.use { source -> target.outputStream().buffered().use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            var total = 0L
+                            while (true) {
+                                if (!continuation.isActive) throw IOException("Cancelled")
+                                val count = source.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                if (total > slop.miho.chumpy.data.GeodataFiles.MAX_BYTES) throw IOException("Geodata exceeds 64 MiB")
+                                output.write(buffer, 0, count)
+                            }
+                            if (total == 0L) throw IOException("Empty geodata")
+                        } }
+                    }
+                    if (continuation.isActive) continuation.resume(Unit)
+                } catch (e: Exception) { if (continuation.isActive) continuation.resumeWithException(e) }
             }
         })
     }

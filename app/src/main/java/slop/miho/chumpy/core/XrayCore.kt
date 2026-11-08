@@ -294,7 +294,7 @@ object XrayCore {
         try {
             awaitInit()
             initFailed?.let { return -1L }
-            return Libv2ray.measureOutboundDelay(configJson, testUrl)
+            return DelayProbe.measure(testUrl) { target -> Libv2ray.measureOutboundDelay(configJson, target) }
         } catch (e: Exception) {
             log(Log.WARN, "measureOutboundDelay failed", e)
             return -1L
@@ -310,7 +310,7 @@ object XrayCore {
         val core = controller
         if (!isRunning || core == null) return -1L
         return try {
-            core.measureDelay(testUrl)
+            DelayProbe.measure(testUrl) { target -> core.measureDelay(target) }
         } catch (e: Exception) {
             log(Log.WARN, "measureLiveDelay failed", e)
             -1L

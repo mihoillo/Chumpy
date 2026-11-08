@@ -296,4 +296,7 @@
     <string name="wallpapers_move_hint_controller">Удерживайте OK, чтобы переместить обои</string>
     <string name="wallpapers_move_controls">Стрелки — перемещение · Меню — масштаб · OK — сохранить · Назад — отменить</string>
     <string name="wallpapers_zoom_controls">Стрелки — масштаб · Меню — перемещение · OK — сохранить · Назад — отменить</string>
+    <string name="error_geodata_source_missing">В базе %1$s нет категорий %2$s, а подписка не указала адрес их загрузки. Обновите подписку или запросите базу у провайдера.</string>
+    <string name="error_geodata_categories">База провайдера не содержит нужных категорий: %1$s.</string>
+    <string name="error_geodata_download">Не удалось подготовить базу маршрутизации подписки: %1$s</string>
 </resources>

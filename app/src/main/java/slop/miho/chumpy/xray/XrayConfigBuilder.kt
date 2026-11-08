@@ -187,7 +187,8 @@ object XrayConfigBuilder {
                 mode,
                 balanced = balancerMembers.isNotEmpty(),
                 strategy = strategy,
-                profileRules = profile.routingRules,
+                profileRules = if (mode == RoutingMode.GLOBAL) profile.routingRules else "",
+                geodataSources = profile.geodataSources,
             )
         )
         if (strategy in OBSERVING_STRATEGIES && balancerMembers.isNotEmpty()) {
@@ -270,6 +271,7 @@ object XrayConfigBuilder {
         balanced: Boolean,
         strategy: String,
         profileRules: String,
+        geodataSources: String,
     ) = buildJsonObject {
         put("domainStrategy", "AsIs")
         if (balanced) {
@@ -334,7 +336,7 @@ object XrayConfigBuilder {
                 // torrent direct — the routing the config the profile came from carried,
                 // the balancer's whole point in the panel's terms. Targets rewritten onto
                 // this session's tags; the fall-through stays ours.
-                panelRules(profileRules, balanced).forEach { add(it) }
+                panelRules(profileRules, balanced).forEach { add(slop.miho.chumpy.sub.GeodataSources.rewrite(it, geodataSources)) }
                 if (balanced) {
                     // The catch-all rides the balancer: whatever the bypass rules let
                     // through, the core picks the member for — at random, by ping or by

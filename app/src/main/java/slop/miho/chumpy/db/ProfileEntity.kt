@@ -121,6 +121,7 @@ data class ProfileEntity(
      * config carried nothing usable.
      */
     val routingRules: String = "",
+    val geodataSources: String = "",
 
     /**
      * BetterExclave's hidden: the row is the balancer's internal, not a server to show —

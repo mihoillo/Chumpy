@@ -302,4 +302,7 @@
     <string name="wallpapers_move_hint_controller">Hold OK to move the wallpaper</string>
     <string name="wallpapers_move_controls">Arrows: move · Menu: zoom · OK: save · Back: cancel</string>
     <string name="wallpapers_zoom_controls">Arrows: zoom · Menu: move · OK: save · Back: cancel</string>
+    <string name="error_geodata_source_missing">Database %1$s lacks categories %2$s and the subscription provides no download URL. Refresh the subscription or ask the provider for its database.</string>
+    <string name="error_geodata_categories">The provider database lacks required categories: %1$s.</string>
+    <string name="error_geodata_download">Could not prepare the subscription routing database: %1$s</string>
 </resources>

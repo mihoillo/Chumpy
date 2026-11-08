@@ -49,6 +49,7 @@ object ConfigParser {
         val entries: List<Pair<String, ProfileEntity>>,
         val balancerSpecs: List<JsonObject>,
         val routingRules: String,
+        val geodataSources: String,
     )
 
     /** The profiles found in a raw-config body, deduplicated; null when it is not one. */
@@ -77,6 +78,7 @@ object ConfigParser {
                 },
                 balancerSpecs = config.obj("routing")?.array("balancers")?.arrayOfObjects().orEmpty(),
                 routingRules = routingRulesOf(config),
+                geodataSources = GeodataSources.fromConfig(config),
             )
         }
 
@@ -98,7 +100,7 @@ object ConfigParser {
             val balancers = balancersOf(bundle)
             for (balancer in balancers) {
                 if (seenBalancers.add(balancer.computeLinkKey())) {
-                    profiles.add(balancer.copy(routingRules = bundle.routingRules))
+                    profiles.add(balancer.copy(routingRules = bundle.routingRules, geodataSources = bundle.geodataSources))
                 }
             }
             val internal = balancers.isNotEmpty()
@@ -119,7 +121,7 @@ object ConfigParser {
                     profiles.add(
                         profile.copy(
                             remarks = name,
-                            routingRules = bundle.routingRules,
+                            routingRules = bundle.routingRules, geodataSources = bundle.geodataSources,
                             hidden = internal,
                         )
                     )
@@ -129,7 +131,7 @@ object ConfigParser {
                         profiles[index] = filed.copy(
                             hidden = false,
                             remarks = bundle.prefix.ifEmpty { tag },
-                            routingRules = bundle.routingRules,
+                            routingRules = bundle.routingRules, geodataSources = bundle.geodataSources,
                         )
                     }
                 }
