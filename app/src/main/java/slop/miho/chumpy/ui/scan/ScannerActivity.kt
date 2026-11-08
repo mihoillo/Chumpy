@@ -4,7 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import slop.miho.chumpy.ui.components.ControllerActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -65,7 +65,7 @@ import slop.miho.chumpy.ui.theme.ChumpyTheme
  * permission is asked for here and only here, on first launch; a denial simply closes
  * the scanner, nothing else in the app ever needs it.
  */
-class ScannerActivity : ComponentActivity() {
+class ScannerActivity : ControllerActivity() {
 
     companion object {
         /** The decoded text, handed back to the caller in the result intent. */

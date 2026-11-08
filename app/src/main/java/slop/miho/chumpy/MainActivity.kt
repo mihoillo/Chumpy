@@ -2,7 +2,7 @@ package slop.miho.chumpy
 
 import android.Manifest
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import slop.miho.chumpy.ui.components.ControllerActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -29,7 +29,7 @@ import slop.miho.chumpy.ui.theme.ChumpyTheme
 import slop.miho.chumpy.ui.theme.LocalDarkTheme
 import slop.miho.chumpy.ui.welcome.WelcomeScreen
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ControllerActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

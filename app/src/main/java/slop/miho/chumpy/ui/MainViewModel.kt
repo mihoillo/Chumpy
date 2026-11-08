@@ -54,6 +54,7 @@ import slop.miho.chumpy.db.SubscriptionEntity
 import slop.miho.chumpy.db.balancerMemberKeys
 import slop.miho.chumpy.sub.SubscriptionRepository
 import slop.miho.chumpy.xray.XrayConfigBuilder
+import slop.miho.chumpy.xray.RoutingMode
 
 /** Home screen extras: everything besides the tunnel status itself. */
 data class HomeUiState(
@@ -518,12 +519,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         emptyList()
                     }
-                    val config = XrayConfigBuilder.buildFull(
+                    val config = repository.prepareGeodata(resolvedProfile, XrayConfigBuilder.buildFull(
                         resolvedProfile,
                         requestedConnection.routingMode,
                         members,
                         requestedConnection.delayTestUrl,
-                    )
+                    ), requestedConnection.routingMode == RoutingMode.GLOBAL && resolvedProfile.routingRules.isNotBlank())
                     val subscriptionName = resolvedProfile.subscriptionId?.let { repository.subscriptionById(it)?.name }
                     currentCoroutineContext().ensureActive()
                     val requestContext = currentCoroutineContext()

@@ -73,6 +73,9 @@ fun ChumpyTheme(
     val rainbowHue = if (settings.accent == Accent.RAINBOW) rainbowHue() else 0f
     val colorScheme = themeColorScheme(settings, monetHues, rainbowHue, darkTheme, context)
     CompositionLocalProvider(
+        slop.miho.chumpy.ui.components.LocalInputMode provides
+            ((context as? slop.miho.chumpy.ui.components.ControllerActivity)?.controllerMode?.value
+                ?: slop.miho.chumpy.ui.components.InputMode.TOUCH),
         LocalUiSettings provides settings,
         LocalDarkTheme provides darkTheme,
         LocalRainbowHue provides rainbowHue,

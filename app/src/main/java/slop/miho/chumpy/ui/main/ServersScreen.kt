@@ -2,6 +2,7 @@ package slop.miho.chumpy.ui.main
 
 import android.content.Intent
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -111,6 +112,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import slop.miho.chumpy.ui.components.restoreControllerFocus
+import slop.miho.chumpy.ui.components.controllerContextMenu
+import slop.miho.chumpy.ui.components.hasUsableCamera
+import slop.miho.chumpy.ui.components.externalAction
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.DailyTraffic
 import slop.miho.chumpy.data.FlagStyle
@@ -137,6 +144,8 @@ import slop.miho.chumpy.ui.components.rememberHapticSoftPoke
 import slop.miho.chumpy.ui.components.WavyPullToRefreshBox
 import slop.miho.chumpy.ui.components.pressBounce
 import slop.miho.chumpy.ui.components.pullShiftedPadding
+import slop.miho.chumpy.ui.components.LocalInputMode
+import slop.miho.chumpy.ui.components.InputMode
 import slop.miho.chumpy.ui.components.focusRing
 import slop.miho.chumpy.ui.wallpapers.LocalSurfaceOpacity
 import slop.miho.chumpy.ui.wallpapers.ReportBarCoverage
@@ -220,7 +229,10 @@ fun ServersScreen(
     val foldShown = { if (!foldHeightLead.isNaN()) foldHeightLead else foldHeight.value }
     val foldFade = { if (!foldAlphaLead.isNaN()) foldAlphaLead else foldAlpha.value }
 
-    PredictiveBackHandler(enabled = dropdownOpen) { progress ->
+    val pageOnStage = slop.miho.chumpy.ui.wallpapers.LocalPageOnStage.current
+    val controller = slop.miho.chumpy.ui.components.LocalInputMode.current == slop.miho.chumpy.ui.components.InputMode.CONTROLLER
+    BackHandler(enabled = pageOnStage && controller && dropdownOpen) { dropdownOpen = false }
+    PredictiveBackHandler(enabled = pageOnStage && !controller && dropdownOpen) { progress ->
         try {
             progress.collect { event ->
                 // The fade runs ahead of the height — the same lead the fold's own
@@ -379,7 +391,7 @@ fun ServersScreen(
                                 onEnter = { if (out) cancelFocusChange() }
                             }) {
                             ServersHeader(state = state, expired = selectedSubscription?.let { isExpired(it) } == true,
-                                onToggleReveal = { revealConcealed = !revealConcealed })
+                                onToggleReveal = { revealConcealed = !revealConcealed }, onPing = onPing)
                         }
                         if (dropdownOpen) {
                             // The catcher over the dimmed list: no ripple, no press — a tap
@@ -475,6 +487,7 @@ private fun ServersHeader(
     state: ServersUiState,
     expired: Boolean,
     onToggleReveal: () -> Unit,
+    onPing: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     FlowRow(
@@ -489,6 +502,7 @@ private fun ServersHeader(
                 value = stringResource(R.string.servers_total, servers.size),
                 icon = R.drawable.ic_servers,
                 animateValue = true,
+                onClick = onPing,
             )
             val reachable = servers.count { (it.testDelayMillis ?: -1L) >= 0L }
             if (reachable > 0) {
@@ -535,6 +549,8 @@ private fun ServersHeader(
  * While some row's menu stands open, the card dims with everything else — the menu's
  * own spotlight.
  */
+private val LocalSubscriptionUpdateFocus = androidx.compose.runtime.staticCompositionLocalOf<FocusRequester?> { null }
+
 @Composable
 private fun SubscriptionCard(
     subscription: SubscriptionEntity?,
@@ -545,6 +561,7 @@ private fun SubscriptionCard(
     onToggle: () -> Unit,
     onUpdate: () -> Unit,
 ) {
+    val updateFocus = remember { FocusRequester() }
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
@@ -572,83 +589,90 @@ private fun SubscriptionCard(
         label = "subscription card dim",
     )
 
-    Surface(
-        onClick = {
-            poke()
-            onToggle()
-        },
-        shape = MaterialTheme.shapes.extraLarge,
-        color = containerColor,
-        contentColor = contentColor,
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer { alpha = dimmedAlpha },
-    ) {
-        // The card itself trades faces: opening, the report rides down and out of view
-        // while the chooser's ask drops in from above on the same backing; closing,
-        // the report climbs back up and the ask retracts. The height follows the swap.
-        AnimatedContent(
-            targetState = expanded,
-            transitionSpec = {
-                val direction = if (targetState) 1 else -1
-                // The height rides along with the face swap, unclipped while it goes.
-                ContentTransform(
-                    targetContentEnter = slideInVertically(motion.defaultSpatialSpec()) {
-                        -direction * it / 2
-                    } + fadeIn(motion.defaultEffectsSpec()),
-                    initialContentExit = slideOutVertically(motion.defaultSpatialSpec()) {
-                        direction * it / 2
-                    } + fadeOut(motion.defaultEffectsSpec()),
-                    sizeTransform = SizeTransform(clip = false),
-                )
+    androidx.compose.runtime.CompositionLocalProvider(LocalSubscriptionUpdateFocus provides updateFocus) {
+        Surface(
+            onClick = {
+                poke()
+                onToggle()
             },
-            label = "subscription card",
-        ) { chooser ->
-            if (chooser) {
-                SubscriptionChooserFace(
-                    contentColor = contentColor,
-                    supportingColor = supportingColor,
-                )
-            } else {
-                // The panel's report decides the stance: a full one stands the text up
-                // against the top of the tile-and-refresh stack; a name alone centers
-                // beside the tile, the refresh button riding at the tile's side — no
-                // dead air under a lone title. The stance itself swaps softly when a
-                // reload changes what there is to show.
-                val sub = subscription
-                val hasReport = sub != null && (
-                    sub.totalBytes > 0 ||
-                        daysTitle(sub.expireEpochSeconds) != null ||
-                        consumedText(sub) != null
+            shape = MaterialTheme.shapes.extraLarge,
+            color = containerColor,
+            contentColor = contentColor,
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusProperties {
+                    if (!expanded && subscription?.url?.isNotEmpty() == true) down = updateFocus
+                }
+                .restoreControllerFocus(expanded)
+                .focusRing(inset = true, gap = 1.dp)
+                .graphicsLayer { alpha = dimmedAlpha },
+        ) {
+            // The card itself trades faces: opening, the report rides down and out of view
+            // while the chooser's ask drops in from above on the same backing; closing,
+            // the report climbs back up and the ask retracts. The height follows the swap.
+            AnimatedContent(
+                targetState = expanded,
+                transitionSpec = {
+                    val direction = if (targetState) 1 else -1
+                    // The height rides along with the face swap, unclipped while it goes.
+                    ContentTransform(
+                        targetContentEnter = slideInVertically(motion.defaultSpatialSpec()) {
+                            -direction * it / 2
+                        } + fadeIn(motion.defaultEffectsSpec()),
+                        initialContentExit = slideOutVertically(motion.defaultSpatialSpec()) {
+                            direction * it / 2
+                        } + fadeOut(motion.defaultEffectsSpec()),
+                        sizeTransform = SizeTransform(clip = false),
                     )
-                AnimatedContent(
-                    targetState = hasReport,
-                    transitionSpec = {
-                        ContentTransform(
-                            targetContentEnter = fadeIn(motion.defaultEffectsSpec()),
-                            initialContentExit = fadeOut(motion.defaultEffectsSpec()),
-                            sizeTransform = SizeTransform(clip = false),
+                },
+                label = "subscription card",
+            ) { chooser ->
+                if (chooser) {
+                    SubscriptionChooserFace(
+                        contentColor = contentColor,
+                        supportingColor = supportingColor,
+                    )
+                } else {
+                    // The panel's report decides the stance: a full one stands the text up
+                    // against the top of the tile-and-refresh stack; a name alone centers
+                    // beside the tile, the refresh button riding at the tile's side — no
+                    // dead air under a lone title. The stance itself swaps softly when a
+                    // reload changes what there is to show.
+                    val sub = subscription
+                    val hasReport = sub != null && (
+                        sub.totalBytes > 0 ||
+                            daysTitle(sub.expireEpochSeconds) != null ||
+                            consumedText(sub) != null
                         )
-                    },
-                    label = "subscription report stance",
-                ) { full ->
-                    if (full && sub != null) {
-                        SubscriptionReportFace(
-                            subscription = sub,
-                            isUpdating = isUpdating,
-                            week = week,
-                            contentColor = contentColor,
-                            supportingColor = supportingColor,
-                            onUpdate = onUpdate,
-                        )
-                    } else {
-                        SubscriptionCompactFace(
-                            subscription = sub,
-                            isUpdating = isUpdating,
-                            contentColor = contentColor,
-                            supportingColor = supportingColor,
-                            onUpdate = onUpdate,
-                        )
+                    AnimatedContent(
+                        targetState = hasReport,
+                        transitionSpec = {
+                            ContentTransform(
+                                targetContentEnter = fadeIn(motion.defaultEffectsSpec()),
+                                initialContentExit = fadeOut(motion.defaultEffectsSpec()),
+                                sizeTransform = SizeTransform(clip = false),
+                            )
+                        },
+                        label = "subscription report stance",
+                    ) { full ->
+                        if (full && sub != null) {
+                            SubscriptionReportFace(
+                                subscription = sub,
+                                isUpdating = isUpdating,
+                                week = week,
+                                contentColor = contentColor,
+                                supportingColor = supportingColor,
+                                onUpdate = onUpdate,
+                            )
+                        } else {
+                            SubscriptionCompactFace(
+                                subscription = sub,
+                                isUpdating = isUpdating,
+                                contentColor = contentColor,
+                                supportingColor = supportingColor,
+                                onUpdate = onUpdate,
+                            )
+                        }
                     }
                 }
             }
@@ -917,6 +941,7 @@ private fun UpdateButton(
     width: Dp = 48.dp,
     height: Dp = 36.dp,
 ) {
+    val updateFocus = LocalSubscriptionUpdateFocus.current
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
@@ -940,31 +965,35 @@ private fun UpdateButton(
     } else {
         null
     }
-    Surface(
-        onClick = {
-            poke()
-            taps++
-            onClick()
-        },
-        interactionSource = interactionSource,
-        shape = CircleShape,
-        color = container,
-        contentColor = colors.onSecondaryContainer,
-        modifier = Modifier
-            .size(width = width, height = height)
-            .pressBounce(pressed, taps)
-            // The controller's ring rides before the focus target, outside the
-            // stadium's own paint — the round ends matching.
-            .focusRing(circular = true),
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.material3.LocalMinimumInteractiveComponentSize provides
+            if (LocalInputMode.current == InputMode.CONTROLLER) 0.dp else 48.dp,
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                painter = painterResource(R.drawable.ic_renew),
-                contentDescription = stringResource(R.string.subscription_update),
-                modifier = Modifier
-                    .size(20.dp)
-                    .graphicsLayer { rotationZ = spin?.value ?: 0f },
-            )
+        Surface(
+            onClick = {
+                poke()
+                taps++
+                onClick()
+            },
+            interactionSource = interactionSource,
+            shape = CircleShape,
+            color = container,
+            contentColor = colors.onSecondaryContainer,
+            modifier = Modifier
+                .size(width = width, height = height)
+                .then(if (updateFocus != null) Modifier.focusRequester(updateFocus) else Modifier)
+                .pressBounce(pressed, taps)
+                .focusRing(circular = true, gap = 1.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_renew),
+                    contentDescription = stringResource(R.string.subscription_update),
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer { rotationZ = spin?.value ?: 0f },
+                )
+            }
         }
     }
 }
@@ -1322,12 +1351,13 @@ private fun AddSubscriptionRow(
                                 ActionTile(
                                     icon = R.drawable.ic_upload_file,
                                     label = stringResource(R.string.import_config),
-                                    onClick = { filePicker.launch(arrayOf("*/*")) },
+                                    onClick = { context.externalAction { filePicker.launch(arrayOf("*/*")) } },
                                 )
                                 ActionTile(
                                     icon = R.drawable.ic_qr_code_scanner,
                                     label = stringResource(R.string.scan_qr_code),
                                     indicated = false,
+                                    enabled = context.hasUsableCamera(),
                                     onClick = {
                                         qrScanner.launch(
                                             Intent(context, ScannerActivity::class.java),
@@ -1335,6 +1365,12 @@ private fun AddSubscriptionRow(
                                     },
                                 )
                             }
+                        }
+                    }
+                    slop.miho.chumpy.ui.components.PhoneImportAction { text, done ->
+                        onAdd(text) { message ->
+                            done(message)
+                            if (message == null) { onUrlChange(""); onOpenChange(false) }
                         }
                     }
                 }
@@ -1458,6 +1494,9 @@ private fun SubscriptionRow(
                 // one even block, no short planks in the middle of it.
                 .heightIn(min = 72.dp)
                 .clip(shape)
+                .focusRing(inset = true, gap = 1.dp)
+                .restoreControllerFocus(menu?.open == true)
+                .controllerContextMenu(menu?.let { rowMenu -> { rowMenu.onOpenChange(true) } })
                 .combinedClickable(
                     role = Role.Button,
                     onClick = {
@@ -2070,6 +2109,9 @@ private fun ServerRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(shape)
+                    .focusRing(inset = true, gap = 1.dp)
+                    .restoreControllerFocus(menu?.open == true)
+                    .controllerContextMenu(menu?.let { rowMenu -> { rowMenu.onOpenChange(true) } })
                     .combinedClickable(
                         role = Role.Button,
                         onClick = {

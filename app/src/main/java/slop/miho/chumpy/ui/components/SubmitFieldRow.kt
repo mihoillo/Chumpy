@@ -130,7 +130,7 @@ fun SubmitFieldRow(
                 // tiles beside it are the row's own stops. Touch keeps the field as it
                 // always was — a tap, and the caret is there.
                 .then(
-                    if (dpadDriven) Modifier.focusProperties { canFocus = false } else Modifier,
+                    if (dpadDriven) Modifier.focusRing() else Modifier,
                 ),
         )
         val colors = MaterialTheme.colorScheme

@@ -79,6 +79,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import slop.miho.chumpy.R
 import slop.miho.chumpy.core.TunnelState
 import slop.miho.chumpy.core.TunnelStatus
@@ -105,6 +108,11 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
+
+internal val LocalHomePageFocusRequester = androidx.compose.runtime.staticCompositionLocalOf<FocusRequester?> { null }
+internal val LocalHomeMotionActive = androidx.compose.runtime.staticCompositionLocalOf { true }
+internal val LocalHomeConnectFocusRequester = androidx.compose.runtime.staticCompositionLocalOf<FocusRequester?> { null }
+internal val LocalHomeBarFocusRequester = androidx.compose.runtime.staticCompositionLocalOf<FocusRequester?> { null }
 
 @Composable
 fun HomeScreen(
@@ -499,6 +507,8 @@ private fun ConnectButton(
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val connectRequester = LocalHomeConnectFocusRequester.current
+    val barRequester = LocalHomeBarFocusRequester.current
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val up = state == TunnelState.UP
@@ -513,6 +523,7 @@ private fun ConnectButton(
         animationSpec = motion.defaultEffectsSpec(),
         label = "button content",
     )
+    val pageRequester = LocalHomePageFocusRequester.current
     val busy = state == TunnelState.CONNECTING || state == TunnelState.DISCONNECTING
     // The tap itself pokes like every other button; the result (up or failed) answers later.
     val poke = rememberHapticPoke()
@@ -531,6 +542,11 @@ private fun ConnectButton(
         ),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
         modifier = modifier
+            .then(if (connectRequester != null) Modifier.focusRequester(connectRequester) else Modifier)
+            .focusProperties {
+                down = barRequester ?: FocusRequester.Default
+                right = pageRequester ?: FocusRequester.Default
+            }
             .height(64.dp)
             .fillMaxWidth()
             // The controller's pick of the whole screen: the ring sits outside the
@@ -574,7 +590,8 @@ private fun WavyConnectBar(
     // The wave travels one wavelength per cycle, so the loop is seamless. It travels only
     // while some of it shows: drained, the bar is the flat track alone, and a loop running
     // under it would keep the whole screen re-rendering every frame for nothing.
-    val waving by remember { derivedStateOf { fill > 0.001f } }
+    val motionActive = LocalHomeMotionActive.current
+    val waving by remember(motionActive) { derivedStateOf { motionActive && fill > 0.001f } }
     val phase = if (waving) {
         rememberInfiniteTransition(label = "wave").animateFloat(
             initialValue = 0f,

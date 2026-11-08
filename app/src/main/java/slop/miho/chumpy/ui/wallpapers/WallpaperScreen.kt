@@ -60,6 +60,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.derivedStateOf
@@ -77,6 +80,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import android.view.KeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import slop.miho.chumpy.ui.components.InputMode
+import slop.miho.chumpy.ui.components.LocalInputMode
+import slop.miho.chumpy.ui.components.normalizedControllerKey
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -98,6 +111,7 @@ import androidx.annotation.DrawableRes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import slop.miho.chumpy.ui.components.externalAction
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.Accent
 import slop.miho.chumpy.data.DimTone
@@ -176,42 +190,43 @@ fun WallpaperScreen(
     var editScale by remember { mutableFloatStateOf(1f) }
     BackHandler(enabled = editPosition) { editPosition = false }
     val importScope = rememberCoroutineScope()
-    val picker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        if (uri != null) {
-            importScope.launch {
-                importError = withContext(Dispatchers.IO) { onSetWallpaper(uri) }
-                wallpaperSelected = WallpaperRegistry.current(context) != null
-                wallpaperVersion++
-                // The accent seeds follow the picture: recompute right away.
-                WallpaperPalette.refresh(context)
-                // A fresh picture lands on its own look: its first seed as the accent, a
-                // gentle dim on Home, a stronger dim with a touch of blur everywhere else,
-                // and the menu surfaces a touch see-through. The pan resets to centered and
-                // the text's recolor decision starts over.
-                if (importError == null) {
-                    onSettings {
-                        it.copy(
-                            accent = Accent.WALLPAPER_1,
-                            wallpaperDim = 0.10f,
-                            wallpaperDimScreens = 0.60f,
-                            wallpaperBlur = 0.30f,
-                            wallpaperTextDark = false,
-                            wallpaperOffsetX = 0f,
-                            wallpaperOffsetY = 0f,
-                            wallpaperUserScale = 1f,
-                            surfaceOpacity = 0.85f,
-                        )
-                    }
-                }
+    suspend fun importWallpaper(load: suspend () -> String?): String? {
+        importError = withContext(Dispatchers.IO) { load() }
+        wallpaperSelected = WallpaperRegistry.current(context) != null
+        wallpaperVersion++
+        // The accent seeds follow the picture: recompute right away.
+        WallpaperPalette.refresh(context)
+        // A fresh picture lands on its own look: its first seed as the accent, a
+        // gentle dim on Home, a stronger dim with a touch of blur everywhere else,
+        // and the menu surfaces a touch see-through. The pan resets to centered and
+        // the text's recolor decision starts over.
+        if (importError == null) {
+            onSettings {
+                it.copy(
+                    accent = Accent.WALLPAPER_1,
+                    wallpaperDim = 0.10f,
+                    wallpaperDimScreens = 0.60f,
+                    wallpaperBlur = 0.30f,
+                    wallpaperTextDark = false,
+                    wallpaperOffsetX = 0f,
+                    wallpaperOffsetY = 0f,
+                    wallpaperUserScale = 1f,
+                    surfaceOpacity = 0.85f,
+                )
             }
         }
+        return importError
+    }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) importScope.launch { importWallpaper { onSetWallpaper(uri) } }
     }
     // Decoding happens off the main thread; a camera shot can be tens of megapixels.
-    val wallpaper by produceState<DecodedWallpaper?>(null, wallpaperVersion) {
-        val file = WallpaperRegistry.current(context)
-        value = withContext(Dispatchers.IO) { file?.let(::decodeWallpaper) ?: run { releaseWallpaperCache(); null } }
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val wallpaperActive = lifecycleState.isAtLeast(Lifecycle.State.STARTED)
+    val wallpaper by produceState<DecodedWallpaper?>(null, wallpaperVersion, wallpaperActive) {
+        value = if (wallpaperActive) withContext(Dispatchers.IO) {
+            WallpaperRegistry.current(context)?.let(::decodeWallpaper) ?: run { releaseWallpaperCache(); null }
+        } else null
     }
 
     // The wide window splits like the main shell's: the preview — Home's stand-in — in a
@@ -226,9 +241,93 @@ fun WallpaperScreen(
     // The gesture lambda outlives recompositions; the settings it reads on entry must stay
     // current, not the copy from whenever it was composed.
     val liveSettings by rememberUpdatedState(settings)
+    val controller = LocalInputMode.current == InputMode.CONTROLLER
+    val editFocus = remember { FocusRequester() }
+    var zoomEditing by remember { mutableStateOf(false) }
+    var heldOk by remember { mutableStateOf(false) }
+    var holdingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    fun startPositionEdit() {
+        if (!wallpaperSelected || (!wide && page != WallpaperPage.PREVIEW)) return
+        poke()
+        editOffsetX = liveSettings.wallpaperOffsetX
+        editOffsetY = liveSettings.wallpaperOffsetY
+        editScale = liveSettings.wallpaperUserScale
+        zoomEditing = false
+        editPosition = true
+    }
+    fun savePosition() {
+        onSettings { it.copy(wallpaperOffsetX = editOffsetX, wallpaperOffsetY = editOffsetY, wallpaperUserScale = editScale) }
+        editPosition = false
+    }
+    val windowWidth = LocalWindowInfo.current.containerSize.width
+    val windowHeight = LocalWindowInfo.current.containerSize.height
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(windowFocused, page, wallpaperSelected) {
+        if (!windowFocused || !wallpaperSelected || (!wide && page != WallpaperPage.PREVIEW)) {
+            holdingJob?.cancel()
+            holdingJob = null
+        }
+    }
+    DisposableEffect(Unit) { onDispose { holdingJob?.cancel() } }
+    LaunchedEffect(editPosition, controller) {
+        if (editPosition && controller) {
+            androidx.compose.runtime.withFrameNanos { }
+            editFocus.requestFocus()
+        }
+    }
     Box(
         modifier
             .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                val key = event.nativeKeyEvent
+                val code = normalizedControllerKey(key.keyCode)
+                val ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
+                if (!controller) false
+                else if (ok && key.action == KeyEvent.ACTION_UP) {
+                    holdingJob?.cancel()
+                    holdingJob = null
+                    if (heldOk) { heldOk = false; true }
+                    else if (editPosition && !key.isCanceled) { savePosition(); true } else false
+                } else if (editPosition) {
+                    when (code) {
+                        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            if (key.action == KeyEvent.ACTION_DOWN) {
+                                if (zoomEditing) {
+                                    val image = wallpaper?.image
+                                    val window = androidx.compose.ui.unit.IntSize(windowWidth, windowHeight)
+                                    val cover = if (image != null) maxOf(window.width.toFloat() / image.width, window.height.toFloat() / image.height) else 1f
+                                    val floor = if (image != null) minOf(window.width.toFloat() / image.width, window.height.toFloat() / image.height) / cover else 0.25f
+                                    val more = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_RIGHT
+                                    editScale = (editScale + if (more) 0.05f else -0.05f).coerceIn(floor, MAX_WALLPAPER_ZOOM)
+                                } else when (code) {
+                                    KeyEvent.KEYCODE_DPAD_LEFT -> editOffsetX = (editOffsetX - 0.05f).coerceAtLeast(-1f)
+                                    KeyEvent.KEYCODE_DPAD_RIGHT -> editOffsetX = (editOffsetX + 0.05f).coerceAtMost(1f)
+                                    KeyEvent.KEYCODE_DPAD_UP -> editOffsetY = (editOffsetY + 0.05f).coerceAtMost(1f)
+                                    else -> editOffsetY = (editOffsetY - 0.05f).coerceAtLeast(-1f)
+                                }
+                            }
+                            true
+                        }
+                        KeyEvent.KEYCODE_MENU -> {
+                            if (key.action == KeyEvent.ACTION_UP) zoomEditing = !zoomEditing
+                            true
+                        }
+                        else -> ok
+                    }
+                } else {
+                    if (ok && key.action == KeyEvent.ACTION_DOWN && key.repeatCount == 0 && wallpaperSelected && (wide || page == WallpaperPage.PREVIEW)) {
+                        heldOk = false
+                        holdingJob?.cancel()
+                        holdingJob = importScope.launch {
+                            kotlinx.coroutines.delay(android.view.ViewConfiguration.getLongPressTimeout().toLong())
+                            heldOk = true
+                            startPositionEdit()
+                        }
+                    }
+                    false
+                }
+            }
             .pointerInput(wallpaperSelected, page) {
                 awaitEachGesture {
                     // The clickables beneath — the greeting, the picker, the edit layer's own
@@ -334,13 +433,13 @@ fun WallpaperScreen(
         // The stricter report: content really reaching in under the bar, for its tone step.
         val barUnderlay = remember { mutableStateOf(false) }
         // The picture and the pages are recorded for the bar's frost, as in the main shell.
-        val frost = settings.navigationBarBlur
+        val frost = settings.navigationBarBlur && !wide
         val behindBar = rememberGraphicsLayer()
         CompositionLocalProvider(
             LocalSurfaceOpacity provides surfaceOpacity,
             LocalBarCoverage provides barCoverage,
             LocalBarUnderlay provides barUnderlay,
-            LocalBarCanFade provides (page == WallpaperPage.PREVIEW),
+            LocalBarCanFade provides (page == WallpaperPage.PREVIEW || wide),
             // For the classic bar's gradient, which takes the scrim's tone over a picture.
             LocalHasWallpaper provides wallpaperSelected,
         ) {
@@ -433,38 +532,47 @@ fun WallpaperScreen(
 
                 // The pages as plain lambdas: both layouts below compose them, untouched.
                 val previewPage: @Composable () -> Unit = {
-                    WallpaperPreviewPage(
-                        wallpaperSelected = wallpaperSelected,
-                        importError = importError,
-                        dim = settings.wallpaperDim,
-                        onToggleText = {
-                            onSettings { it.copy(wallpaperTextDark = !it.wallpaperTextDark) }
-                        },
-                        onDim = { value -> onSettings { it.copy(wallpaperDim = value) } },
-                        onPick = {
-                            picker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                            )
-                        },
-                        onDelete = {
-                            WallpaperRegistry.delete(context)
-                            wallpaperSelected = false
-                            wallpaperVersion++
-                            // No picture, no seeds: the picker's slots empty out.
-                            WallpaperPalette.refresh(context)
-                            // And nothing to see through: the menus' surfaces reset to opaque —
-                            // and the bare text returns to the theme's own colors.
-                            onSettings {
-                                it.copy(
-                                    wallpaperTextDark = false,
-                                    wallpaperOffsetX = 0f,
-                                    wallpaperOffsetY = 0f,
-                                    wallpaperUserScale = 1f,
-                                    surfaceOpacity = 1f,
-                                )
-                            }
-                        },
-                    )
+                    CompositionLocalProvider(LocalPageOnStage provides (wide || page == WallpaperPage.PREVIEW)) {
+                        WallpaperPreviewPage(
+                            wallpaperSelected = wallpaperSelected,
+                            importError = importError,
+                            onPhoneWallpaper = { path, done ->
+                                importScope.launch {
+                                    val message = importWallpaper { WallpaperRegistry.setReceived(context, java.io.File(path)) }
+                                    done(message)
+                                }
+                            },
+                            onMove = ::startPositionEdit,
+                            dim = settings.wallpaperDim,
+                            onToggleText = {
+                                onSettings { it.copy(wallpaperTextDark = !it.wallpaperTextDark) }
+                            },
+                            onDim = { value -> onSettings { it.copy(wallpaperDim = value) } },
+                            onPick = {
+                                context.externalAction {
+                                    picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                }
+                            },
+                            onDelete = {
+                                WallpaperRegistry.delete(context)
+                                wallpaperSelected = false
+                                wallpaperVersion++
+                                // No picture, no seeds: the picker's slots empty out.
+                                WallpaperPalette.refresh(context)
+                                // And nothing to see through: the menus' surfaces reset to opaque —
+                                // and the bare text returns to the theme's own colors.
+                                onSettings {
+                                    it.copy(
+                                        wallpaperTextDark = false,
+                                        wallpaperOffsetX = 0f,
+                                        wallpaperOffsetY = 0f,
+                                        wallpaperUserScale = 1f,
+                                        surfaceOpacity = 1f,
+                                    )
+                                }
+                            },
+                        )
+                    }
                 }
                 val settingsPage: @Composable () -> Unit = {
                     WallpaperSettingsPage(
@@ -645,18 +753,13 @@ fun WallpaperScreen(
                                 indication = null,
                             ) { }
                     )
+                    if (controller) Box(Modifier.align(Alignment.TopCenter).padding(24.dp)) {
+                        InfoChip(value = stringResource(if (zoomEditing) R.string.wallpapers_zoom_controls else R.string.wallpapers_move_controls))
+                    }
                     ConfirmPositionButton(
-                        onClick = {
-                            onSettings {
-                                it.copy(
-                                    wallpaperOffsetX = editOffsetX,
-                                    wallpaperOffsetY = editOffsetY,
-                                    wallpaperUserScale = editScale,
-                                )
-                            }
-                            editPosition = false
-                        },
-                        modifier = Modifier.align(Alignment.BottomCenter),
+                        onClick = ::savePosition,
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                            .then(if (controller) Modifier.focusRequester(editFocus) else Modifier),
                     )
                 }
             }
@@ -701,6 +804,8 @@ private suspend fun AwaitPointerEventScope.awaitLongPress(down: PointerInputChan
 private fun WallpaperPreviewPage(
     wallpaperSelected: Boolean,
     importError: String?,
+    onPhoneWallpaper: (String, (String?) -> Unit) -> Unit,
+    onMove: () -> Unit,
     dim: Float,
     onToggleText: () -> Unit,
     onDim: (Float) -> Unit,
@@ -797,7 +902,8 @@ private fun WallpaperPreviewPage(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             InfoChip(
-                                value = stringResource(R.string.wallpapers_move_hint),
+                                value = stringResource(if (LocalInputMode.current == InputMode.CONTROLLER) R.string.wallpapers_move_hint_controller else R.string.wallpapers_move_hint),
+                                onClick = if (LocalInputMode.current == InputMode.CONTROLLER) onMove else null,
                                 icon = R.drawable.ic_touch_app,
                             )
                             InfoChip(
@@ -844,6 +950,7 @@ private fun WallpaperPreviewPage(
                             )
                         }
                     }
+                    slop.miho.chumpy.ui.components.PhoneImportAction(wallpaper = true, onImport = onPhoneWallpaper)
                     // Keeps the bottom-anchored content clear of the dimming pill below.
                     Spacer(Modifier.height(16.dp))
                 }
@@ -887,7 +994,7 @@ private fun WallpaperPreviewPage(
                             activeTrackColor = colors.onPrimary,
                             inactiveTrackColor = colors.onPrimary.copy(alpha = 0.30f),
                         ),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).focusRing(inset = true, gap = 1.dp),
                     )
                     Text(
                         text = stringResource(
@@ -933,7 +1040,7 @@ private fun PickWallpaperButton(
         shape = MaterialTheme.shapes.extraLarge,
         color = colors.surfaceContainer.copy(alpha = LocalSurfaceOpacity.current),
         contentColor = colors.onSurface,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().focusRing(shape = MaterialTheme.shapes.extraLarge, gap = 1.dp),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -1037,7 +1144,8 @@ private fun ConfirmPositionButton(onClick: () -> Unit, modifier: Modifier = Modi
             .navigationBarsPadding()
             .padding(bottom = BarVerticalPadding)
             .size(64.dp)
-            .pressBounce(pressed, taps),
+            .pressBounce(pressed, taps)
+            .focusRing(circular = true),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -1126,6 +1234,16 @@ private fun WallpaperSettingsPage(
                     )
                 },
             )
+            if (slop.miho.chumpy.ui.components.LocalInputMode.current == slop.miho.chumpy.ui.components.InputMode.CONTROLLER && wallpaperSelected) {
+                WallpaperGroup(
+                    { SliderRow(R.drawable.ic_zoom_in, stringResource(R.string.wallpaper_scale), settings.wallpaperUserScale,
+                        { value -> onChange { it.copy(wallpaperUserScale = value) } }, valueRange = 1f..MAX_WALLPAPER_ZOOM) },
+                    { SliderRow(R.drawable.ic_wallpaper, stringResource(R.string.wallpaper_horizontal), settings.wallpaperOffsetX,
+                        { value -> onChange { it.copy(wallpaperOffsetX = value) } }, valueRange = -1f..1f) },
+                    { SliderRow(R.drawable.ic_wallpaper, stringResource(R.string.wallpaper_vertical), settings.wallpaperOffsetY,
+                        { value -> onChange { it.copy(wallpaperOffsetY = value) } }, valueRange = -1f..1f) },
+                )
+            }
             WallpaperGroup(
                 {
                     ToggleTileRow(
@@ -1412,7 +1530,7 @@ private fun SliderRow(
                 onValueChange = onChange,
                 valueRange = valueRange,
                 enabled = enabled,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).focusRing(inset = true, gap = 1.dp),
             )
             Text(
                 text = stringResource(R.string.wallpapers_percent, (value * 100).roundToInt()),

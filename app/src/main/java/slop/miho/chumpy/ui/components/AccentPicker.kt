@@ -29,11 +29,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import slop.miho.chumpy.ui.components.controllerWindowInput
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -66,6 +69,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import slop.miho.chumpy.ui.components.controllerContextMenu
+import slop.miho.chumpy.ui.components.controllerHorizontalFocusGroup
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.Accent
 import slop.miho.chumpy.data.WallpaperPalette
@@ -138,6 +143,7 @@ fun AccentRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
+                .controllerHorizontalFocusGroup()
                 .padding(horizontal = 16.dp, vertical = 16.dp),
             // Tighter than it looks: every swatch's wrapper carries its own margin
             // around the 48dp color, so the circles sit a breath further apart
@@ -311,6 +317,8 @@ private fun Swatch(
                     )
                 }
             }
+            .focusRing(inset = true, circular = true, gap = 1.dp)
+            .controllerContextMenu(onLongClick)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -412,6 +420,7 @@ private fun CustomColorDialog(
 ) {
     var color by remember { mutableStateOf(initial) }
     AlertDialog(
+        modifier = Modifier.controllerWindowInput(onDismiss),
         onDismissRequest = onDismiss,
         icon = {
             Icon(
@@ -422,9 +431,18 @@ private fun CustomColorDialog(
         },
         title = { Text(stringResource(R.string.settings_accent_custom_title)) },
         text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
                 ColorWheel(color = color, onColor = { color = it })
                 Spacer(Modifier.height(12.dp))
+                if (LocalInputMode.current == InputMode.CONTROLLER) {
+                    val hsl = FloatArray(3).also { ColorUtils.colorToHSL(color.toArgb(), it) }
+                    listOf(R.string.color_hue, R.string.color_saturation, R.string.color_lightness).forEachIndexed { index, label ->
+                        Text(stringResource(label), modifier = Modifier.fillMaxWidth())
+                        Slider(value = hsl[index], valueRange = if (index == 0) 0f..360f else 0f..1f,
+                            onValueChange = { value -> color = Color(ColorUtils.HSLToColor(hsl.copyOf().also { it[index] = value })) },
+                            modifier = Modifier.focusRing(inset = true, gap = 1.dp))
+                    }
+                }
                 HexField(color = color, onColor = { color = it })
             }
         },

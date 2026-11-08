@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import slop.miho.chumpy.ui.components.controllerWindowInput
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -55,6 +56,10 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import slop.miho.chumpy.ui.components.controllerContextMenu
+import slop.miho.chumpy.ui.components.focusRing
+import slop.miho.chumpy.ui.components.externalAction
+import slop.miho.chumpy.ui.components.controllerHorizontalFocusGroup
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.FontRegistry
 import slop.miho.chumpy.ui.components.SwatchDivider
@@ -165,7 +170,7 @@ fun FontPickerRow(
                 )
             }
         }
-        AddFontButton(onClick = { picker.launch(FONT_MIME_TYPES) })
+        AddFontButton(onClick = { context.externalAction { picker.launch(FONT_MIME_TYPES) } })
     }
 
     // The supporting line: the active font, or a failed import in its place until the next pick.
@@ -225,6 +230,7 @@ fun FontPickerRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
+                .controllerHorizontalFocusGroup()
                         .padding(start = RowPadding, end = RowPadding, top = RowPadding, bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(TileGap),
                     verticalAlignment = Alignment.CenterVertically,
@@ -302,6 +308,8 @@ private fun FontTile(
             .size(TileSize)
             .pressBounce(pressed, taps)
             .clip(TileShape)
+            .focusRing(inset = true, gap = 1.dp)
+            .controllerContextMenu(onLongClick)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -337,6 +345,7 @@ private fun FontTile(
 private fun DeleteFontDialog(name: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     AlertDialog(
+        modifier = Modifier.controllerWindowInput(onDismiss),
         onDismissRequest = onDismiss,
         icon = {
             Icon(
@@ -393,6 +402,7 @@ private fun AddFontButton(onClick: () -> Unit) {
         contentColor = colors.onSecondaryContainer,
         modifier = Modifier
             .size(width = AddButtonWidth, height = AddButtonHeight)
+            .focusRing(inset = true, circular = true, gap = 1.dp)
             .pressBounce(pressed, taps),
     ) {
         Box(contentAlignment = Alignment.Center) {

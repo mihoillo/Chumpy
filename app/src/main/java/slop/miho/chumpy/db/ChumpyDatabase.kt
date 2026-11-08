@@ -96,7 +96,7 @@ abstract class ProfileDao {
  */
 @Database(
     entities = [SubscriptionEntity::class, ProfileEntity::class],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class ChumpyDatabase : RoomDatabase() {
@@ -207,5 +207,11 @@ abstract class ChumpyDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE profiles ADD COLUMN concealed INTEGER NOT NULL DEFAULT 0")
             }
         }
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE profiles ADD COLUMN geodataSources TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
     }
 }

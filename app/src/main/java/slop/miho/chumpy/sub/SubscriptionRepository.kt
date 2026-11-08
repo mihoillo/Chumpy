@@ -145,6 +145,9 @@ class SubscriptionRepository(
             }
         }
 
+    suspend fun prepareGeodata(profile: ProfileEntity, config: String, importedRouting: Boolean): String =
+        slop.miho.chumpy.data.GeodataFiles.prepare(context, config, profile.geodataSources, importedRouting, fetcher::fetchGeodata)
+
     suspend fun deleteSubscription(id: String) = withContext(Dispatchers.IO) {
         subscriptions.delete(id)
         WorkManager.getInstance(context).cancelUniqueWork(WORK_PREFIX + id)
@@ -186,12 +189,14 @@ class SubscriptionRepository(
                     val draft = keyed[row.linkKey]
                     when {
                         draft != null && row.type == ProfileType.BALANCER -> row.copy(
-                            balancerMembers = draft.balancerMembers, routingRules = draft.routingRules,
+                            balancerMembers = draft.balancerMembers, routingRules = draft.routingRules, geodataSources = draft.geodataSources,
                         ).also { if (it != row) changed++ }
                         draft != null && row.hidden && !draft.hidden -> row.copy(
                             hidden = false, remarks = draft.remarks, sourceLink = draft.sourceLink,
-                            routingRules = draft.routingRules,
+                            routingRules = draft.routingRules, geodataSources = draft.geodataSources,
                         ).also { changed++ }
+                        draft != null && (row.routingRules != draft.routingRules || row.geodataSources != draft.geodataSources) ->
+                            row.copy(routingRules = draft.routingRules, geodataSources = draft.geodataSources).also { changed++ }
                         else -> row
                     }
                 }
