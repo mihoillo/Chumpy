@@ -9,6 +9,26 @@ internal object GeodataSources {
 
     fun validFilename(name: String): Boolean = filename.matches(name) && !name.contains("..")
 
+    fun fromHappHeader(header: String): String = runCatching {
+        val value = header.trim()
+        val prefix = listOf("happ://routing/onadd/", "happ://routing/add/").firstOrNull { value.startsWith(it, ignoreCase = true) }
+            ?: return ""
+        require(value.length <= 256 * 1024)
+        val decoded = LinkUtils.decodeBase64(LinkUtils.decodeURIComponent(value.substring(prefix.length))) ?: return ""
+        val config = json.parseToJsonElement(decoded) as? JsonObject ?: return ""
+        val sources = linkedMapOf<String, JsonElement>()
+        listOf("Geoipurl" to "geoip.dat", "Geositeurl" to "geosite.dat").forEach { (key, file) ->
+            val url = (config[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim().orEmpty()
+            if (url.isNotEmpty()) sources[file] = JsonPrimitive(url)
+        }
+        if (sources.isEmpty()) "" else JsonObject(sources).toString()
+    }.getOrDefault("")
+
+    fun merge(defaults: String, overrides: String): String {
+        val sources = parse(defaults) + parse(overrides)
+        return if (sources.isEmpty()) "" else JsonObject(sources.mapValues { JsonPrimitive(it.value) }).toString()
+    }
+
     fun fromConfig(config: JsonObject): String {
         val sources = linkedMapOf<String, JsonElement>()
         (config["geodata"] as? JsonObject)?.get("assets")?.let { assets ->

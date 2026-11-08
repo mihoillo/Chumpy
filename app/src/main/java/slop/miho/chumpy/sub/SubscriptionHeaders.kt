@@ -13,6 +13,7 @@ data class SubscriptionMetadata(
     val totalBytes: Long = 0,
     val expireEpochSeconds: Long = 0,
     val updateIntervalHours: Int? = null,
+    val geodataSources: String = "",
 )
 
 object SubscriptionHeaders {
@@ -35,6 +36,7 @@ object SubscriptionHeaders {
         first("profile-title")?.let { parseTitle(it)?.let { title -> meta = meta.copy(title = title) } }
         first("content-disposition")?.let { meta = meta.copy(title = meta.title ?: parseFilename(it)) }
         first("profile-update-interval")?.let { parseUpdateInterval(it)?.let { h -> meta = meta.copy(updateIntervalHours = h) } }
+        first("routing")?.let { meta = meta.copy(geodataSources = GeodataSources.fromHappHeader(it)) }
         return meta
     }
 
