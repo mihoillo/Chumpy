@@ -39,6 +39,7 @@ fun ActionTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     indicated: Boolean = true,
+    enabled: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -56,8 +57,8 @@ fun ActionTile(
     )
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = container,
-        contentColor = colors.onSecondaryContainer,
+        color = if (enabled) container else colors.surfaceContainerHigh,
+        contentColor = colors.onSecondaryContainer.copy(alpha = if (enabled) 1f else 0.38f),
         modifier = modifier
             .size(48.dp)
             .pressBounce(pressed, taps)
@@ -65,6 +66,7 @@ fun ActionTile(
             // own paint — the 16dp corners matching.
             .focusRing()
             .combinedClickable(
+                enabled = enabled,
                 interactionSource = interactionSource,
                 indication = if (indicated) LocalIndication.current else null,
                 role = Role.Button,

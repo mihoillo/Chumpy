@@ -7,6 +7,10 @@ import android.media.ExifInterface
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import java.lang.ref.WeakReference
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
@@ -190,6 +194,8 @@ fun backdropTooDark(wallpaperLuminance: Float, dim: Float, scrim: Color): Boolea
 @Composable
 internal fun rememberDecodedWallpaper(): DecodedWallpaper? {
     val context = LocalContext.current
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    if (!lifecycleState.isAtLeast(Lifecycle.State.STARTED)) return null
     val revision by WallpaperRegistry.version.collectAsStateWithLifecycle()
     return produceState<DecodedWallpaper?>(null, revision) {
         val file = WallpaperRegistry.current(context)
@@ -340,18 +346,18 @@ internal fun wallpaperBareTextDark(): Boolean {
 
 /** Decodes the picked image, downscaled so a camera shot doesn't eat memory.
  *
- *  The result is kept warm: the decode runs once per picture, and every later ask —
- *  re-opening the app, the palette's change trigger re-running the state — is a cache
- *  hit instead of the whole pipeline over again.
  */
 internal fun decodeWallpaper(file: File): DecodedWallpaper? = synchronized(decodeLock) {
     val key = Triple(file.absolutePath, file.lastModified(), file.length())
-    decodeCache?.takeIf { it.first == key }?.let { return@synchronized it.second }
-    decodeWallpaperUncached(file).also { decodeCache = key to it }
+    decodeCache?.takeIf { it.first == key }?.let { cached ->
+        if (cached.second == null) return@synchronized null
+        cached.second?.get()?.let { return@synchronized it }
+    }
+    decodeWallpaperUncached(file).also { decoded -> decodeCache = key to decoded?.let { WeakReference(it) } }
 }
 
 /** The last picture's key and decode; see [decodeWallpaper]. */
-private var decodeCache: Pair<Triple<String, Long, Long>, DecodedWallpaper?>? = null
+private var decodeCache: Pair<Triple<String, Long, Long>, WeakReference<DecodedWallpaper>?>? = null
 private val decodeLock = Any()
 
 internal fun releaseWallpaperCache() = synchronized(decodeLock) { decodeCache = null }
@@ -433,8 +439,7 @@ private fun trimTransparent(bitmap: Bitmap): Bitmap {
     if (!bitmap.hasAlpha()) return bitmap
     val w = bitmap.width
     val h = bitmap.height
-    val pixels = IntArray(w * h)
-    bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+    val pixels = IntArray(w)
     // The bounds of every pixel carrying real ink — a hair above fully clear (a soft
     // export edge, a compression ghost) reads as a see-through band, so it counts as
     // empty too.
@@ -442,16 +447,15 @@ private fun trimTransparent(bitmap: Bitmap): Bitmap {
     var top = h
     var right = -1
     var bottom = -1
-    var index = 0
     for (y in 0 until h) {
+        bitmap.getPixels(pixels, 0, w, 0, y, w, 1)
         for (x in 0 until w) {
-            if (pixels[index] ushr 24 >= TRIM_ALPHA) {
+            if (pixels[x] ushr 24 >= TRIM_ALPHA) {
                 if (x < left) left = x
                 if (x > right) right = x
                 if (y < top) top = y
                 if (y > bottom) bottom = y
             }
-            index++
         }
     }
     // Opaque, fully transparent or content already flush with the edges: as it came.

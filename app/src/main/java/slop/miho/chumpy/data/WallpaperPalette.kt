@@ -9,6 +9,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 /**
@@ -47,7 +49,7 @@ object WallpaperPalette {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var seeded = false
 
-    private fun extract(context: Context): List<Float>? {
+    private suspend fun extract(context: Context): List<Float>? {
         val file = WallpaperRegistry.current(context) ?: return null
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
@@ -58,31 +60,34 @@ object WallpaperPalette {
             inSampleSize = sample
         }
         val bitmap = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
-        // Every saturated, mid-lightness pixel votes its hue bin, louder the more saturated
-        // it is — the grays and near-blacks/whites stay out of it.
-        val bins = FloatArray(HUE_BINS)
-        val hsl = FloatArray(3)
-        for (y in 0 until bitmap.height) {
-            for (x in 0 until bitmap.width) {
-                ColorUtils.colorToHSL(bitmap.getPixel(x, y), hsl)
-                if (hsl[1] < 0.15f || hsl[2] < 0.15f || hsl[2] > 0.85f) continue
-                val bin = (hsl[0] / 360f * HUE_BINS).toInt().coerceIn(0, HUE_BINS - 1)
-                bins[bin] += hsl[1]
+        try {
+            // Every saturated, mid-lightness pixel votes its hue bin, louder the more saturated
+            // it is — the grays and near-blacks/whites stay out of it.
+            val bins = FloatArray(HUE_BINS)
+            val hsl = FloatArray(3)
+            for (y in 0 until bitmap.height) {
+                currentCoroutineContext().ensureActive()
+                for (x in 0 until bitmap.width) {
+                    ColorUtils.colorToHSL(bitmap.getPixel(x, y), hsl)
+                    if (hsl[1] < 0.15f || hsl[2] < 0.15f || hsl[2] > 0.85f) continue
+                    val bin = (hsl[0] / 360f * HUE_BINS).toInt().coerceIn(0, HUE_BINS - 1)
+                    bins[bin] += hsl[1]
+                }
             }
-        }
-        // The heaviest bins one by one; a picked bin's neighbors are silenced so the seeds
-        // don't land a single hue family apart.
-        val seeds = mutableListOf<Float>()
-        val weights = bins.copyOf()
-        repeat(SEEDS) {
-            val best = weights.indices.maxByOrNull { weights[it] } ?: return@repeat
-            if (weights[best] <= 0f) return@repeat
-            seeds.add(best * 360f / HUE_BINS)
-            for (neighbor in best - 1..best + 1) {
-                if (neighbor in weights.indices) weights[neighbor] = 0f
+            // The heaviest bins one by one; a picked bin's neighbors are silenced so the seeds
+            // don't land a single hue family apart.
+            val seeds = mutableListOf<Float>()
+            val weights = bins.copyOf()
+            repeat(SEEDS) {
+                val best = weights.indices.maxByOrNull { weights[it] } ?: return@repeat
+                if (weights[best] <= 0f) return@repeat
+                seeds.add(best * 360f / HUE_BINS)
+                for (neighbor in best - 1..best + 1) {
+                    if (neighbor in weights.indices) weights[neighbor] = 0f
+                }
             }
-        }
-        return seeds
+            return seeds
+        } finally { bitmap.recycle() }
     }
 
     /** A histogram never needs more pixels than this out of the wallpaper. */

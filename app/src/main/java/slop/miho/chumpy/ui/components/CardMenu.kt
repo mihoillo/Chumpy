@@ -147,7 +147,7 @@ private fun CardPopup(
                 color = MenuDefaults.containerColor,
                 tonalElevation = MenuDefaults.TonalElevation,
                 shadowElevation = MenuDefaults.ShadowElevation,
-                modifier = Modifier.graphicsLayer {
+                modifier = Modifier.controllerWindowInput(onDismissRequest).graphicsLayer {
                     scaleX = scale?.value ?: 1f
                     scaleY = scale?.value ?: 1f
                     this.alpha = alpha

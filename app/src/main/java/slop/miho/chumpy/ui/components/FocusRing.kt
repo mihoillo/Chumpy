@@ -13,6 +13,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
@@ -39,11 +41,12 @@ import androidx.compose.ui.unit.dp
 fun Modifier.focusRing(
     cornerRadius: Dp = 16.dp,
     circular: Boolean = false,
-    gap: Dp = 4.dp,
-    strokeWidth: Dp = 3.dp,
+    gap: Dp = 2.dp,
+    strokeWidth: Dp = 2.dp,
     focused: (() -> Boolean)? = null,
     inset: Boolean = false,
     path: ((Size) -> Path)? = null,
+    shape: Shape? = null,
 ): Modifier = composed {
     var ownFocused by remember { mutableStateOf(false) }
     val controller = LocalInputMode.current == InputMode.CONTROLLER
@@ -65,7 +68,16 @@ fun Modifier.focusRing(
                 // inset, short of them.
                 val reach = gap.toPx() + stroke / 2
                 val color = ringColor.copy(alpha = ringColor.alpha * reveal)
-                if (path != null) {
+                if (shape != null) {
+                    val pad = if (inset) -reach else reach
+                    translate(-pad, -pad) {
+                        drawOutline(
+                            shape.createOutline(Size(size.width + pad * 2f, size.height + pad * 2f), layoutDirection, this),
+                            color = color,
+                            style = Stroke(stroke),
+                        )
+                    }
+                } else if (path != null) {
                     // The path is built for the ring's own bounds; the node's corner is
                     // where those bounds begin, outset by the reach.
                     translate(-reach, -reach) {

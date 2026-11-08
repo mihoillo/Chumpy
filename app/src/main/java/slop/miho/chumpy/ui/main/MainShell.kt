@@ -19,7 +19,6 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -35,7 +34,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -55,15 +53,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.layout.onGloballyPositioned
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -71,7 +69,6 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -96,10 +93,10 @@ import slop.miho.chumpy.ui.ServersUiState
 import slop.miho.chumpy.ui.StatsUiState
 import slop.miho.chumpy.data.UiSettings
 import slop.miho.chumpy.ui.components.InputMode
+import slop.miho.chumpy.ui.components.controllerFocusBoundary
 import slop.miho.chumpy.ui.components.LocalInputMode
 import slop.miho.chumpy.ui.components.RefreshRateRequest
 import slop.miho.chumpy.ui.components.SystemBarsIconsDark
-import slop.miho.chumpy.ui.components.inputModeTracking
 import slop.miho.chumpy.ui.theme.LocalDarkTheme
 import slop.miho.chumpy.ui.wallpapers.LocalBackdropDark
 import slop.miho.chumpy.ui.wallpapers.LocalBarCanFade
@@ -115,6 +112,23 @@ import slop.miho.chumpy.ui.wallpapers.offlineDesaturation
 import slop.miho.chumpy.ui.wallpapers.rememberDecodedWallpaper
 import slop.miho.chumpy.ui.wallpapers.scrimColor
 import slop.miho.chumpy.ui.wallpapers.wallpaperZoomTarget
+
+private data class ControllerFocusDestination(
+    val tab: MainTab,
+    val settings: Boolean,
+    val category: SettingsCategory,
+    val bar: Boolean,
+)
+
+private val LocalControllerPageReady = androidx.compose.runtime.compositionLocalOf<(Int, Boolean) -> Unit> { { _, _ -> } }
+private val LocalControllerBarVisible = androidx.compose.runtime.compositionLocalOf { false }
+private val LocalControllerFocusExit = androidx.compose.runtime.compositionLocalOf<() -> Boolean> { { false } }
+
+@Composable
+internal fun <T> StateFlow<T>.collectOnStageAsState(): androidx.compose.runtime.State<T> {
+    return if (LocalPageOnStage.current) collectAsStateWithLifecycle()
+    else remember(this) { mutableStateOf(value) }
+}
 
 @Composable
 fun MainShell(viewModel: MainViewModel) {
@@ -138,8 +152,7 @@ fun MainShell(viewModel: MainViewModel) {
     // a remote, the bar hides off the active screen (BACK summons it, a second BACK goes
     // home), focus stays confined to what's on stage, and the focused element wears its
     // ring. A finger on the glass hands the shell right back to touch.
-    val inputMode = remember { mutableStateOf(InputMode.TOUCH) }
-    val controller = inputMode.value == InputMode.CONTROLLER
+    val controller = LocalInputMode.current == InputMode.CONTROLLER
     var barSummoned by remember { mutableStateOf(false) }
     LaunchedEffect(controller) {
         // Touch takes the bar back the moment it arrives.
@@ -188,45 +201,33 @@ fun MainShell(viewModel: MainViewModel) {
     // requester had never landed at all, every summons used to throw.
     val tabFocusRequester = remember { FocusRequester() }
     val categoryFocusRequester = remember { FocusRequester() }
-    // The on-stage page's own landing: a letterbox-sized anchor at its top corner,
-    // planted by the strip on the page that holds the stage (see destinationPage).
-    // The cursor it takes is invisible — nothing draws on it — but it is REAL: focus
-    // never crosses a null window between destinations, and the first dpad press
-    // folds it into the page's own rows. Without it, a destination change dropped
-    // the cursor into nothing, and the system's own initial-focus hunt (a corner
-    // search that walks right past the controller's gates) planted it on Home's
-    // dimmed half — which read as the walk never having left the main screen.
     val pageEntranceRequester = remember { FocusRequester() }
-    val focusManager = LocalFocusManager.current
-    // The reseat's own door through the bar's exit wall, held open for exactly the
-    // moves below: the plant pill → anchor crosses out of the bar's subtree, and the
-    // island below cannot tell that crossing from a dpad's drift — left standing, it
-    // swallowed the landing whole, the cursor stayed on the leaving pill, got dropped
-    // by the bar's own gate, and the system's hunt filled the gap from Home again.
+    val homeConnectRequester = remember { FocusRequester() }
+    val windowFocused = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+    val pageReady = remember { kotlinx.coroutines.flow.MutableStateFlow<Pair<Int, Boolean>?>(null) }
+    val barReady = remember { kotlinx.coroutines.flow.MutableStateFlow(false) }
     val reseating = remember { mutableStateOf(false) }
-    LaunchedEffect(controller, selectedTab, settingsOpen, selectedCategory, barSummoned) {
-        if (!controller) return@LaunchedEffect
+    val grantedFocus = remember { java.util.concurrent.atomic.AtomicReference<ControllerFocusDestination?>(null) }
+    val focusDestination = remember(selectedTab, settingsOpen, selectedCategory, barVisible) {
+        ControllerFocusDestination(selectedTab, settingsOpen, selectedCategory, barVisible)
+    }
+    fun grantFocus(requester: FocusRequester, destination: ControllerFocusDestination = focusDestination) {
+        if (!controller || !windowFocused || grantedFocus.get() == destination) return
+        reseating.value = true
+        try {
+            if (requester.requestFocus()) grantedFocus.set(destination)
+        } finally { reseating.value = false }
+    }
+    LaunchedEffect(controller, windowFocused, selectedTab, settingsOpen, selectedCategory, barSummoned) {
+        if (!controller) { grantedFocus.set(null); return@LaunchedEffect }
+        if (!windowFocused) { grantedFocus.set(null); return@LaunchedEffect }
         if (barVisible) {
-            (if (settingsOpen) categoryFocusRequester else tabFocusRequester).requestFocus()
+            barReady.first { it }
+            grantFocus(if (settingsOpen) categoryFocusRequester else tabFocusRequester)
         } else {
-            reseating.value = true
-            try {
-                // Straight onto the page's own anchor: a direct grant, no search, no
-                // null window for the initial-focus hunt to fill with Home. This is the
-                // pill → anchor crossing the door above is held open for; with it shut,
-                // the island swallowed this grant and the cursor never left the bar.
-                pageEntranceRequester.requestFocus()
-                // One frame later the anchor and the page it marks have their places
-                // — a search run any earlier sees no geometry to walk into — and the
-                // cursor folds one step down onto the page's top element: ring on,
-                // OK answering from the first press, no detours. The same landing
-                // serves the touch → controller handover: the first dpad press re-seats
-                // the cursor wherever touch left it, top of the page, one input later.
-                withFrameNanos { }
-                focusManager.moveFocus(FocusDirection.Down)
-            } finally {
-                reseating.value = false
-            }
+            val target = if (settingsOpen) MainTab.entries.size + selectedCategory.ordinal else selectedTab.ordinal
+            pageReady.first { it == (target to (settings.simpleTransitions || controller)) }
+            grantFocus(pageEntranceRequester)
         }
     }
     // The controller's back door: one BACK summons the bar over the screen on stage —
@@ -240,6 +241,8 @@ fun MainShell(viewModel: MainViewModel) {
             barSummoned = false
         } else {
             barSummoned = true
+            grantFocus(if (settingsOpen) categoryFocusRequester else tabFocusRequester,
+                ControllerFocusDestination(selectedTab, settingsOpen, selectedCategory, true))
         }
     }
 
@@ -259,7 +262,7 @@ fun MainShell(viewModel: MainViewModel) {
     // the interface page's position.
     val interfaceScroll = rememberScrollState()
 
-    BoxWithConstraints(Modifier.fillMaxSize().inputModeTracking(inputMode)) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         // The wallpaper behind the whole app, the wallpaper screen's own recipe: Home wears
         // the gentle dim only, every other screen adds the stronger dim, the blur and the
         // zoom — animated between the two looks as the user moves around.
@@ -336,13 +339,8 @@ fun MainShell(viewModel: MainViewModel) {
         // into this layer while the bar's frost is on: the screen shows the layer as is, and
         // the bar re-draws the slice of it behind itself, blurred, as its glass. Off, nothing
         // is recorded and the content draws straight through.
-        val frost = settings.navigationBarBlur
+        val frost = settings.navigationBarBlur && !wide
         val behindBar = rememberGraphicsLayer()
-        // The controller's hold on the bar and the split's halves, all from the one
-        // visibility verdict: the bar flies down below the edge on a narrow window, and
-        // on a wide one the off-stage half — the left with its bar while a screen works,
-        // the right while Home or the summoned bar holds the focus — dims the way the
-        // servers list does behind its fold. Touch lights everything back up.
         val barHidden = animateFloatAsState(
             targetValue = if (barVisible) 0f else 1f,
             animationSpec = motion.defaultSpatialSpec(),
@@ -352,24 +350,32 @@ fun MainShell(viewModel: MainViewModel) {
             (FloatingBottomBarReservedHeight +
                 WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()).roundToPx()
         }
-        val leftDim = animateFloatAsState(
-            targetValue = if (controller && !barVisible) 0.45f else 1f,
-            animationSpec = motion.fastEffectsSpec(),
-            label = "left half dim",
-        )
-        val rightDim = animateFloatAsState(
-            targetValue = if (controller && barVisible) 0.45f else 1f,
-            animationSpec = motion.fastEffectsSpec(),
-            label = "right half dim",
-        )
         CompositionLocalProvider(
+            slop.miho.chumpy.ui.components.LocalControllerHomeFocusAction provides if (wide) ({
+                reseating.value = true
+                try { homeConnectRequester.requestFocus(); Unit }
+                finally { reseating.value = false }
+            }) else null,
+            LocalHomeMotionActive provides (atHome || wide),
+            LocalHomeConnectFocusRequester provides homeConnectRequester,
+            LocalHomePageFocusRequester provides pageEntranceRequester.takeIf { wide && !atHome },
+            LocalHomeBarFocusRequester provides (if (settingsOpen) categoryFocusRequester else tabFocusRequester).takeIf { barVisible },
+            LocalControllerPageReady provides { position, mode ->
+                pageReady.value = position to mode
+                val target = if (focusDestination.settings) MainTab.entries.size + focusDestination.category.ordinal
+                    else focusDestination.tab.ordinal
+                if (!focusDestination.bar && position == target && mode == (settings.simpleTransitions || controller)) {
+                    grantFocus(pageEntranceRequester)
+                }
+            },
+            LocalControllerBarVisible provides barVisible,
+            LocalControllerFocusExit provides { reseating.value },
             LocalSurfaceOpacity provides surfaceOpacity,
             LocalHasWallpaper provides (wallpaper != null),
             LocalBackdropDark provides backdropDark,
             LocalBarCoverage provides barCoverage,
             LocalBarUnderlay provides barUnderlay,
             LocalBarCanFade provides homeLook,
-            LocalInputMode provides inputMode.value,
         ) {
             Box(
                 Modifier
@@ -408,11 +414,7 @@ fun MainShell(viewModel: MainViewModel) {
                     settingsOpen = settingsOpen,
                     // The controller mode's half-dims and focus gates, flowing from the
                     // same facts the bar itself follows (see the bar below).
-                    controller = controller,
-                    homeFocusable = atHome,
                     pageEntranceRequester = pageEntranceRequester,
-                    leftDim = { leftDim.value },
-                    rightDim = { rightDim.value },
                     interfaceScroll = interfaceScroll,
                     tunnelStatus = tunnelStatus,
                     subscriptions = subscriptions,
@@ -618,17 +620,28 @@ fun MainShell(viewModel: MainViewModel) {
                         // stand down anyway: the bar keeps its two-way bond with the
                         // screen above it (DOWN from the connect button lands here,
                         // UP from here climbs back).
-                        .focusProperties {
-                            canFocus = barVisible
-                            onEnter = { if (!barVisible) cancelFocusChange() }
-                            onExit = {
-                                if (controller && !atHome && !reseating.value) cancelFocusChange()
-                            }
+                        .onGloballyPositioned {
+                            barReady.value = true
+                            if (barVisible) grantFocus(if (settingsOpen) categoryFocusRequester else tabFocusRequester)
                         }
+                        .onPreviewKeyEvent { event ->
+                            if (controller && (atHome || wide) && event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
+                                if (event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN) {
+                                    reseating.value = true
+                                    try { homeConnectRequester.requestFocus() }
+                                    finally { reseating.value = false }
+                                }
+                                true
+                            } else false
+                        }
+                        .controllerFocusBoundary(
+                            enabled = barVisible,
+                            trap = controller && !atHome,
+                            allowExit = { reseating.value },
+                        )
                         .then(
                             if (wide) {
-                                // The split's halves dim instead of flying, the bar with its own.
-                                Modifier.graphicsLayer { alpha = leftDim.value }
+                                Modifier
                             } else {
                                 // Narrow: the whole footprint slides below the window's edge.
                                 Modifier.offset {
@@ -728,10 +741,14 @@ private fun ShellDestinationPage(
                 // The week rides the stats flow but only its own list is wanted
                 // here: the flow itself ticks once a second, while the week
                 // changes only on a flush — so only the page recomposes then.
-                val weekFlow = remember(statsFlow) { statsFlow.map { it.week }.distinctUntilChanged() }
+                val onStage = LocalPageOnStage.current
+                val weekFlow = remember(statsFlow, onStage) {
+                    if (onStage) statsFlow.map { it.week }.distinctUntilChanged()
+                    else kotlinx.coroutines.flow.flowOf(statsFlow.value.week)
+                }
                 val week by weekFlow
                     .collectAsStateWithLifecycle(initialValue = emptyList())
-                val manualCount by manualProfileCount.collectAsStateWithLifecycle()
+                val manualCount by manualProfileCount.collectOnStageAsState()
                 ServersScreen(
                     subscriptions = subscriptions,
                     selectedSubscription = selectedSubscription,
@@ -755,7 +772,7 @@ private fun ShellDestinationPage(
             MainTab.STATS -> {
                 // Collected in the branch, not the shell's top: the flow ticks once
                 // a second and only ever recomposes this page.
-                val stats by statsFlow.collectAsStateWithLifecycle()
+                val stats by statsFlow.collectOnStageAsState()
                 StatsScreen(
                     state = stats,
                     tunnelUp = tunnelStatus.state == TunnelState.UP,
@@ -800,20 +817,8 @@ private fun TwoPaneShell(
     selectedTab: MainTab,
     selectedCategory: SettingsCategory,
     settingsOpen: Boolean,
-    /** Whether a controller drives the shell right now (see [inputModeTracking]). */
-    controller: Boolean,
-    /**
-     * Whether Home's own half takes the controller's walk: it joins only while Home
-     * itself is the destination — over any working screen, settings included, the
-     * left half is out of the walk wherever the bar stands, summoned or not.
-     */
-    homeFocusable: Boolean,
     /** The on-stage page's own landing anchor (see MainShell's cursor re-seat). */
     pageEntranceRequester: FocusRequester,
-    /** The left half's animated dim, read at layer time; the bar rides the same one. */
-    leftDim: () -> Float,
-    /** The right half's animated dim, read at layer time. */
-    rightDim: () -> Float,
     interfaceScroll: ScrollState,
     tunnelStatus: TunnelStatus,
     subscriptions: List<slop.miho.chumpy.db.SubscriptionEntity>,
@@ -861,20 +866,8 @@ private fun TwoPaneShell(
             Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                // Under the controller, Home's half takes the walk only while Home is
-                // the destination — the dpad's search can't wander into it while a
-                // screen works, not even from a BACK-summoned bar floating over it:
-                // the walk belongs to the active screen and the bar alone. The entry
-                // wall carries the law to the grant itself — a move bound for the
-                // dimmed half dies at its edge, however promising a candidate the
-                // search finds inside it.
-                .graphicsLayer { alpha = leftDim() }
-                .focusProperties {
-                    canFocus = !controller || homeFocusable
-                    onEnter = {
-                        if (controller && !homeFocusable) cancelFocusChange()
-                    }
-                },
+                .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                .controllerFocusBoundary(enabled = true),
         ) {
             // The bar floats over this pane, so its content keeps the full reservation.
             CompositionLocalProvider(LocalBarReservedHeight provides FloatingBottomBarReservedHeight) {
@@ -897,9 +890,7 @@ private fun TwoPaneShell(
             Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                // The strip's half dims the same way while Home or the bar holds the
-                // stage under the controller.
-                .graphicsLayer { alpha = rightDim() },
+                .graphicsLayer(),
         ) {
             CompositionLocalProvider(
                 LocalBarReservedHeight provides 0.dp,
@@ -1020,6 +1011,8 @@ private fun MainPagerStrip(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
+    val controller = LocalInputMode.current == InputMode.CONTROLLER
+    val directTransitions = uiSettings.simpleTransitions || controller
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val pageWidth = constraints.maxWidth.toFloat()
         val settingsOffset = MainTab.entries.size
@@ -1057,8 +1050,9 @@ private fun MainPagerStrip(
         // release or the spring home after a failed one. A fresh drag cancels it — the
         // finger takes the page over from wherever the animation has got it.
         var dragAnimJob by remember { mutableStateOf<Job?>(null) }
-        LaunchedEffect(targetPosition) {
-            stripPosition.animateTo(targetPosition.toFloat(), motion.defaultSpatialSpec())
+        LaunchedEffect(targetPosition, directTransitions) {
+            if (directTransitions) stripPosition.snapTo(targetPosition.toFloat())
+            else stripPosition.animateTo(targetPosition.toFloat(), motion.defaultSpatialSpec())
         }
 
         // The screen at a strip position: main tabs at 0..2, settings categories after them.
@@ -1067,13 +1061,15 @@ private fun MainPagerStrip(
         // would let it keep writing its report over the landing page's own.
         val targetPositionNow = rememberUpdatedState(targetPosition)
         @Composable
-        fun destinationPage(position: Int) {
+        fun destinationPage(position: Int, modeActive: Boolean) {
             // Only the page on stage reports the bar's coverage (see ReportBarCoverage):
             // the strip keeps the neighbors composed — the stats page ticks once a second,
             // the settings pages idle beside — and without the gate whichever recomposed
             // last would win the shared report, leaving the bar wearing the wrong page's
             // story across every switch.
-            val onStage = position == targetPositionNow.value
+            val onStage = modeActive && position == targetPositionNow.value
+            val onPageReady = LocalControllerPageReady.current
+            val homeFocus = slop.miho.chumpy.ui.components.LocalControllerHomeFocusAction.current
             CompositionLocalProvider(LocalPageOnStage provides onStage) {
                 // And only the page on stage takes focus, either: the neighbors stay
                 // composed for the strip's rides, translated just off the pane, and a
@@ -1086,29 +1082,16 @@ private fun MainPagerStrip(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .focusProperties {
-                            canFocus = onStage
-                            onEnter = { if (!onStage) cancelFocusChange() }
-                        },
+                        .then(if (onStage) Modifier.focusRequester(pageEntranceRequester)
+                            .onGloballyPositioned { onPageReady(position, directTransitions) } else Modifier)
+                        .controllerFocusBoundary(
+                            enabled = onStage && (LocalInputMode.current != InputMode.CONTROLLER ||
+                                blankHome || !LocalControllerBarVisible.current || position == MainTab.HOME.ordinal && !settingsOpen),
+                            trap = LocalInputMode.current == InputMode.CONTROLLER && position != MainTab.HOME.ordinal,
+                            allowExit = LocalControllerFocusExit.current,
+                            leftExit = if (blankHome) homeFocus else null,
+                        ),
                 ) {
-                    // The on-stage page's own landing anchor: a letterbox-sized dot
-                    // at its top corner, invisible (nothing draws on it) but a real
-                    // focus target. The shell grants the controller's cursor straight
-                    // onto it when the destination changes — fewer null-focus windows
-                    // for the system's own initial-focus hunt to fill from outside
-                    // the walk — then folds it one step down, onto the page's first
-                    // real row: the cursor arrives ring-on, OK answering from the
-                    // first press. The blank Home slot never hosts one: at Home the
-                    // bar owns the landing.
-                    if (onStage && !(blankHome && position == MainTab.HOME.ordinal)) {
-                        Box(
-                            Modifier
-                                .align(Alignment.TopStart)
-                                .size(1.dp)
-                                .focusRequester(pageEntranceRequester)
-                                .focusable(),
-                        )
-                    }
                     if (blankHome && position == MainTab.HOME.ordinal) {
                         // The two-pane split's empty Home slot: the screen lives in the left
                         // pane, so this page leaves the wallpaper to speak for the half.
@@ -1161,7 +1144,7 @@ private fun MainPagerStrip(
         // finger left drags the page left, the next one in from the right.
         // The mode and the corridor reach the delta handler through updated states, so a
         // flip of either hands the drag fresh bounds with no stale capture.
-        val expressiveNow = rememberUpdatedState(!uiSettings.simpleTransitions)
+        val expressiveNow = rememberUpdatedState(!directTransitions)
         val firstPageNow = rememberUpdatedState(firstPage)
         val lastPageNow = rememberUpdatedState(lastPage)
 
@@ -1396,7 +1379,7 @@ private fun MainPagerStrip(
             // composed while it fades out, so a press in progress — the toggle's own bounce —
             // plays out on it instead of being cut off by the subtree swap.
             AnimatedContent(
-                targetState = uiSettings.simpleTransitions,
+                targetState = directTransitions,
                 transitionSpec = {
                     fadeIn(motion.fastEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec())
                 },
@@ -1412,10 +1395,12 @@ private fun MainPagerStrip(
                     val target = remember(targetPosition) { PageTarget(targetPosition) }
                     AnimatedContent(
                         targetState = target,
+                        contentKey = { if (controller) it.position else it },
                         transitionSpec = {
-                            (fadeIn(motion.defaultEffectsSpec()) +
-                                slideInVertically(motion.defaultSpatialSpec()) { it / 3 }) togetherWith
-                                fadeOut(motion.defaultEffectsSpec())
+                            (fadeIn(if (controller) motion.fastEffectsSpec() else motion.defaultEffectsSpec()) +
+                                slideInVertically(if (controller) motion.fastSpatialSpec() else motion.defaultSpatialSpec()) {
+                                    if (controller && uiSettings.simpleTransitions) 0 else if (controller) it / 12 else it / 3
+                                }) togetherWith fadeOut(motion.fastEffectsSpec())
                         },
                         label = "direct page switch",
                     ) { page ->
@@ -1455,7 +1440,7 @@ private fun MainPagerStrip(
                                     }
                                 },
                         ) {
-                            destinationPage(slot)
+                            destinationPage(slot, simple == directTransitions)
                         }
                     }
                 } else {
@@ -1494,7 +1479,7 @@ private fun MainPagerStrip(
                                 },
                                 pageWidth = pageWidth,
                             ) {
-                                destinationPage(position)
+                                destinationPage(position, simple == directTransitions)
                             }
                         }
                     }

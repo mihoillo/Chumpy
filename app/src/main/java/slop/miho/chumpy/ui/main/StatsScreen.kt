@@ -5,6 +5,19 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import android.view.KeyEvent
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import kotlinx.coroutines.launch
+import slop.miho.chumpy.ui.components.LocalInputMode
+import slop.miho.chumpy.ui.components.InputMode
+import slop.miho.chumpy.ui.components.controllerScrollFallback
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -72,6 +85,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
+import slop.miho.chumpy.ui.components.controllerReadFocus
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.DailyTraffic
 import slop.miho.chumpy.ui.LossBucket
@@ -135,6 +149,7 @@ fun StatsScreen(
         modifier = modifier
             .fillMaxSize()
             .screenPadding()
+            .controllerScrollFallback(scroll)
             .verticalScroll(scroll)
             .padding(
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp,
@@ -187,7 +202,7 @@ fun StatsScreen(
         var logsOpen by rememberSaveable { mutableStateOf(false) }
         // The tail follows the tunnel while the fold stands open; once a second is
         // plenty for prose. The flow's own collector starts only here, under the fold.
-        val coreLogs by (if (logsOpen) coreLogsFlow else remember { kotlinx.coroutines.flow.MutableStateFlow<String?>(null) })
+        val coreLogs by (if (logsOpen && slop.miho.chumpy.ui.wallpapers.LocalPageOnStage.current) coreLogsFlow else remember { kotlinx.coroutines.flow.MutableStateFlow<String?>(null) })
             .collectAsStateWithLifecycle()
         // The copy hands the whole tail to the clipboard, straight from the flow's own
         // snapshot — the same text the card below shows.
@@ -265,7 +280,7 @@ private fun TrafficChartCard(samples: List<TrafficSample>, tunnelUp: Boolean, mo
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = colors.surfaceContainer.withSurfaceOpacity(),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().controllerReadFocus(),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -408,7 +423,7 @@ private fun LossChartCard(buckets: List<LossBucket>, tunnelUp: Boolean, modifier
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = colors.surfaceContainer.withSurfaceOpacity(),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().controllerReadFocus(),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -511,7 +526,7 @@ private fun WeekChartCard(week: List<DailyTraffic>, modifier: Modifier = Modifie
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = colors.surfaceContainer.withSurfaceOpacity(),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().controllerReadFocus(),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -873,6 +888,10 @@ private fun CoreLogsRow(
 private fun CoreLogCard(logs: String?) {
     val colors = MaterialTheme.colorScheme
     val scrollState = rememberScrollState()
+    val horizontalScrollState = rememberScrollState()
+    val controller = LocalInputMode.current == InputMode.CONTROLLER
+    val scope = rememberCoroutineScope()
+    val maxHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() * 0.55f }
     // The tail's own colors: warnings in the tertiary tone, errors in the error one,
     // the plain lines in the card's own text color. Built here rather than in a
     // remember: the tail changes with every poll, and every line carries its own mark.
@@ -896,8 +915,27 @@ private fun CoreLogCard(logs: String?) {
     }
     Box(
         modifier = Modifier
+            .heightIn(max = maxHeight)
             .height(LOG_CARD_HEIGHT)
             .fillMaxWidth()
+            .then(if (controller) Modifier
+                .focusRing(inset = true, gap = 1.dp)
+                .onPreviewKeyEvent { event ->
+                    val key = event.nativeKeyEvent
+                    val axis = when (key.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> scrollState
+                        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> horizontalScrollState
+                        else -> null
+                    }
+                    val forward = key.keyCode == KeyEvent.KEYCODE_DPAD_DOWN || key.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                    if (axis == null) false
+                    else if (key.action != KeyEvent.ACTION_DOWN) false
+                    else if (if (forward) axis.canScrollForward else axis.canScrollBackward) {
+                        scope.launch { axis.scrollBy(axis.viewportSize * if (forward) 0.25f else -0.25f) }
+                        true
+                    } else false
+                }
+                .focusable() else Modifier)
             .verticalScroll(scrollState)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
@@ -920,15 +958,18 @@ private fun CoreLogCard(logs: String?) {
                     lineHeight = MaterialTheme.typography.bodySmall.lineHeight * 1.15f,
                 ),
                 modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
+                    .horizontalScroll(horizontalScrollState)
                     .align(Alignment.TopStart),
             )
         }
     }
-    // The tail grows at its end: every poll that lands new lines jumps the view to
-    // the bottom, so the story's own last line stays in sight — the way logcat follows.
-    LaunchedEffect(logs) {
-        scrollState.animateScrollTo(scrollState.maxValue)
+    LaunchedEffect(scrollState) {
+        var previousMax = scrollState.maxValue
+        snapshotFlow { scrollState.maxValue }.collect { maximum ->
+            val followTail = scrollState.value >= previousMax
+            previousMax = maximum
+            if (followTail) scrollState.scrollTo(maximum)
+        }
     }
 }
 

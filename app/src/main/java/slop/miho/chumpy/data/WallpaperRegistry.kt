@@ -40,21 +40,29 @@ object WallpaperRegistry {
     fun set(context: Context, uri: Uri): String? {
         return try {
             if (!isImage(context, uri)) return context.getString(R.string.wallpapers_import_not_image)
-            val target = File(context.filesDir, WALLPAPER_FILE)
-            val result = context.contentResolver.openInputStream(uri)?.use { input ->
-                ImportedFile.replace(target, input, MAX_IMAGE_BYTES) { file ->
-                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeFile(file.absolutePath, options)
-                    options.outWidth > 0 && options.outHeight > 0
-                }
-            } ?: return context.getString(R.string.error_unknown)
-            when (result) {
-                ImportedFile.Result.SUCCESS -> { changes.value++; null }
-                ImportedFile.Result.TOO_LARGE -> context.getString(R.string.wallpapers_import_too_large)
-                ImportedFile.Result.INVALID -> context.getString(R.string.wallpapers_import_not_image)
-            }
+            context.contentResolver.openInputStream(uri)?.use { input -> replace(context, input) }
+                ?: context.getString(R.string.error_unknown)
         } catch (_: Exception) {
             context.getString(R.string.error_unknown)
+        }
+    }
+
+    internal fun setReceived(context: Context, file: File): String? = try {
+        file.inputStream().use { replace(context, it) }
+    } catch (_: Exception) {
+        context.getString(R.string.error_unknown)
+    }
+
+    private fun replace(context: Context, input: java.io.InputStream): String? {
+        val result = ImportedFile.replace(File(context.filesDir, WALLPAPER_FILE), input, MAX_IMAGE_BYTES) { file ->
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, options)
+            options.outWidth > 0 && options.outHeight > 0
+        }
+        return when (result) {
+            ImportedFile.Result.SUCCESS -> { changes.value++; null }
+            ImportedFile.Result.TOO_LARGE -> context.getString(R.string.wallpapers_import_too_large)
+            ImportedFile.Result.INVALID -> context.getString(R.string.wallpapers_import_not_image)
         }
     }
 

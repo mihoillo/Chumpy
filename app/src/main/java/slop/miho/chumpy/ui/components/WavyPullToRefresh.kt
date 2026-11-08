@@ -22,6 +22,8 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -66,13 +68,14 @@ fun WavyPullToRefreshBox(
     onRefreshDenied: (() -> Unit)? = null,
     content: @Composable BoxScope.(pullShift: () -> Dp) -> Unit,
 ) {
+    val controller = LocalInputMode.current == InputMode.CONTROLLER
     // The kicks honor the app-wide haptic-feedback setting, like every other poke.
     val hapticsOn = LocalUiSettings.current.hapticFeedback
     val deniedKicks = rememberHapticDeniedKicks()
     val thresholdPoke = rememberHapticSoftPoke()
     val slow = LocalUiSettings.current.slowAnimations
     val density = LocalDensity.current
-    val isRefreshingState = rememberUpdatedState(isRefreshing)
+    val isRefreshingState = rememberUpdatedState(isRefreshing && !controller)
 
     // The rows' give, in pixels. Under the finger it follows the pull through a rubber band —
     // generous at first, ever heavier the further it stretches. Let go, it no longer follows
@@ -124,13 +127,12 @@ fun WavyPullToRefreshBox(
     // The gesture itself always works so the content still bounces and folds back; only the
     // wave, the kicks and the actual refresh are gated by `enabled`.
     PullToRefreshBox(
-        isRefreshing = isRefreshing,
+        isRefreshing = isRefreshing && !controller,
+        enabled = !controller,
         onRefresh = {
-            if (enabled) {
-                onRefresh()
-            } else {
-                onRefreshDenied?.invoke()
-                deniedKicks()
+            if (!controller) {
+                if (enabled) onRefresh()
+                else { onRefreshDenied?.invoke(); deniedKicks() }
             }
         },
         modifier = modifier.pointerInput(Unit) {
@@ -146,7 +148,7 @@ fun WavyPullToRefreshBox(
         state = state,
         contentAlignment = contentAlignment,
         indicator = {
-            WavyPullIndicator(
+            if (!controller) WavyPullIndicator(
                 state = state,
                 isRefreshing = isRefreshing,
                 enabled = enabled,
@@ -161,7 +163,7 @@ fun WavyPullToRefreshBox(
             // translated viewport would open a screen-tall gap under the wave and drag its
             // clip edge down with it, cutting the rows mid-screen. While a refresh is in
             // flight the rows rest a little way down, just clear of the bar.
-            content(pullShift)
+            content(if (controller) NoPullShift else pullShift)
             // No fade of the content's own: the only gradient in play is the status bar's,
             // the shell's scrim — pinned in the bar, hidden with a wallpaper. A gradient
             // riding the pulled-down content would surface mid-screen.
@@ -173,17 +175,19 @@ fun WavyPullToRefreshBox(
     // the tap poke's amplitude — not a feedback constant and not the full poke either:
     // CONFIRM reads as a firm double thud on a good motor, and even the plain poke sits
     // heavy where the gesture only wants a tick.
-    LaunchedEffect(state, enabled, hapticsOn) {
+    LaunchedEffect(state, enabled, hapticsOn, controller) {
         var pastThreshold = false
         snapshotFlow { state.distanceFraction >= 1f && !state.isAnimating }
             .collect { crossed ->
-                if (crossed && !pastThreshold && enabled && hapticsOn) {
+                if (crossed && !pastThreshold && enabled && hapticsOn && !controller) {
                     thresholdPoke()
                 }
                 pastThreshold = crossed
             }
     }
 }
+
+private val NoPullShift: () -> Dp = { 0.dp }
 
 @Composable
 private fun WavyPullIndicator(
@@ -193,6 +197,8 @@ private fun WavyPullIndicator(
     shiftPx: () -> Float,
     modifier: Modifier = Modifier,
 ) {
+    val visible by remember(state) { derivedStateOf { state.distanceFraction > 0.001f } }
+    if (!visible) return
     val motion = MaterialTheme.motionScheme
     Box(
         modifier

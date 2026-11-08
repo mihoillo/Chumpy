@@ -1,7 +1,7 @@
 package slop.miho.chumpy.ui.wallpapers
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import slop.miho.chumpy.ui.components.ControllerActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
@@ -19,7 +19,7 @@ import slop.miho.chumpy.ui.theme.ChumpyTheme
  * page with the scrim tone, the dimming/blur sliders and the page-zoom toggle. The system
  * back gesture and the bar's back button both simply finish this activity.
  */
-class WallpaperActivity : ComponentActivity() {
+class WallpaperActivity : ControllerActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

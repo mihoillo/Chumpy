@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chumpy</title>
+<style>
+*{box-sizing:border-box}[hidden]{display:none!important}body{font:18px system-ui,sans-serif;min-height:100vh;min-height:100svh;margin:0;padding:2rem 1.2rem;display:grid;grid-template-columns:minmax(0,1fr);place-items:center;background:#f5f7fa;color:#17212b;text-align:center}main{width:100%;min-width:0;max-width:36rem;overflow-wrap:anywhere}h1{display:flex;align-items:center;justify-content:center;gap:.75rem;font-size:2rem;margin:0}.logo{width:3.5rem;height:3.5rem;flex:none;color:#153f68}input,textarea{text-align:center}label{display:block;margin-top:1.4rem}textarea,input,button{box-sizing:border-box;font:inherit;width:100%;padding:.9rem;border:1px solid #687782;border-radius:12px;margin-top:.6rem}textarea{min-height:12rem;resize:vertical}button{background:#153f68;color:white;border:0;cursor:pointer}button:disabled{opacity:.6}p{line-height:1.5}#status{min-height:3rem}input:focus,textarea:focus,button:focus{outline:3px solid #356bad;outline-offset:3px}
+</style>
+<main><h1><svg class="logo" viewBox="0 0 50 50" aria-hidden="true" focusable="false"><path d="M3.03301 32.3223C2.23342 31.5227 1.59192 30.6249 1.10852 29.6677C0.985816 29.4247 0.873294 29.1779 0.770961 28.9279C0.232619 27.6127 -0.0237906 26.2093 0.001733 24.81C0.0489108 22.2235 1.05934 19.6513 3.03301 17.6777L17.6777 3.03301C21.7217 -1.011 28.2783 -1.011 32.3223 3.03301L46.967 17.6777C51.011 21.7217 51.011 28.2783 46.967 32.3223L32.3223 46.967C30.5924 48.697 28.4026 49.6869 26.1464 49.9367C24.639 50.1037 23.102 49.9403 21.6527 49.4465C20.8834 49.1845 20.1387 48.8293 19.4363 48.381C18.8127 47.9831 18.2224 47.5117 17.6777 46.967L17.052 46.3413L14.2416 43.5309L11.2211 40.5105L8.95393 38.2432L5.91284 35.2022L3.39839 32.6877L3.03301 32.3223Z" fill="currentColor" opacity="0.3"/><path d="M26.1464 49.9367C26.3262 49.7709 26.5029 49.6013 26.6764 49.4278C28.3125 47.792 29.6011 45.8665 30.5422 43.6514C31.4837 41.4366 31.9544 39.0683 31.9544 36.5463C31.9544 34.0244 31.4837 31.6685 30.5422 29.4788C29.6011 27.2891 28.3125 25.3762 26.6764 23.7401C25.0403 22.1043 23.1224 20.8206 20.9227 19.8892C18.723 18.958 16.3622 18.4924 13.8402 18.4924C11.3183 18.4924 8.95488 18.958 6.75005 19.8892C4.54523 20.8206 2.62477 22.1043 0.988665 23.7401C0.644293 24.0844 0.315316 24.4411 0.001733 24.81C-0.0237906 26.2093 0.232619 27.6127 0.770961 28.9279C1.70139 27.3396 2.84616 25.9904 4.20529 24.8804C5.77072 23.6019 7.59045 22.6807 9.6645 22.1168C8.95986 23.2545 8.36833 24.4299 7.88991 25.6428C7.4118 26.8561 7.01675 28.1977 6.70475 29.6677H1.10852C1.59192 30.6249 2.23342 31.5227 3.03301 32.3223L3.39839 32.6877H6.13074C6.04013 33.3724 5.97716 34.0093 5.94182 34.5982C5.93025 34.7927 5.92059 34.994 5.91284 35.2022L8.95393 38.2432C8.92416 37.6993 8.90927 37.1362 8.90927 36.554C8.90927 35.9397 8.92694 35.3482 8.96228 34.7794C8.99761 34.2107 9.07055 33.5135 9.1811 32.6877H18.5138C18.6247 33.5135 18.6978 34.2107 18.7331 34.7794C18.7682 35.3482 18.7857 35.9397 18.7857 36.554C18.7857 37.1883 18.7682 37.7999 18.7331 38.3888C18.6978 38.9778 18.6247 39.685 18.5138 40.5105H11.2211L14.2416 43.5309H17.9099C17.6646 44.5355 17.3786 45.4723 17.052 46.3413L17.6777 46.967C18.2224 47.5117 18.8127 47.9831 19.4363 48.381C19.5485 48.1242 19.6563 47.864 19.7597 47.6006C20.2481 46.3572 20.6685 45.0006 21.021 43.5309H27.3029C26.3062 45.3431 25.0101 46.8986 23.4144 48.1973C22.8531 48.6542 22.2658 49.0706 21.6527 49.4465C23.102 49.9403 24.639 50.1037 26.1464 49.9367ZM28.4206 40.5105H21.5343C21.6249 39.7049 21.6929 39.0077 21.7382 38.4187C21.7835 37.8298 21.8061 37.2082 21.8061 36.554C21.8061 36.0203 21.7885 35.4691 21.7531 34.9004C21.7181 34.3314 21.6553 33.5938 21.5647 32.6877H28.4206C28.6118 33.3724 28.7451 34.0043 28.8206 34.5833C28.8962 35.162 28.9339 35.8189 28.9339 36.554C28.9339 37.2889 28.8962 37.9609 28.8206 38.5701C28.7451 39.179 28.6118 39.8258 28.4206 40.5105ZM27.3029 29.6677H20.9906C20.6382 28.1373 20.2179 26.7605 19.7298 25.5373C19.2414 24.3141 18.6549 23.1638 17.9702 22.0864C20.0442 22.6503 21.8791 23.5816 23.4747 24.8804C25.0706 26.1791 26.3467 27.7749 27.3029 29.6677ZM17.9403 29.6677H9.78546C10.3089 27.7145 10.8877 26.0986 11.522 24.8201C12.1563 23.5413 12.9264 22.4489 13.8325 21.5428C14.799 22.6706 15.6397 23.9291 16.3546 25.3185C17.0692 26.7078 17.5978 28.1576 17.9403 29.6677Z" fill="currentColor" fill-rule="evenodd"/></svg><span>Chumpy</span></h1><p id="intro"></p>
+<form id="form"><label id="codeLabel"><span id="codeText"></span><input id="code" required inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]{6}"></label>
+<label><span id="linkText"></span><textarea id="link" required maxlength="262144" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea></label>
+<button id="send" type="submit" disabled></button></form><p id="status" role="status" aria-live="polite"></p>
+</main>
+<script>
+const ru=navigator.language.toLowerCase().startsWith('ru');
+const t=ru?{intro:'Вставь ссылку подписки или конфигурацию. После отправки подтверди импорт на телевизоре. Данные передаются напрямую по локальной сети.',expired:'Приём закрыт. Открой его заново на телевизоре и сканируй новый QR-код.',code:'Код с экрана телевизора',link:'Ссылка или конфигурация',send:'Отправить на телевизор',sending:'Отправка…',ok:'Отправлено. Подтверди импорт на телевизоре.',bad:'Неверный код. Проверь код на экране телевизора.',locked:'Слишком много попыток. Закрой и снова открой приём на телевизоре.',large:'Слишком большой или пустой текст.',failed:'Не удалось отправить. Проверь общую Wi-Fi/локальную сеть и открой приём на телевизоре снова.'}:{intro:'Paste a subscription link or configuration, then confirm the import on your TV. Data is sent directly over your local network.',expired:'Reception is closed. Reopen it on your TV and scan the new QR code.',code:'Code shown on your TV',link:'Link or configuration',send:'Send to TV',sending:'Sending…',ok:'Sent. Confirm the import on your TV.',bad:'Incorrect code. Check the code on your TV.',locked:'Too many attempts. Close and reopen the receiver on your TV.',large:'The text is empty or too large.',failed:'Could not send. Check that both devices share a Wi-Fi/local network and reopen the receiver on your TV.'};
+history.replaceState(null,'',location.pathname);
+document.documentElement.lang=ru?'ru':'en';
+for(const [id,key] of [['intro','intro'],['codeText','code'],['linkText','link'],['send','send']])document.getElementById(id).textContent=t[key];
+
+const session='__CHUMPY_SESSION__';
+const form=document.getElementById('form');
+const code=document.getElementById('code');
+const button=document.getElementById('send');
+const status=document.getElementById('status');
+const fields=Array.from(form.querySelectorAll('input,textarea'));
+let sending=false,finished=false,currentRequest=null;
+function validPayload(){const text=document.getElementById('link').value.trim();return !!text&&new TextEncoder().encode(text).length<=262144;}
+function updateForm(){
+ fields.forEach(field=>{field.disabled=sending||finished;});
+ button.disabled=sending||finished||!code.validity.valid||!validPayload();
+}
+form.addEventListener('input',updateForm);
+form.addEventListener('change',updateForm);
+window.addEventListener('pagehide',()=>{finished=true;currentRequest?.abort();updateForm();});
+
+form.addEventListener('submit',async event=>{
+ event.preventDefault();
+ if(sending||finished)return;
+ if(!form.reportValidity()||!/^[0-9]{6}$/.test(code.value.trim())||!validPayload()){updateForm();return;}
+ const credential=code.value.trim();
+ const body=document.getElementById('link').value.trim();
+ sending=true;updateForm();status.textContent=t.sending;
+ const controller=new AbortController();currentRequest=controller;
+ const timer=setTimeout(()=>controller.abort(),10000);
+ try{
+  const response=await fetch('/import',{method:'POST',credentials:'omit',cache:'no-store',redirect:'error',
+   headers:{'Content-Type':'text/plain;charset=UTF-8','Authorization':'Bearer '+credential,'X-Chumpy-Session':session},body,signal:controller.signal});
+  if(response.status===202){
+   finished=true;status.textContent=t.ok;
+   document.getElementById('link').value='';
+   code.value='';
+  }else if(response.status===401){code.value='';status.textContent=t.bad;}
+  else if(response.status===429){finished=true;status.textContent=t.locked;}
+  else if(response.status===403||response.status===410){finished=true;status.textContent=t.expired;}
+  else status.textContent=response.status===413?t.large:t.failed;
+ }catch{if(!finished)status.textContent=t.failed;}
+ finally{clearTimeout(timer);currentRequest=null;sending=false;updateForm();}
+});
+updateForm();
+</script></html>

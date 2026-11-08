@@ -52,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import slop.miho.chumpy.ui.components.hasUsableCamera
+import slop.miho.chumpy.ui.components.externalAction
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.UiSettings
 import slop.miho.chumpy.data.Accent
@@ -213,9 +215,13 @@ fun WelcomeScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 ImportConfigRow(
-                    onImport = { filePicker.launch(arrayOf("*/*")) },
+                    onImport = { context.externalAction { filePicker.launch(arrayOf("*/*")) } },
                     onScan = { qrScanner.launch(Intent(context, ScannerActivity::class.java)) },
                 )
+                slop.miho.chumpy.ui.components.PhoneImportAction(initialFocus = true) { text, done ->
+                    onAddSubscription(text, null, done)
+                }
+
                 // The build's own stage holds the page's lowest line, under the way in
                 // and everything it offers — the same quiet chip, set against the right
                 // edge like a page number.
@@ -271,6 +277,7 @@ private fun ImportConfigRow(
                     icon = R.drawable.ic_qr_code_scanner,
                     label = stringResource(R.string.scan_qr_code),
                     indicated = false,
+                    enabled = LocalContext.current.hasUsableCamera(),
                     onClick = onScan,
                 )
             }

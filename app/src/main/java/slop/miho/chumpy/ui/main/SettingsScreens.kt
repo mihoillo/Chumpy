@@ -56,6 +56,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
+import slop.miho.chumpy.ui.components.controllerWindowInput
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -107,6 +108,10 @@ import androidx.compose.ui.unit.dp
 import androidx.annotation.DrawableRes
 import kotlin.math.roundToInt
 import slop.miho.chumpy.BuildConfig
+import slop.miho.chumpy.ui.components.controllerContextMenu
+import slop.miho.chumpy.ui.components.externalAction
+import slop.miho.chumpy.ui.components.controllerHorizontalFocusGroup
+import slop.miho.chumpy.ui.components.controllerReadFocus
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.Accent
 import slop.miho.chumpy.data.FlagStyle
@@ -593,6 +598,7 @@ private fun SquareIconButton(
             // sits outside what it marks — the 16dp corners matching the tile's own.
             .focusRing()
             .clip(shape)
+            .controllerContextMenu(onLongClick)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -645,6 +651,7 @@ private fun ToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .onFocusChanged { rowFocused = it.isFocused }
+            .controllerContextMenu(onLongClick)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -768,7 +775,7 @@ private fun SliderRow(
                 value = value,
                 onValueChange = onChange,
                 valueRange = valueRange,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).focusRing(inset = true, gap = 1.dp),
             )
             Text(
                 text = stringResource(R.string.wallpapers_percent, (value * 100).roundToInt()),
@@ -1275,6 +1282,7 @@ private fun RoutingRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
+                .controllerHorizontalFocusGroup()
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1446,7 +1454,7 @@ private fun TestUrlRow(
                     // keeps the field as it always was.
                     .then(
                         if (LocalInputMode.current == InputMode.CONTROLLER) {
-                            Modifier.focusProperties { canFocus = false }
+                            Modifier.focusRing()
                         } else {
                             Modifier
                         },
@@ -1614,6 +1622,7 @@ private fun HappRegenerateDialog(
 ) {
     val colors = MaterialTheme.colorScheme
     AlertDialog(
+        modifier = Modifier.controllerWindowInput(onDismiss),
         onDismissRequest = onDismiss,
         icon = {
             Icon(
@@ -1777,7 +1786,7 @@ private fun HappFieldRow(
                 // keeps the field as it always was.
                 .then(
                     if (LocalInputMode.current == InputMode.CONTROLLER) {
-                        Modifier.focusProperties { canFocus = false }
+                        Modifier.focusRing()
                     } else {
                         Modifier
                     },
@@ -1817,6 +1826,7 @@ private fun PlainRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .controllerReadFocus()
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Text(
@@ -2020,7 +2030,7 @@ private fun ExternalLinkRow(
         supporting = supporting,
         icon = icon,
     ) {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        context.externalAction { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
     }
 }
 
@@ -2038,13 +2048,13 @@ private fun LanguageRow() {
         supporting = locale.getDisplayName(locale),
         icon = R.drawable.ic_language,
     ) {
-        context.startActivity(
+        context.externalAction { context.startActivity(
             Intent(
                 if (android.os.Build.VERSION.SDK_INT >= 33) Settings.ACTION_APP_LOCALE_SETTINGS
                 else Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.fromParts("package", context.packageName, null),
             ),
-        )
+        ) }
     }
 }
 

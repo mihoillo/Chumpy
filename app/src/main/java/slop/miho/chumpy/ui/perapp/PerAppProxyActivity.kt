@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import slop.miho.chumpy.ui.components.ControllerActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
@@ -76,6 +76,7 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import slop.miho.chumpy.ui.components.focusRing
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.ConnectionStore
 import slop.miho.chumpy.data.SettingsStore
@@ -103,7 +104,7 @@ import slop.miho.chumpy.ui.wallpapers.ReportBarCoverage
  * arrangement). The system back gesture and the bar's back button both simply finish
  * this activity.
  */
-class PerAppProxyActivity : ComponentActivity() {
+class PerAppProxyActivity : ControllerActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -409,6 +410,7 @@ private fun MasterSwitchRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .focusRing(inset = true, gap = 1.dp)
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = LocalIndication.current,
@@ -529,7 +531,7 @@ private fun SelectableRow(
         shape = shape,
         color = containerColor,
         contentColor = contentColor,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().focusRing(inset = true, gap = 1.dp),
     ) {
         ListItem(
             headlineContent = {
@@ -610,17 +612,19 @@ private fun sectionShape(
 private fun installedApps(context: Context): List<AppEntry> {
     val pm = context.packageManager
     val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-    return pm.queryIntentActivities(launcher, 0)
+    val television = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+    val iconPixels = (40 * context.resources.displayMetrics.density).toInt().coerceIn(40, MAX_APP_ICON_PX)
+    return (pm.queryIntentActivities(launcher, 0) + pm.queryIntentActivities(television, 0))
+        .distinctBy { it.activityInfo.packageName }
         .mapNotNull { info ->
             val pkg = info.activityInfo.packageName
             if (pkg == context.packageName) return@mapNotNull null
             AppEntry(
                 packageName = pkg,
                 label = info.loadLabel(pm).toString(),
-                icon = iconAtRowSize(info.loadIcon(pm)),
+                icon = iconAtRowSize(info.loadIcon(pm), iconPixels),
             )
         }
-        .distinctBy { it.packageName }
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
 }
 
@@ -632,13 +636,10 @@ private fun installedApps(context: Context): List<AppEntry> {
  * refusing anything past 100MB. Anything over the cap rides down proportionally;
  * anything under it stands as it shipped.
  */
-private fun iconAtRowSize(drawable: Drawable): ImageBitmap {
-    val w = drawable.intrinsicWidth
-    val h = drawable.intrinsicHeight
-    if (w <= 0 || h <= 0 || (w <= MAX_APP_ICON_PX && h <= MAX_APP_ICON_PX)) {
-        return drawable.toBitmap().asImageBitmap()
-    }
-    val scale = MAX_APP_ICON_PX.toFloat() / maxOf(w, h)
+private fun iconAtRowSize(drawable: Drawable, maxPixels: Int): ImageBitmap {
+    val w = drawable.intrinsicWidth.takeIf { it > 0 } ?: maxPixels
+    val h = drawable.intrinsicHeight.takeIf { it > 0 } ?: maxPixels
+    val scale = minOf(1f, maxPixels.toFloat() / maxOf(w, h))
     return drawable.toBitmap(
         (w * scale).toInt().coerceAtLeast(1),
         (h * scale).toInt().coerceAtLeast(1),
