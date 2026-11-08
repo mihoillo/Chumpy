@@ -75,7 +75,10 @@ class SubscriptionRepository(
         withContext(Dispatchers.IO) {
             runCatching {
                 val (body, metadata) = fetchWithNestedExpansion(url)
-                val parsed = SubscriptionParser.parse(body)
+                val headerSources = GeodataSources.parseSafely(metadata.geodataSources)
+                val parsed = SubscriptionParser.parse(body).map {
+                    it.copy(geodataSources = GeodataSources.merge(headerSources, it.geodataSources))
+                }
                 require(parsed.isNotEmpty()) { "No server links found in the response" }
 
                 val entity = SubscriptionEntity(
@@ -111,7 +114,10 @@ class SubscriptionRepository(
                     val attemptAt = System.currentTimeMillis()
                     try {
                         val (body, metadata) = fetchWithNestedExpansion(entity.url)
-                        val parsed = SubscriptionParser.parse(body)
+                        val headerSources = GeodataSources.parseSafely(metadata.geodataSources)
+                        val parsed = SubscriptionParser.parse(body).map {
+                            it.copy(geodataSources = GeodataSources.merge(headerSources, it.geodataSources))
+                        }
                         require(parsed.isNotEmpty()) { "No server links found in the response" }
 
                         val updated = db.withTransaction {
@@ -295,7 +301,10 @@ class SubscriptionRepository(
             ?: return first.body to first.metadata
         Log.d(TAG, "Subscription is nested; following one level")
         val second = fetcher.fetch(nested)
-        return second.body to second.metadata
+        // The nested response is the real one: its sources override the outer's per key.
+        return second.body to second.metadata.copy(
+            geodataSources = GeodataSources.merge(first.metadata.geodataSources, second.metadata.geodataSources),
+        )
     }
 
     private fun scheduleAutoUpdate(subscription: SubscriptionEntity) {
