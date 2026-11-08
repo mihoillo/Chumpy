@@ -4,7 +4,8 @@ package slop.miho.chumpy.sub
  * The metadata panels attach to a subscription response — Hiddify's dialect, which is the
  * de-facto standard: traffic counters in `subscription-userinfo`, the display name in
  * `profile-title` (plain or base64-prefixed), a filename hint in `content-disposition`,
- * and the refresh hint in `profile-update-interval`.
+ * the refresh hint in `profile-update-interval`, and — on Happ panels — the routing
+ * profile in `routing`, whose `Geoipurl`/`Geositeurl` name the provider's geodata.
  */
 data class SubscriptionMetadata(
     val title: String? = null,
