@@ -35,7 +35,17 @@ object WallpaperPalette {
         val generation = ++refreshGeneration
         refreshJob?.cancel()
         refreshJob = scope.launch {
-            val result = extract(context.applicationContext)
+            // An extraction that dies would leave the previous wallpaper's hues standing —
+            // the accent would silently follow a picture that's no longer there. Whatever
+            // fails is logged and emptied out instead, so the theme falls back honestly.
+            val result = try {
+                extract(context.applicationContext)
+            } catch (cancellation: kotlinx.coroutines.CancellationException) {
+                throw cancellation
+            } catch (failure: Exception) {
+                android.util.Log.w(TAG, "Wallpaper palette extraction failed", failure)
+                null
+            }
             synchronized(this@WallpaperPalette) {
                 if (generation == refreshGeneration) huesState.value = result
             }
@@ -98,4 +108,7 @@ object WallpaperPalette {
 
     /** How many seed colors the palette offers. */
     private const val SEEDS = 3
+
+    /** Logcat tag for the palette's diagnostics. */
+    private const val TAG = "Chumpy/Palette"
 }

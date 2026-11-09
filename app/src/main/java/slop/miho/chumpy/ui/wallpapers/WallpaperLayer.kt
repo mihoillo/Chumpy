@@ -365,14 +365,20 @@ internal fun releaseWallpaperCache() = synchronized(decodeLock) { decodeCache = 
 private fun decodeWallpaperUncached(file: File): DecodedWallpaper? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(file.absolutePath, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        android.util.Log.w(TAG, "Wallpaper bounds unreadable: ${file.absolutePath}")
+        return null
+    }
     val options = BitmapFactory.Options().apply {
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_DECODE_DIM ||
             bounds.outWidth.toLong() * bounds.outHeight / sample / sample > MAX_DECODE_PIXELS) sample *= 2
         inSampleSize = sample
     }
-    var bitmap = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
+    var bitmap = BitmapFactory.decodeFile(file.absolutePath, options) ?: run {
+        android.util.Log.w(TAG, "Wallpaper pixels undecodable: ${file.absolutePath}")
+        return null
+    }
     // Camera photos store their rotation as EXIF metadata, which BitmapFactory ignores —
     // without this the picture decodes sideways and the fill-crop on it reads as broken.
     // The import itself copies the file's bytes untouched; this is purely a decode-time
@@ -509,6 +515,9 @@ private const val MAX_DECODE_PIXELS = 8_000_000L
 
 /** Samples along the bitmap's shorter side when averaging the luminance. */
 private const val LUMINANCE_GRID = 64
+
+/** Logcat tag for the decode's diagnostics: the null decodes live here. */
+private const val TAG = "Chumpy/Wallpaper"
 
 /** Alpha below this reads as empty: a soft export edge or a compression ghost, not ink. */
 private const val TRIM_ALPHA = 16

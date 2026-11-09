@@ -3,6 +3,7 @@ package slop.miho.chumpy.sub
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
@@ -29,6 +30,9 @@ class PhoneImportServer internal constructor(
     companion object {
         const val MAX_BODY_BYTES = 256 * 1024
         const val MAX_IMAGE_BYTES = 40 * 1024 * 1024
+
+        /** Logcat tag for the receiver's diagnostics: refused handshakes and accepted sizes. */
+        private const val TAG = "Chumpy/PhoneImport"
 
         private val active = java.util.concurrent.atomic.AtomicReference<PhoneImportServer?>(null)
 
@@ -84,7 +88,8 @@ class PhoneImportServer internal constructor(
                     listener.accept().use { socket ->
                         client = socket
                         socket.soTimeout = 5_000
-                        try { if (!closed) serve(socket) } catch (_: Exception) {
+                        try { if (!closed) serve(socket) } catch (failure: Exception) {
+                            Log.w(TAG, "Phone import request failed", failure)
                             runCatching { respond(socket, 400, "Bad request") }
                         } finally { client = null }
                     }
@@ -118,6 +123,8 @@ class PhoneImportServer internal constructor(
         }
         listener.close()
         expiry.shutdownNow()
+        val image = receivedImage
+        if (image != null) Log.i(TAG, "Wallpaper received: ${image.length()} bytes") else Log.i(TAG, "Import received: ${payload.length} chars")
         mutableState.value = mutableState.value.copy(pending = payload)
         runCatching { respond(socket, 202, "Accepted") }
     }
@@ -238,7 +245,11 @@ class PhoneImportServer internal constructor(
         active.compareAndSet(this, null)
         runCatching { listener.close() }
         runCatching { client?.close() }
-        receivedImage?.delete()
+        // The received image is deliberately NOT deleted here: the TV's confirm may be
+        // reading that very file right now — this close fires on any pause (a stray HOME
+        // mid-confirm, a screen-off), and deleting under the running copy raced the import
+        // into "unknown error". The stale sweep in [open] collects the file once it ages
+        // past the session's lifetime instead.
     }
 }
 

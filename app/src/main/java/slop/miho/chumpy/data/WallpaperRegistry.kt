@@ -3,6 +3,7 @@ package slop.miho.chumpy.data
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Log
 import java.io.File
 import android.graphics.BitmapFactory
 import slop.miho.chumpy.R
@@ -42,22 +43,30 @@ object WallpaperRegistry {
             if (!isImage(context, uri)) return context.getString(R.string.wallpapers_import_not_image)
             context.contentResolver.openInputStream(uri)?.use { input -> replace(context, input) }
                 ?: context.getString(R.string.error_unknown)
-        } catch (_: Exception) {
+        } catch (failure: Exception) {
+            Log.w(TAG, "Wallpaper import from picker ($uri) failed", failure)
             context.getString(R.string.error_unknown)
         }
     }
 
     internal fun setReceived(context: Context, file: File): String? = try {
         file.inputStream().use { replace(context, it) }
-    } catch (_: Exception) {
+    } catch (failure: Exception) {
+        Log.w(TAG, "Wallpaper import from phone (${file.absolutePath}) failed", failure)
         context.getString(R.string.error_unknown)
     }
 
     private fun replace(context: Context, input: java.io.InputStream): String? {
-        val result = ImportedFile.replace(File(context.filesDir, WALLPAPER_FILE), input, MAX_IMAGE_BYTES) { file ->
+        val target = File(context.filesDir, WALLPAPER_FILE)
+        val result = ImportedFile.replace(target, input, MAX_IMAGE_BYTES) { file ->
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.absolutePath, options)
             options.outWidth > 0 && options.outHeight > 0
+        }
+        // The rejection itself is silent by design — the user gets their localized message —
+        // but a diagnosis needs the reason in the log: what came in and what the copy said no to.
+        if (result != ImportedFile.Result.SUCCESS) {
+            Log.w(TAG, "Wallpaper copy into ${target.absolutePath} rejected: $result")
         }
         return when (result) {
             ImportedFile.Result.SUCCESS -> { changes.value++; null }
@@ -81,6 +90,9 @@ object WallpaperRegistry {
     }
 
     private const val WALLPAPER_FILE = "wallpaper"
+
+    /** Logcat tag for the import's diagnostics: the swallowed failures live here. */
+    private const val TAG = "Chumpy/Wallpaper"
 
     private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "bmp", "heic", "heif")
 

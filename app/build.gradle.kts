@@ -123,6 +123,10 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // The unit tests run against the JVM's android.jar stubs; the app's own Log lines
+        // (and any other framework call the tests brush past) answer with defaults rather
+        // than "not mocked" throws.
+        unitTests.isReturnDefaultValues = true
     }
 
     // The debug build runs on the phone in hand — its 32-bit split is a wasted copy of
