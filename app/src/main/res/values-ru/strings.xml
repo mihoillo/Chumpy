@@ -267,6 +267,14 @@
     <string name="notif_interrupted_off">Туннель отключён — Chumpy не станет поднимать его сама.</string>
     <string name="notif_action_reconnect">Переподключить</string>
     <string name="notif_action_disconnect_anyway">Всё равно отключить</string>
+    <string name="notif_channel_updates">Обновления приложения</string>
+    <string name="notif_channel_updates_desc">Скачивание новой версии и запрос на установку</string>
+    <string name="notif_update_title">Обновление Chumpy</string>
+    <string name="notif_update_downloading">Скачивание новой версии…</string>
+    <string name="notif_update_ready">Версия %1$s скачана — нажмите для установки</string>
+    <string name="update_available_chip">Доступно обновление</string>
+    <string name="update_downloading_percent">Скачивание %1$d%%</string>
+    <string name="update_ready">Готово к установке</string>
     <string name="error_no_config">Сервер не выбран</string>
     <string name="error_vpn_not_authorized">Разрешение на VPN не выдано</string>
     <string name="error_tun_creation">Не удалось создать интерфейс VPN. Возможно, другой VPN настроен как постоянный?</string>

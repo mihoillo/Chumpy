@@ -86,6 +86,7 @@ import slop.miho.chumpy.R
 import slop.miho.chumpy.core.TunnelState
 import slop.miho.chumpy.core.TunnelStatus
 import slop.miho.chumpy.ui.HomeUiState
+import slop.miho.chumpy.ui.UpdateUiState
 import slop.miho.chumpy.ui.components.ErrorCard
 import slop.miho.chumpy.ui.components.EmojiFlag
 import slop.miho.chumpy.ui.components.InfoChip
@@ -127,6 +128,12 @@ fun HomeScreen(
     onOpenServers: () -> Unit,
     /** Opens the stats screen; a tap on the loss warning chip goes there. */
     onOpenStats: () -> Unit = {},
+    /** The update checker's state; a release newer than the running build shows its chip. */
+    update: UpdateUiState = UpdateUiState(),
+    /** The update chip's tap: download — or, once on disk, install. */
+    onUpdateChipTap: () -> Unit = {},
+    /** The update chip's long press: wave this version away until something newer lands. */
+    onHideUpdate: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val up = status.state == TunnelState.UP
@@ -225,6 +232,9 @@ fun HomeScreen(
                     home = home,
                     onRefreshPing = { onRefreshPing(true) },
                     onOpenStats = onOpenStats,
+                    update = update,
+                    onUpdateChipTap = onUpdateChipTap,
+                    onHideUpdate = onHideUpdate,
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -284,6 +294,9 @@ private fun InfoChips(
     home: HomeUiState,
     onRefreshPing: () -> Unit,
     onOpenStats: () -> Unit,
+    update: UpdateUiState,
+    onUpdateChipTap: () -> Unit,
+    onHideUpdate: () -> Unit,
 ) {
     val up = status.state == TunnelState.UP
     val colors = MaterialTheme.colorScheme
@@ -300,6 +313,33 @@ private fun InfoChips(
                 .withSurfaceOpacity(),
             content = if (up) colors.onSecondaryContainer else colors.onSurfaceVariant,
         )
+        // A release the repo holds beyond the running build: an accent-tinted chip,
+        // tapped it downloads — the progress lives in the live update notification — and
+        // a long press waves this version away until something newer lands.
+        if (update.available != null && !update.hidden) {
+            val poke = rememberHapticPoke()
+            InfoChip(
+                value = when {
+                    update.downloading -> stringResource(
+                        R.string.update_downloading_percent, update.downloadPercent,
+                    )
+                    update.downloadedFile != null -> stringResource(R.string.update_ready)
+                    else -> stringResource(R.string.update_available_chip)
+                },
+                icon = R.drawable.ic_download,
+                animateValue = update.downloading,
+                container = colors.tertiaryContainer.withSurfaceOpacity(),
+                content = colors.onTertiaryContainer,
+                onClick = {
+                    poke()
+                    onUpdateChipTap()
+                },
+                onLongClick = {
+                    poke()
+                    onHideUpdate()
+                },
+            )
+        }
         // The subscription's own red badge: a panel whose calendar has already run out
         // says so at a glance, whatever the tunnel's own health.
         if (home.subscriptionExpired) {

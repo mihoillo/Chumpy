@@ -1,7 +1,11 @@
 package slop.miho.chumpy.ui
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.util.Log
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +44,7 @@ import slop.miho.chumpy.R
 import slop.miho.chumpy.core.CoreConfigFile
 import slop.miho.chumpy.core.TunnelState
 import slop.miho.chumpy.core.TunnelStatus
+import slop.miho.chumpy.core.UpdateNotifier
 import slop.miho.chumpy.data.ConnectionSettings
 import slop.miho.chumpy.data.ConnectionStore
 import slop.miho.chumpy.data.DailyTraffic
@@ -47,6 +52,9 @@ import slop.miho.chumpy.data.DailyTrafficStore
 import slop.miho.chumpy.ui.components.splitLeadingFlag
 import slop.miho.chumpy.data.SettingsStore
 import slop.miho.chumpy.data.UiSettings
+import slop.miho.chumpy.sub.UpdateCheck
+import slop.miho.chumpy.sub.UpdatePrefs
+import slop.miho.chumpy.sub.UpdateRelease
 import slop.miho.chumpy.db.ProfileEntity
 import slop.miho.chumpy.db.ProfileType
 import slop.miho.chumpy.db.STANDALONE_SUBSCRIPTION_ID
@@ -74,6 +82,21 @@ data class HomeUiState(
      *  means the tunnel is healthy (or nothing has been measured yet), and the chip stays
      *  hidden. */
     val recentLossPercent: Float? = null,
+)
+
+/**
+ * The update checker's state. A release the repo holds beyond the running build shows the
+ * home screen's chip; the chip's own story — a download's percent, a finished APK — is
+ * told in the live update notification, the state here only mirrors it for the chip's
+ * text. [hidden] is the user's long press: this release's chip is waved away until the
+ * repo holds a newer one; [downloadedFile] is the APK that already sits on disk.
+ */
+data class UpdateUiState(
+    val available: UpdateRelease? = null,
+    val hidden: Boolean = false,
+    val downloading: Boolean = false,
+    val downloadPercent: Int = 0,
+    val downloadedFile: java.io.File? = null,
 )
 
 /** The servers screen's list: the selected subscription's profiles, plus the transient bits. */
@@ -170,6 +193,120 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // or a process death mid-dialog — is the user's final word, not an invitation.
         updateSettings { it.copy(notificationsPermissionAsked = true) }
         _notificationsAsk.value = true
+    }
+
+    // ------------------------------------------------------------ update checker
+
+    private val _update = MutableStateFlow(UpdateUiState())
+
+    /** The repo's latest release beyond the running build, as the home chip tells it. */
+    val update: StateFlow<UpdateUiState> = _update.asStateFlow()
+
+    /**
+     * Asks the repo on every app open whether it holds something newer. The check is
+     * silent by design: a miss (offline, GitHub unreachable, a reshaped payload) leaves
+     * the screen exactly as it was — the next open asks again.
+     */
+    private suspend fun checkForUpdate() {
+        val release = try {
+            UpdateCheck.fetch { tunnelStatus.value.state == TunnelState.UP }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            Log.w("Chumpy/Update", "Update check failed", failure)
+            null
+        } ?: return
+        if (release.version <= UpdateCheck.currentVersion()) {
+            // Up to date: any leftover notification and file belong to a version already
+            // installed — the shade line goes, the tag on disk forgets.
+            UpdateNotifier.cancel(app)
+            UpdatePrefs.clearDownloaded(app)
+            return
+        }
+        val downloaded = UpdatePrefs.downloadedTag(app)
+            ?.takeIf { it == release.tag }
+            ?.let { UpdatePrefs.apkFile(app, it) }
+            ?.takeIf { it.isFile }
+        _update.value = UpdateUiState(
+            available = release,
+            hidden = UpdatePrefs.hiddenTag(app) == release.tag,
+            downloadedFile = downloaded,
+        )
+        // A process death between the download and the install took the shade line with
+        // it; an APK already on disk puts it back.
+        if (downloaded != null) UpdateNotifier.ready(app, release.version.toString())
+    }
+
+    /** The chip's long press: this release's chip is waved away until something newer lands. */
+    fun hideUpdate() {
+        val tag = _update.value.available?.tag ?: return
+        UpdatePrefs.hideTag(app, tag)
+        _update.update { it.copy(hidden = true) }
+    }
+
+    /**
+     * The chip's tap: downloads the APK — the progress lives in the live update notification —
+     * or, once it sits on disk, hands it to the installer.
+     */
+    fun onUpdateChipTap() {
+        val state = _update.value
+        val release = state.available ?: return
+        if (state.downloading) return
+        if (state.downloadedFile != null) {
+            installUpdate()
+            return
+        }
+        _update.update { it.copy(downloading = true, downloadPercent = 0) }
+        UpdateNotifier.downloading(app, 0)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                var lastPosted = -1
+                UpdateCheck.download(
+                    release,
+                    UpdatePrefs.apkFile(app, release.tag),
+                    { tunnelStatus.value.state == TunnelState.UP },
+                ) { percent ->
+                    _update.update { current ->
+                        if (current.downloading) current.copy(downloadPercent = percent) else current
+                    }
+                    // A chunk can land between percents; the shade only hears the changes.
+                    if (percent != lastPosted) {
+                        UpdateNotifier.downloading(app, percent)
+                        lastPosted = percent
+                    }
+                }
+                UpdatePrefs.markDownloaded(app, release.tag)
+                _update.update { it.copy(downloading = false, downloadPercent = 100, downloadedFile = UpdatePrefs.apkFile(app, release.tag)) }
+                UpdateNotifier.ready(app, release.version.toString())
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: Exception) {
+                Log.w("Chumpy/Update", "Update download failed", failure)
+                _update.update { it.copy(downloading = false, downloadPercent = 0) }
+                UpdateNotifier.cancel(app)
+            }
+        }
+    }
+
+    /**
+     * Hands the downloaded APK to the system's installer. The installer's own consent (the
+     * "install unknown apps" blessing, Oreo and newer) is asked by the system: without it
+     * the user lands on the settings page that grants it, and the notification stays for
+     * another tap. The tag is read from the store, not the state — the notification's tap
+     * after a process death must find the file too.
+     */
+    fun installUpdate() {
+        val tag = UpdatePrefs.downloadedTag(app) ?: return
+        val file = UpdatePrefs.apkFile(app, tag).takeIf { it.isFile } ?: return
+        val uri = FileProvider.getUriForFile(app, "slop.miho.chumpy.fileprovider", file)
+        val install = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        val target = if (app.packageManager.canRequestPackageInstalls()) install
+        else Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${app.packageName}"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { app.startActivity(target) }
+            .onFailure { Log.w("Chumpy/Update", "Install request failed", it) }
     }
 
     /** Whether nothing exists yet — the ask rides only the very first config's landing. */
@@ -375,6 +512,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         observeTunnelForHome()
         observeTunnelForStats()
         observeIdentityChips()
+        // Every app open asks the repo for a newer release — silent on any miss.
+        viewModelScope.launch(Dispatchers.IO) { checkForUpdate() }
         viewModelScope.launch(Dispatchers.IO) {
             // The ":core" process spins up with the bind, but the bind itself is async —
             // the first ask often lands before the binder answers. Keep asking until it

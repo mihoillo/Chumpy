@@ -273,6 +273,14 @@
     <string name="notif_interrupted_off">The tunnel is down — Chumpy will not bring it back on its own.</string>
     <string name="notif_action_reconnect">Reconnect</string>
     <string name="notif_action_disconnect_anyway">Disconnect anyway</string>
+    <string name="notif_channel_updates">App updates</string>
+    <string name="notif_channel_updates_desc">A new version\'s download and its install ask</string>
+    <string name="notif_update_title">Chumpy update</string>
+    <string name="notif_update_downloading">Downloading the new version…</string>
+    <string name="notif_update_ready">Version %1$s downloaded — tap to install</string>
+    <string name="update_available_chip">Update available</string>
+    <string name="update_downloading_percent">Downloading %1$d%%</string>
+    <string name="update_ready">Ready to install</string>
     <string name="error_no_config">No server selected</string>
     <string name="error_vpn_not_authorized">VPN permission was not granted</string>
     <string name="error_tun_creation">Couldn\'t create the VPN interface. Is another VPN set to always-on?</string>

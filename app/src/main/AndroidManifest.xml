@@ -16,6 +16,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The update download's live tile asks the system to promote it (Android 16+). -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <!-- Installing the downloaded update APK; the installer's own consent flow. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- The QR scanner's own; asked for only there, on first scan. -->
     <uses-permission android:name="android.permission.CAMERA" />
@@ -190,5 +194,20 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+
+        <!--
+            Serves the downloaded update APK to the system's package installer: the
+            file stays in the app's own storage, the installer reads it through this
+            grant, the APK never travels anywhere else.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="slop.miho.chumpy.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_file_paths" />
+        </provider>
     </application>
 </manifest>

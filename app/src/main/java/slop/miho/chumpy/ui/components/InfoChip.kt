@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -40,6 +41,9 @@ fun InfoChip(
     animateValue: Boolean = false,
     // Set for the few chips that answer a tap (the exit IP hides itself); null keeps it inert.
     onClick: (() -> Unit)? = null,
+    // Set for the chips with a second answer (the update chip waves itself away); the
+    // plain chips keep their simple clickable.
+    onLongClick: (() -> Unit)? = null,
     // The compact cut: labelMedium on a tight pad, the corners full rounds — a pill of
     // a badge that rides a value line (the version row's stage chip) without outgrowing it.
     compact: Boolean = false,
@@ -105,10 +109,16 @@ fun InfoChip(
         modifier = if (onClick != null) {
             // The ring rides before the clip — outside it, as every ring sits outside
             // what it marks — and only the chips that answer ever wear one.
+            val clickable = if (onLongClick != null) {
+                @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+                Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            } else {
+                Modifier.clickable(onClick = onClick)
+            }
             Modifier
                 .focusRing(circular = compact, cornerRadius = 8.dp)
                 .clip(shape)
-                .clickable(onClick = onClick)
+                .then(clickable)
         } else {
             Modifier
         },

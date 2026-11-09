@@ -1,6 +1,7 @@
 package slop.miho.chumpy
 
 import android.Manifest
+import android.content.Intent
 import android.os.Bundle
 import slop.miho.chumpy.ui.components.ControllerActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,6 +31,11 @@ import slop.miho.chumpy.ui.theme.LocalDarkTheme
 import slop.miho.chumpy.ui.welcome.WelcomeScreen
 
 class MainActivity : ControllerActivity() {
+    companion object {
+        /** The update notification's tap: hand the downloaded APK to the installer. */
+        const val EXTRA_INSTALL_UPDATE = "install_update"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -94,6 +100,20 @@ class MainActivity : ControllerActivity() {
                 }
             }
         }
+        // The update notification's tap on a cold start: the request rides the launching
+        // intent, and the view model reads the downloaded file from its store.
+        handleInstallRequest(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleInstallRequest(intent)
+    }
+
+    /** The update notification's tap: re-held by the live instance when one exists. */
+    private fun handleInstallRequest(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_INSTALL_UPDATE, false) != true) return
+        ViewModelProvider(this)[MainViewModel::class.java].installUpdate()
     }
 
     override fun onStart() {

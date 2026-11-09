@@ -91,6 +91,7 @@ import slop.miho.chumpy.ui.MainViewModel
 import slop.miho.chumpy.ui.HomeUiState
 import slop.miho.chumpy.ui.ServersUiState
 import slop.miho.chumpy.ui.StatsUiState
+import slop.miho.chumpy.ui.UpdateUiState
 import slop.miho.chumpy.data.UiSettings
 import slop.miho.chumpy.ui.components.InputMode
 import slop.miho.chumpy.ui.components.controllerFocusBoundary
@@ -141,6 +142,7 @@ fun MainShell(viewModel: MainViewModel) {
     val selectedSubscription by viewModel.selectedSubscription.collectAsStateWithLifecycle()
     val servers by viewModel.servers.collectAsStateWithLifecycle()
     val home by viewModel.home.collectAsStateWithLifecycle()
+    val update by viewModel.update.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -421,6 +423,7 @@ fun MainShell(viewModel: MainViewModel) {
                     selectedSubscription = selectedSubscription,
                     servers = servers,
                     home = home,
+                    update = update,
                     statsFlow = viewModel.stats,
                     manualProfileCount = viewModel.manualProfileCount,
                     uiSettings = settings,
@@ -439,6 +442,8 @@ fun MainShell(viewModel: MainViewModel) {
                         selectedTab = MainTab.STATS
                         settingsOpen = false
                     },
+                    onUpdateChipTap = viewModel::onUpdateChipTap,
+                    onHideUpdate = viewModel::hideUpdate,
                     onSelectPage = { position ->
                         if (position < MainTab.entries.size) {
                             selectedTab = MainTab.entries[position]
@@ -475,6 +480,7 @@ fun MainShell(viewModel: MainViewModel) {
                     tunnelStatus = tunnelStatus,
                     servers = servers,
                     home = home,
+                    update = update,
                     // The flow itself, not its value: it ticks once a second, and the STATS page
                     // collects it in its own branch rather than recomposing the whole shell.
                     statsFlow = viewModel.stats,
@@ -497,6 +503,8 @@ fun MainShell(viewModel: MainViewModel) {
                         selectedTab = MainTab.STATS
                         settingsOpen = false
                     },
+                    onUpdateChipTap = viewModel::onUpdateChipTap,
+                    onHideUpdate = viewModel::hideUpdate,
                     // The swipe's landing: whatever page the finger carried the strip to, the
                     // shell's own selection follows — the two groups' door stays the bar's.
                     onSelectPage = { position ->
@@ -699,6 +707,7 @@ private fun ShellDestinationPage(
     selectedSubscription: slop.miho.chumpy.db.SubscriptionEntity?,
     servers: ServersUiState,
     home: HomeUiState,
+    update: UpdateUiState,
     statsFlow: StateFlow<StatsUiState>,
     manualProfileCount: StateFlow<Int>,
     uiSettings: UiSettings,
@@ -710,6 +719,8 @@ private fun ShellDestinationPage(
     onChangeConnection: ((slop.miho.chumpy.data.ConnectionSettings) -> slop.miho.chumpy.data.ConnectionSettings) -> Unit,
     onOpenServers: () -> Unit,
     onOpenStats: () -> Unit,
+    onUpdateChipTap: () -> Unit,
+    onHideUpdate: () -> Unit,
     onRefreshPing: (showPending: Boolean) -> Unit,
     onPingServers: () -> Unit,
     onUpdateSubscription: () -> Unit,
@@ -730,12 +741,15 @@ private fun ShellDestinationPage(
             MainTab.HOME -> HomeScreen(
                 status = tunnelStatus,
                 home = home,
+                update = update,
                 visible = homeVisible,
                 onRefreshPing = onRefreshPing,
                 onConnect = onConnect,
                 onDisconnect = onDisconnect,
                 onOpenServers = onOpenServers,
                 onOpenStats = onOpenStats,
+                onUpdateChipTap = onUpdateChipTap,
+                onHideUpdate = onHideUpdate,
             )
             MainTab.SERVERS -> {
                 // The week rides the stats flow but only its own list is wanted
@@ -825,6 +839,7 @@ private fun TwoPaneShell(
     selectedSubscription: slop.miho.chumpy.db.SubscriptionEntity?,
     servers: ServersUiState,
     home: HomeUiState,
+    update: UpdateUiState,
     statsFlow: StateFlow<StatsUiState>,
     manualProfileCount: StateFlow<Int>,
     uiSettings: UiSettings,
@@ -836,6 +851,8 @@ private fun TwoPaneShell(
     onChangeConnection: ((slop.miho.chumpy.data.ConnectionSettings) -> slop.miho.chumpy.data.ConnectionSettings) -> Unit,
     onOpenServers: () -> Unit,
     onOpenStats: () -> Unit,
+    onUpdateChipTap: () -> Unit,
+    onHideUpdate: () -> Unit,
     onSelectPage: (Int) -> Unit,
     onRefreshPing: (showPending: Boolean) -> Unit,
     onPingServers: () -> Unit,
@@ -874,12 +891,15 @@ private fun TwoPaneShell(
                 HomeScreen(
                     status = tunnelStatus,
                     home = home,
+                    update = update,
                     visible = true,
                     onRefreshPing = onRefreshPing,
                     onConnect = onConnect,
                     onDisconnect = onDisconnect,
                     onOpenServers = onOpenServers,
                     onOpenStats = onOpenStats,
+                    onUpdateChipTap = onUpdateChipTap,
+                    onHideUpdate = onHideUpdate,
                 )
             }
         }
@@ -908,6 +928,7 @@ private fun TwoPaneShell(
                     tunnelStatus = tunnelStatus,
                     servers = servers,
                     home = home,
+                    update = update,
                     statsFlow = statsFlow,
                     manualProfileCount = manualProfileCount,
                     uiSettings = uiSettings,
@@ -919,6 +940,8 @@ private fun TwoPaneShell(
                     onChangeConnection = onChangeConnection,
                     onOpenServers = onOpenServers,
                     onOpenStats = onOpenStats,
+                    onUpdateChipTap = onUpdateChipTap,
+                    onHideUpdate = onHideUpdate,
                     onSelectPage = onSelectPage,
                     onRefreshPing = onRefreshPing,
                     onPingServers = onPingServers,
@@ -984,6 +1007,7 @@ private fun MainPagerStrip(
     tunnelStatus: TunnelStatus,
     servers: ServersUiState,
     home: HomeUiState,
+    update: UpdateUiState,
     statsFlow: StateFlow<StatsUiState>,
     manualProfileCount: StateFlow<Int>,
     uiSettings: UiSettings,
@@ -995,6 +1019,8 @@ private fun MainPagerStrip(
     onChangeConnection: ((slop.miho.chumpy.data.ConnectionSettings) -> slop.miho.chumpy.data.ConnectionSettings) -> Unit,
     onOpenServers: () -> Unit,
     onOpenStats: () -> Unit,
+    onUpdateChipTap: () -> Unit,
+    onHideUpdate: () -> Unit,
     onSelectPage: (Int) -> Unit,
     onRefreshPing: (showPending: Boolean) -> Unit,
     onPingServers: () -> Unit,
@@ -1106,6 +1132,7 @@ private fun MainPagerStrip(
                     selectedSubscription = selectedSubscription,
                     servers = servers,
                     home = home,
+                    update = update,
                     statsFlow = statsFlow,
                     manualProfileCount = manualProfileCount,
                     uiSettings = uiSettings,
@@ -1117,6 +1144,8 @@ private fun MainPagerStrip(
                     onChangeConnection = onChangeConnection,
                     onOpenServers = onOpenServers,
                     onOpenStats = onOpenStats,
+                    onUpdateChipTap = onUpdateChipTap,
+                    onHideUpdate = onHideUpdate,
                     onRefreshPing = onRefreshPing,
                     onPingServers = onPingServers,
                     onUpdateSubscription = onUpdateSubscription,
