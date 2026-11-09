@@ -2004,7 +2004,7 @@ fun AboutScreen(
                     title = stringResource(R.string.settings_about_github),
                     supporting = stringResource(R.string.settings_about_github_handle),
                     icon = R.drawable.ic_github,
-                    url = "https://github.com/mihoillo/Chumpy",
+                    url = "https://github.com/ChumpyXray/Chumpy",
                 )
             },
         )

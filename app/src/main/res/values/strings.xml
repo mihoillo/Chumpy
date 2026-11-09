@@ -195,7 +195,7 @@
     <string name="settings_about_telegram">Telegram channel</string>
     <string name="settings_about_telegram_handle" translatable="false">t.me/ChumpyXray</string>
     <string name="settings_about_github">GitHub</string>
-    <string name="settings_about_github_handle" translatable="false">github.com/mihoillo/Chumpy</string>
+    <string name="settings_about_github_handle" translatable="false">github.com/ChumpyXray/Chumpy</string>
 
     <!-- Fonts -->
     <string name="fonts_system">System</string>

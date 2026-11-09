@@ -5,7 +5,7 @@
 Yet another Xray client for VLESS and friends — dressed in Material Design 3 Expressive.
 
 > **Alpha.** Still under development. If it crashes on you — and it might —
-> please report it in the [Issues tab](https://github.com/mihoillo/Chumpy/issues).
+> please report it in the [Issues tab](https://github.com/ChumpyXray/Chumpy/issues).
 
 ## Requirements
 
