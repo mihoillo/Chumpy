@@ -41,8 +41,13 @@ object WallpaperRegistry {
     fun set(context: Context, uri: Uri): String? {
         return try {
             if (!isImage(context, uri)) return context.getString(R.string.wallpapers_import_not_image)
-            context.contentResolver.openInputStream(uri)?.use { input -> replace(context, input) }
-                ?: context.getString(R.string.error_unknown)
+            // The success story IS null here (see replace) — the stream's own absence is the
+            // only miss, and it is judged before the copy's verdict is ever in play. The old
+            // one-line elvis lived on the pre-refactor convention (a non-null Result enum)
+            // and turned every successful copy into "something went wrong", preset included.
+            val input = context.contentResolver.openInputStream(uri)
+                ?: return context.getString(R.string.error_unknown)
+            input.use { replace(context, it) }
         } catch (failure: Exception) {
             Log.w(TAG, "Wallpaper import from picker ($uri) failed", failure)
             context.getString(R.string.error_unknown)
