@@ -98,8 +98,8 @@ object UpdateCheck {
         .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", LOCAL_SOCKS_PORT)))
         .build()
 
-    /** The ABI the device's own build is named for; the universal APK is the fallback. */
-    fun deviceAbi(): String = Build.SUPPORTED_ABIS.firstOrNull() ?: "universal"
+    /** The device's own ABIs, the system's preference order first — the release's asset picks by it. */
+    fun deviceAbis(): List<String> = Build.SUPPORTED_ABIS?.toList() ?: emptyList()
 
     /**
      * The latest release as this device would take it, or null when it cannot be asked.
@@ -134,34 +134,37 @@ object UpdateCheck {
                 }
             })
         }
-        parseLatest(body, deviceAbi()).also { release ->
+        parseLatest(body, deviceAbis()).also { release ->
             Log.i(TAG, "Latest release: ${release?.tag ?: "nothing this device installs"}")
         }
     }
 
     /**
      * The release payload's two fields that matter: the tag, and the APK asset cut for
-     * this device — its own ABI when the release ships one, the universal build when it
-     * does not, debug assets skipped. Null when anything an update needs is missing.
+     * this device — the first of the device's own ABIs, in the system's preference
+     * order, that the release ships a release build for; debug assets skipped. Null
+     * when anything an update needs is missing: a release without this device's build
+     * offers nothing rather than a universal carry-along at 3.5x the weight.
      */
-    fun parseLatest(json: String, abi: String): UpdateRelease? {
+    fun parseLatest(json: String, abis: List<String>): UpdateRelease? {
         val release = JSONObject(json)
         val tag = release.optString("tag_name").trim()
         val version = if (tag.isNotEmpty()) AppVersion.parse(tag) else null
         if (tag.isEmpty() || version == null) return null
         val assets = release.optJSONArray("assets") ?: return null
         var fits: JSONObject? = null
-        var universal: JSONObject? = null
-        for (index in 0 until assets.length()) {
-            val asset = assets.optJSONObject(index) ?: continue
-            val name = asset.optString("name")
-            if (!name.endsWith(".apk") || !name.contains("-release-")) continue
-            when {
-                name.endsWith("-$abi.apk") -> fits = asset
-                name.endsWith("-universal.apk") -> universal = asset
+        for (abi in abis) {
+            for (index in 0 until assets.length()) {
+                val asset = assets.optJSONObject(index) ?: continue
+                val name = asset.optString("name")
+                if (name.endsWith("-$abi.apk") && name.contains("-release-")) {
+                    fits = asset
+                    break
+                }
             }
+            if (fits != null) break
         }
-        val asset = fits ?: universal ?: return null
+        val asset = fits ?: return null
         return UpdateRelease(
             tag = tag,
             version = version,

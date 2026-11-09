@@ -59,8 +59,9 @@ android {
     // installs the wrong one. The builds are sideloaded, so the split is per file. The
     // debug build runs on the phone in hand — its invocation carries no release task, so
     // it splits into the 64-bit file only; a release invocation splits into all three —
-    // both arms plus the PC-side x86_64 for the emulators — and the universal file with
-    // the three cores aboard for whoever can't tell the machines apart.
+    // both arms plus the PC-side x86_64 for the emulators. No universal carry-along: it
+    // only re-bundles the same three cores at 3.5x the weight for whoever can't tell
+    // the machines apart, and the update checker picks the right file by itself now.
     val releaseRequested = gradle.startParameter.taskNames.any { name ->
         name.substringAfterLast(':').contains("Release", ignoreCase = true)
     }
@@ -73,7 +74,6 @@ android {
                 include("armeabi-v7a")
                 include("x86_64")
             }
-            isUniversalApk = releaseRequested
         }
     }
 

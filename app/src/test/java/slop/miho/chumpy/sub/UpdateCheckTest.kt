@@ -48,7 +48,7 @@ class UpdateCheckTest {
 
     @Test
     fun `the release picks the device's own release build`() {
-        val release = UpdateCheck.parseLatest(payload, "arm64-v8a")!!
+        val release = UpdateCheck.parseLatest(payload, listOf("arm64-v8a"))!!
         assertEquals("v0.6.221", release.tag)
         assertEquals("0.6.221", release.version.toString())
         // The debug carry-along never installs; the matching ABI's release build does.
@@ -57,18 +57,26 @@ class UpdateCheckTest {
     }
 
     @Test
-    fun `an ABI without its own build falls back to the universal one`() {
-        val release = UpdateCheck.parseLatest(payload, "x86")!!
-        assertEquals("https://example/universal.apk", release.apkUrl)
-        assertEquals(52L, release.apkSize)
+    fun `the device's ABI order leads the pick`() {
+        // The primary ABI has no build of its own — the next one in the system's
+        // preference order answers with its own.
+        val release = UpdateCheck.parseLatest(payload, listOf("x86", "armeabi-v7a"))!!
+        assertEquals("https://example/v7a.apk", release.apkUrl)
+    }
+
+    @Test
+    fun `an ABI the release ships nothing for answers nothing, universal included`() {
+        // The universal carry-along still rides the payload — and is passed by: no
+        // device gets handed a file three times its own build's weight.
+        assertNull(UpdateCheck.parseLatest(payload, listOf("x86")))
     }
 
     @Test
     fun `a release without anything this device installs answers nothing`() {
-        assertNull(UpdateCheck.parseLatest("""{"tag_name":"v0.7.0","assets":[]}""", "arm64-v8a"))
-        assertNull(UpdateCheck.parseLatest("""{"tag_name":"v0.7.0"}""", "arm64-v8a"))
-        assertNull(UpdateCheck.parseLatest("""{"assets":[{"name":"Chumpy-x-release-arm64-v8a.apk"}]}""", "arm64-v8a"))
+        assertNull(UpdateCheck.parseLatest("""{"tag_name":"v0.7.0","assets":[]}""", listOf("arm64-v8a")))
+        assertNull(UpdateCheck.parseLatest("""{"tag_name":"v0.7.0"}""", listOf("arm64-v8a")))
+        assertNull(UpdateCheck.parseLatest("""{"assets":[{"name":"Chumpy-x-release-arm64-v8a.apk"}]}""", listOf("arm64-v8a")))
         // And a tag that is not a version cannot outrank anything.
-        assertNull(UpdateCheck.parseLatest("""{"tag_name":"milestone-3","assets":[]}""", "arm64-v8a"))
+        assertNull(UpdateCheck.parseLatest("""{"tag_name":"milestone-3","assets":[]}""", listOf("arm64-v8a")))
     }
 }
