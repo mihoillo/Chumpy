@@ -175,7 +175,10 @@ object UpdateCheck {
 
     /**
      * Streams the release's APK into [target] through a temp file renamed on arrival —
-     * a cancelled or failed download leaves no half-written APK behind. [onProgress]
+     * only a complete file ever becomes the APK. A download cut short (a failure, a
+     * pause, a process death) leaves its half behind in [partialOf] on purpose: the
+     * next start picks up from wherever the bytes reached, through an HTTP range, and
+     * [discardPartial] is the only thing that truly throws them away. [onProgress]
      * hears the percent as the chunks land; the caller decides how loudly to say it.
      */
     suspend fun download(
@@ -185,27 +188,38 @@ object UpdateCheck {
         onProgress: (percent: Int) -> Unit,
     ): File = suspendCancellableCoroutine { continuation ->
         target.parentFile?.mkdirs()
-        val temp = File(target.parentFile, target.name + ".part")
-        val call = clientFor(tunnelUp()).newCall(Request.Builder().url(release.apkUrl).build())
-        continuation.invokeOnCancellation {
-            call.cancel()
-            temp.delete()
-        }
+        val temp = partialOf(target)
+        val resumeFrom = temp.takeIf { it.isFile }?.length() ?: 0L
+        val request = Request.Builder()
+            .url(release.apkUrl)
+            .apply { if (resumeFrom > 0L) header("Range", "bytes=$resumeFrom-") }
+            .build()
+        val call = clientFor(tunnelUp()).newCall(request)
+        continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                temp.delete()
                 if (continuation.isActive) continuation.resumeWithException(e)
             }
 
             override fun onResponse(call: Call, response: Response) {
                 try {
                     response.use {
+                        if (it.code == 416) throw IOException("Range not satisfiable")
                         if (!it.isSuccessful) throw IOException("HTTP ${it.code}")
-                        val total = it.body?.contentLength() ?: -1L
+                        // A server echoing the range keeps the partial's bytes and appends;
+                        // one ignoring it starts the story over, and the fresh stream must
+                        // not land on top of the old half.
+                        val resuming = resumeFrom > 0L && it.code == 206
+                        val bodyLength = it.body?.contentLength() ?: -1L
+                        val total = when {
+                            resuming && bodyLength >= 0 -> resumeFrom + bodyLength
+                            bodyLength >= 0 -> bodyLength
+                            else -> release.apkSize
+                        }
                         val input = it.body?.byteStream() ?: throw IOException("Empty APK body")
-                        temp.outputStream().use { output ->
+                        java.io.FileOutputStream(temp, resuming).use { output ->
                             val buffer = ByteArray(64 * 1024)
-                            var copied = 0L
+                            var copied = if (resuming) resumeFrom else 0L
                             while (true) {
                                 if (!continuation.isActive) throw IOException("Cancelled")
                                 val count = input.read(buffer)
@@ -220,11 +234,25 @@ object UpdateCheck {
                     }
                     if (continuation.isActive) continuation.resume(target)
                 } catch (failure: Exception) {
-                    temp.delete()
                     if (continuation.isActive) continuation.resumeWithException(failure)
                 }
             }
         })
+    }
+
+    /** The half-written download a pause or a failure left beside [target]. */
+    fun partialOf(target: File): File = File(target.parentFile, target.name + ".part")
+
+    /** What a true start-over takes away: the partial beside [target], bytes and all. */
+    fun discardPartial(target: File) {
+        partialOf(target).delete()
+    }
+
+    /** How far the partial beside [target] runs, in whole percents of [release]. */
+    fun partialPercent(release: UpdateRelease, target: File): Int {
+        if (release.apkSize <= 0) return 0
+        val have = partialOf(target).takeIf { it.isFile }?.length() ?: 0L
+        return ((have * 100) / release.apkSize).toInt().coerceIn(0, 99)
     }
 
     private inline fun onPercent(copied: Long, total: Long, report: (Int) -> Unit) {

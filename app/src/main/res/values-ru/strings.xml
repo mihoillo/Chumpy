@@ -272,11 +272,15 @@
     <string name="notif_channel_updates_desc">Скачивание новой версии и запрос на установку</string>
     <string name="notif_update_title">Обновление Chumpy</string>
     <string name="notif_update_downloading">Скачивание новой версии…</string>
-    <string name="notif_update_ready">Версия %1$s скачана — нажмите для установки</string>
+    <string name="notif_update_paused">Скачивание на паузе</string>
+    <string name="notif_update_pause">Пауза</string>
+    <string name="notif_update_resume">Продолжить</string>
+    <string name="notif_update_cancel">Отмена</string>
     <string name="update_available_chip">Доступно обновление</string>
     <string name="update_checking">Проверка…</string>
     <string name="update_up_to_date">Установлена последняя версия</string>
     <string name="update_downloading_percent">Скачивание %1$d%%</string>
+    <string name="update_paused">Пауза %1$d%%</string>
     <string name="update_ready">Готово к установке</string>
     <string name="error_no_config">Сервер не выбран</string>
     <string name="error_vpn_not_authorized">Разрешение на VPN не выдано</string>

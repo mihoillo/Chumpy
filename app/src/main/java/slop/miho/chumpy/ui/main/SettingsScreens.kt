@@ -7,10 +7,15 @@ import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -869,6 +874,8 @@ private fun LinkIconTile(
     icon: Int,
     pressed: Boolean,
     focused: (() -> Boolean)? = null,
+    /** The subscription update button's own trick: while the work runs, the mark spins. */
+    spinning: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -878,6 +885,17 @@ private fun LinkIconTile(
         animationSpec = motion.defaultEffectsSpec(),
         label = "link tile container",
     )
+    val spin = if (spinning) {
+        rememberInfiniteTransition(label = "link tile spin")
+            .animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(tween(durationMillis = 1_400, easing = LinearEasing)),
+                label = "link tile spin angle",
+            )
+    } else {
+        null
+    }
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = container,
@@ -890,7 +908,9 @@ private fun LinkIconTile(
             Icon(
                 painter = painterResource(icon),
                 contentDescription = null,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier
+                    .size(24.dp)
+                    .let { if (spin != null) it.graphicsLayer { rotationZ = spin.value } else it },
             )
         }
     }
@@ -1941,16 +1961,17 @@ fun AboutScreen(
         Spacer(Modifier.height(24.dp))
 
         // A release the repo holds beyond the running build: the failure card's own
-        // cut retold in the accent, under the hero and over the numbers. The tap
-        // downloads (the progress rides the live update notification) or hands the
-        // APK already on disk to the installer; a hidden release stays hidden here
-        // too — the long press waved it away until something newer lands.
-        if (update.available != null && !update.hidden) {
+        // cut retold in the accent, under the hero and over the numbers — and unlike
+        // the home chip, a wave-away does not touch it: it hangs as long as the repo
+        // holds anything newer. The tap pauses a running download, resumes a held
+        // one, installs an APK already on disk, and otherwise starts one.
+        if (update.available != null) {
             UpdateCard(
+                downloading = update.downloading,
+                paused = update.paused,
+                percent = update.downloadPercent,
                 message = when {
-                    update.downloading -> stringResource(
-                        R.string.update_downloading_percent, update.downloadPercent,
-                    )
+                    update.paused -> stringResource(R.string.update_paused, update.downloadPercent)
                     update.downloadedFile != null -> stringResource(R.string.update_ready)
                     else -> stringResource(R.string.update_available_chip)
                 },
@@ -2009,7 +2030,7 @@ fun AboutScreen(
         val checkRow: @Composable () -> Unit = {
             CheckForUpdatesRow(
                 checking = update.checking,
-                updateAvailable = update.available != null && !update.hidden,
+                updateAvailable = update.available != null,
                 onClick = onCheckForUpdate,
             )
         }
@@ -2091,6 +2112,7 @@ private fun CheckForUpdatesRow(
             },
         ),
         icon = R.drawable.ic_renew,
+        spinning = checking,
         onClick = onClick,
     )
 }
@@ -2125,6 +2147,8 @@ private fun OutgoingRow(
     title: String,
     supporting: String,
     icon: Int,
+    /** The mark spins while the row's own work runs (the update check). */
+    spinning: Boolean = false,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -2170,7 +2194,7 @@ private fun OutgoingRow(
         Box(
             modifier = Modifier.pressBounce(pressed, taps),
         ) {
-            LinkIconTile(icon = icon, pressed = pressed, focused = { rowFocused })
+            LinkIconTile(icon = icon, pressed = pressed, focused = { rowFocused }, spinning = spinning)
         }
     }
 }

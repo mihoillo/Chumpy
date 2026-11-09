@@ -44,7 +44,9 @@ import slop.miho.chumpy.R
 import slop.miho.chumpy.core.CoreConfigFile
 import slop.miho.chumpy.core.TunnelState
 import slop.miho.chumpy.core.TunnelStatus
+import slop.miho.chumpy.core.UpdateIntents
 import slop.miho.chumpy.core.UpdateNotifier
+import slop.miho.chumpy.core.UpdateRequests
 import slop.miho.chumpy.data.ConnectionSettings
 import slop.miho.chumpy.data.ConnectionStore
 import slop.miho.chumpy.data.DailyTraffic
@@ -89,7 +91,8 @@ data class HomeUiState(
  * home screen's chip; the chip's own story — a download's percent, a finished APK — is
  * told in the live update notification, the state here only mirrors it for the chip's
  * text. [hidden] is the user's long press: this release's chip is waved away until the
- * repo holds a newer one; [downloadedFile] is the APK that already sits on disk.
+ * repo holds a newer one; [downloadedFile] is the APK that already sits on disk;
+ * [paused] is a download held at its pause, its bytes kept for the resume;
  * [checking] is the about screen's manual ask in flight.
  */
 data class UpdateUiState(
@@ -98,6 +101,7 @@ data class UpdateUiState(
     val downloading: Boolean = false,
     val downloadPercent: Int = 0,
     val downloadedFile: java.io.File? = null,
+    val paused: Boolean = false,
     val checking: Boolean = false,
 )
 
@@ -204,6 +208,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** The repo's latest release beyond the running build, as the home chip tells it. */
     val update: StateFlow<UpdateUiState> = _update.asStateFlow()
 
+    /** The running download's job — paused by cancelling it, the partial kept for the resume. */
+    private var downloadJob: Job? = null
+
     /**
      * Asks the repo on every app open whether it holds something newer. The check is
      * silent by design: a miss (offline, GitHub unreachable, a reshaped payload) leaves
@@ -229,14 +236,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ?.takeIf { it == release.tag }
             ?.let { UpdatePrefs.apkFile(app, it) }
             ?.takeIf { it.isFile }
-        _update.value = UpdateUiState(
-            available = release,
-            hidden = UpdatePrefs.hiddenTag(app) == release.tag,
-            downloadedFile = downloaded,
-        )
+        val partialIsThere = UpdateCheck.partialOf(UpdatePrefs.apkFile(app, release.tag)).isFile
+        // A process death takes the download's job with it; a shade line for a stream
+        // nobody runs anymore goes with it too.
+        if (downloaded == null && !_update.value.downloading && !_update.value.paused) {
+            UpdateNotifier.cancel(app)
+        }
+        _update.update { current ->
+            current.copy(
+                available = release,
+                hidden = UpdatePrefs.hiddenTag(app) == release.tag,
+                downloadedFile = downloaded,
+                // A pause only stands while its bytes stand under it; a fresh process
+                // calls a partial merely resumable.
+                paused = current.paused && partialIsThere,
+            )
+        }
         // A process death between the download and the install took the shade line with
-        // it; an APK already on disk puts it back.
-        if (downloaded != null) UpdateNotifier.ready(app, release.version.toString())
+        // it; an APK already on disk puts it back — unless this release was waved away,
+        // which stands until the repo holds something newer.
+        if (downloaded != null && UpdatePrefs.hiddenTag(app) != release.tag) {
+            UpdateNotifier.ready(app)
+        }
     }
 
     /**
@@ -256,33 +277,83 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** The chip's long press: this release's chip is waved away until something newer lands. */
+    /**
+     * The chip's long press and the notification's own Dismiss: this release is waved
+     * away — the home chip and the shade line, until the repo holds something newer. A
+     * download still running for it stops and its partial goes; the about screen's
+     * banner stays, it only ever follows the repo.
+     */
     fun hideUpdate() {
         val tag = _update.value.available?.tag ?: return
         UpdatePrefs.hideTag(app, tag)
-        _update.update { it.copy(hidden = true) }
+        if (_update.value.downloading || _update.value.paused) {
+            downloadJob?.cancel()
+            downloadJob = null
+            UpdateCheck.discardPartial(UpdatePrefs.apkFile(app, tag))
+        }
+        _update.update { it.copy(downloading = false, paused = false, hidden = true) }
+        UpdateNotifier.cancel(app)
     }
 
     /**
-     * The chip's tap: downloads the APK — the progress lives in the live update notification —
-     * or, once it sits on disk, hands it to the installer.
+     * The chip's and the about card's tap: installs an APK already on disk, holds a
+     * running download at its pause, and otherwise starts one — a paused partial picked
+     * back up from wherever its bytes reached.
      */
     fun onUpdateChipTap() {
         val state = _update.value
         val release = state.available ?: return
-        if (state.downloading) return
-        if (state.downloadedFile != null) {
-            installUpdate()
-            return
+        when {
+            state.downloading -> pauseUpdate()
+            state.downloadedFile != null -> installUpdate()
+            else -> startUpdateDownload(release)
         }
-        _update.update { it.copy(downloading = true, downloadPercent = 0) }
-        UpdateNotifier.downloading(app, 0)
-        viewModelScope.launch(Dispatchers.IO) {
+    }
+
+    /** The download's own pause: the job is cancelled, the partial kept for the resume. */
+    private fun pauseUpdate() {
+        downloadJob?.cancel()
+        downloadJob = null
+        val state = _update.value
+        _update.update { it.copy(downloading = false, paused = true) }
+        state.available?.let { release ->
+            UpdateNotifier.paused(app, state.downloadPercent, release.tag)
+        }
+    }
+
+    /** The shade's own resume: the same start, the partial picked back up. */
+    fun resumeUpdate() {
+        val release = _update.value.available ?: return
+        if (_update.value.downloading) return
+        startUpdateDownload(release)
+    }
+
+    /** The shade's own cancel: the download stops clean and the partial goes. */
+    fun cancelUpdateDownload() {
+        val release = _update.value.available
+        downloadJob?.cancel()
+        downloadJob = null
+        if (release != null) UpdateCheck.discardPartial(UpdatePrefs.apkFile(app, release.tag))
+        _update.update { it.copy(downloading = false, paused = false, downloadPercent = 0) }
+        UpdateNotifier.cancel(app)
+    }
+
+    /**
+     * The download itself — the progress lives in the live update notification. A
+     * partial from an earlier pause or a failure restarts from wherever its bytes
+     * stopped, through a range, so a pause costs nothing but time.
+     */
+    private fun startUpdateDownload(release: UpdateRelease) {
+        val target = UpdatePrefs.apkFile(app, release.tag)
+        val startPercent = UpdateCheck.partialPercent(release, target)
+        _update.update { it.copy(downloading = true, paused = false, downloadPercent = startPercent) }
+        UpdateNotifier.downloading(app, startPercent, release.tag)
+        downloadJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                var lastPosted = -1
+                var lastPosted = startPercent
                 UpdateCheck.download(
                     release,
-                    UpdatePrefs.apkFile(app, release.tag),
+                    target,
                     { tunnelStatus.value.state == TunnelState.UP },
                 ) { percent ->
                     _update.update { current ->
@@ -290,13 +361,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     // A chunk can land between percents; the shade only hears the changes.
                     if (percent != lastPosted) {
-                        UpdateNotifier.downloading(app, percent)
+                        UpdateNotifier.downloading(app, percent, release.tag)
                         lastPosted = percent
                     }
                 }
                 UpdatePrefs.markDownloaded(app, release.tag)
                 _update.update { it.copy(downloading = false, downloadPercent = 100, downloadedFile = UpdatePrefs.apkFile(app, release.tag)) }
-                UpdateNotifier.ready(app, release.version.toString())
+                UpdateNotifier.ready(app)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: Exception) {
@@ -533,6 +604,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         observeIdentityChips()
         // Every app open asks the repo for a newer release — silent on any miss.
         viewModelScope.launch(Dispatchers.IO) { checkForUpdate() }
+        // The update notification's own buttons, coming home: pause, resume, cancel the
+        // download, wave the release away — the same hands the chip's taps reach.
+        viewModelScope.launch {
+            UpdateRequests.actions.collect { action ->
+                when (action) {
+                    UpdateIntents.PAUSE -> if (_update.value.downloading) pauseUpdate()
+                    UpdateIntents.RESUME -> resumeUpdate()
+                    UpdateIntents.CANCEL -> cancelUpdateDownload()
+                    UpdateIntents.DISMISS -> hideUpdate()
+                }
+            }
+        }
         viewModelScope.launch(Dispatchers.IO) {
             // The ":core" process spins up with the bind, but the bind itself is async —
             // the first ask often lands before the binder answers. Keep asking until it

@@ -196,6 +196,15 @@
         </service>
 
         <!--
+            The update notification's own buttons, coming home: pause, resume and cancel
+            reach the running download, dismiss also writes the wave-away to the prefs
+            so it stands even from a cold start.
+        -->
+        <receiver
+            android:name="slop.miho.chumpy.core.UpdateActionReceiver"
+            android:exported="false" />
+
+        <!--
             Serves the downloaded update APK to the system's package installer: the
             file stays in the app's own storage, the installer reads it through this
             grant, the APK never travels anywhere else.

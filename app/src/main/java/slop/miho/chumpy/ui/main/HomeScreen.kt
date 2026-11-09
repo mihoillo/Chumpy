@@ -323,13 +323,14 @@ private fun InfoChips(
                     update.downloading -> stringResource(
                         R.string.update_downloading_percent, update.downloadPercent,
                     )
+                    update.paused -> stringResource(R.string.update_paused, update.downloadPercent)
                     update.downloadedFile != null -> stringResource(R.string.update_ready)
                     else -> stringResource(R.string.update_available_chip)
                 },
                 icon = R.drawable.ic_download,
                 animateValue = update.downloading,
-                container = colors.tertiaryContainer.withSurfaceOpacity(),
-                content = colors.onTertiaryContainer,
+                container = colors.secondaryContainer.withSurfaceOpacity(),
+                content = colors.onSecondaryContainer,
                 onClick = {
                     poke()
                     onUpdateChipTap()

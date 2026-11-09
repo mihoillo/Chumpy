@@ -278,11 +278,15 @@
     <string name="notif_channel_updates_desc">A new version\'s download and its install ask</string>
     <string name="notif_update_title">Chumpy update</string>
     <string name="notif_update_downloading">Downloading the new version…</string>
-    <string name="notif_update_ready">Version %1$s downloaded — tap to install</string>
+    <string name="notif_update_paused">Download paused</string>
+    <string name="notif_update_pause">Pause</string>
+    <string name="notif_update_resume">Resume</string>
+    <string name="notif_update_cancel">Cancel</string>
     <string name="update_available_chip">Update available</string>
     <string name="update_checking">Checking…</string>
     <string name="update_up_to_date">Up to date</string>
     <string name="update_downloading_percent">Downloading %1$d%%</string>
+    <string name="update_paused">Paused %1$d%%</string>
     <string name="update_ready">Ready to install</string>
     <string name="error_no_config">No server selected</string>
     <string name="error_vpn_not_authorized">VPN permission was not granted</string>
