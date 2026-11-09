@@ -67,6 +67,8 @@ object WallpaperRegistry {
         // but a diagnosis needs the reason in the log: what came in and what the copy said no to.
         if (result != ImportedFile.Result.SUCCESS) {
             Log.w(TAG, "Wallpaper copy into ${target.absolutePath} rejected: $result")
+        } else {
+            Log.i(TAG, "Wallpaper copy into ${target.absolutePath} OK, ${target.length()} bytes")
         }
         return when (result) {
             ImportedFile.Result.SUCCESS -> { changes.value++; null }
