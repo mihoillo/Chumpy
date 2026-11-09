@@ -191,6 +191,7 @@
     <string name="settings_about_version">Version</string>
     <string name="settings_about_build_date">Build date</string>
     <string name="settings_about_language">Language</string>
+    <string name="settings_about_check_updates">Check for updates</string>
     <string name="settings_about_tagline">An Xray client wrapped in Material 3 Expressive</string>
     <string name="settings_about_telegram">Telegram channel</string>
     <string name="settings_about_telegram_handle" translatable="false">t.me/ChumpyXray</string>
@@ -279,6 +280,8 @@
     <string name="notif_update_downloading">Downloading the new version…</string>
     <string name="notif_update_ready">Version %1$s downloaded — tap to install</string>
     <string name="update_available_chip">Update available</string>
+    <string name="update_checking">Checking…</string>
+    <string name="update_up_to_date">Up to date</string>
     <string name="update_downloading_percent">Downloading %1$d%%</string>
     <string name="update_ready">Ready to install</string>
     <string name="error_no_config">No server selected</string>

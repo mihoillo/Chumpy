@@ -444,6 +444,7 @@ fun MainShell(viewModel: MainViewModel) {
                     },
                     onUpdateChipTap = viewModel::onUpdateChipTap,
                     onHideUpdate = viewModel::hideUpdate,
+                    onCheckForUpdate = viewModel::recheckUpdate,
                     onSelectPage = { position ->
                         if (position < MainTab.entries.size) {
                             selectedTab = MainTab.entries[position]
@@ -505,6 +506,7 @@ fun MainShell(viewModel: MainViewModel) {
                     },
                     onUpdateChipTap = viewModel::onUpdateChipTap,
                     onHideUpdate = viewModel::hideUpdate,
+                    onCheckForUpdate = viewModel::recheckUpdate,
                     // The swipe's landing: whatever page the finger carried the strip to, the
                     // shell's own selection follows — the two groups' door stays the bar's.
                     onSelectPage = { position ->
@@ -721,6 +723,7 @@ private fun ShellDestinationPage(
     onOpenStats: () -> Unit,
     onUpdateChipTap: () -> Unit,
     onHideUpdate: () -> Unit,
+    onCheckForUpdate: () -> Unit,
     onRefreshPing: (showPending: Boolean) -> Unit,
     onPingServers: () -> Unit,
     onUpdateSubscription: () -> Unit,
@@ -813,6 +816,9 @@ private fun ShellDestinationPage(
             SettingsCategory.ABOUT -> AboutScreen(
                 coreVersion = coreVersion,
                 coreRunning = coreRunning,
+                update = update,
+                onUpdateChipTap = onUpdateChipTap,
+                onCheckForUpdate = onCheckForUpdate,
             )
         }
     }
@@ -853,6 +859,7 @@ private fun TwoPaneShell(
     onOpenStats: () -> Unit,
     onUpdateChipTap: () -> Unit,
     onHideUpdate: () -> Unit,
+    onCheckForUpdate: () -> Unit,
     onSelectPage: (Int) -> Unit,
     onRefreshPing: (showPending: Boolean) -> Unit,
     onPingServers: () -> Unit,
@@ -942,6 +949,7 @@ private fun TwoPaneShell(
                     onOpenStats = onOpenStats,
                     onUpdateChipTap = onUpdateChipTap,
                     onHideUpdate = onHideUpdate,
+                    onCheckForUpdate = onCheckForUpdate,
                     onSelectPage = onSelectPage,
                     onRefreshPing = onRefreshPing,
                     onPingServers = onPingServers,
@@ -1021,6 +1029,7 @@ private fun MainPagerStrip(
     onOpenStats: () -> Unit,
     onUpdateChipTap: () -> Unit,
     onHideUpdate: () -> Unit,
+    onCheckForUpdate: () -> Unit,
     onSelectPage: (Int) -> Unit,
     onRefreshPing: (showPending: Boolean) -> Unit,
     onPingServers: () -> Unit,
@@ -1146,6 +1155,7 @@ private fun MainPagerStrip(
                     onOpenStats = onOpenStats,
                     onUpdateChipTap = onUpdateChipTap,
                     onHideUpdate = onHideUpdate,
+                    onCheckForUpdate = onCheckForUpdate,
                     onRefreshPing = onRefreshPing,
                     onPingServers = onPingServers,
                     onUpdateSubscription = onUpdateSubscription,

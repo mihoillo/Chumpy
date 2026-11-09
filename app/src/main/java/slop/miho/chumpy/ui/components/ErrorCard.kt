@@ -84,6 +84,58 @@ fun ErrorCard(message: String, modifier: Modifier = Modifier) {
 }
 
 /**
+ * An available update as the failure card's own cut retold in the accent: tertiary
+ * container instead of the error's, a download mark over the same spinning diamond
+ * tile, the release's story as the headline. Tapped, it downloads — the progress
+ * rides the live update notification — or, once the APK sits on disk, hands it to
+ * the installer.
+ */
+@Composable
+fun UpdateCard(message: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    var singleLine by remember { mutableStateOf(false) }
+    val tileSize = if (singleLine) 32.dp else 40.dp
+    val iconSize = if (singleLine) 20.dp else 24.dp
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = colors.tertiaryContainer,
+        contentColor = colors.onTertiaryContainer,
+        modifier = modifier,
+    ) {
+        ListItem(
+            headlineContent = {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyLarge,
+                    onTextLayout = { layout -> singleLine = layout.lineCount <= 1 },
+                )
+            },
+            leadingContent = {
+                Box(
+                    modifier = Modifier.size(tileSize),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    SpinningDiamond(color = colors.tertiary)
+                    Icon(
+                        painter = painterResource(R.drawable.ic_download),
+                        contentDescription = null,
+                        modifier = Modifier.size(iconSize),
+                        tint = colors.onTertiary,
+                    )
+                }
+            },
+            colors = ListItemDefaults.colors(
+                containerColor = colors.tertiaryContainer,
+                headlineColor = colors.onTertiaryContainer,
+                leadingIconColor = colors.onTertiaryContainer,
+            ),
+            tonalElevation = 0.dp,
+        )
+    }
+}
+
+/**
  * A plain square tilted 45° into a diamond. Every few seconds it ticks another quarter turn
  * (which lands on the same silhouette) with a spring that overshoots and settles with a
  * bounce — but only while [animated], otherwise it just sits still at its tilt.

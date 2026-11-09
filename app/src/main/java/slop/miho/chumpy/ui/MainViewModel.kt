@@ -90,6 +90,7 @@ data class HomeUiState(
  * told in the live update notification, the state here only mirrors it for the chip's
  * text. [hidden] is the user's long press: this release's chip is waved away until the
  * repo holds a newer one; [downloadedFile] is the APK that already sits on disk.
+ * [checking] is the about screen's manual ask in flight.
  */
 data class UpdateUiState(
     val available: UpdateRelease? = null,
@@ -97,6 +98,7 @@ data class UpdateUiState(
     val downloading: Boolean = false,
     val downloadPercent: Int = 0,
     val downloadedFile: java.io.File? = null,
+    val checking: Boolean = false,
 )
 
 /** The servers screen's list: the selected subscription's profiles, plus the transient bits. */
@@ -235,6 +237,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // A process death between the download and the install took the shade line with
         // it; an APK already on disk puts it back.
         if (downloaded != null) UpdateNotifier.ready(app, release.version.toString())
+    }
+
+    /**
+     * The about screen's own ask: the repo is polled again on demand, the answer landing
+     * wherever the state already speaks — the chip, the about card. While it runs the
+     * row says so; a second tap lands on the same running check.
+     */
+    fun recheckUpdate() {
+        if (_update.value.checking) return
+        _update.update { it.copy(checking = true) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                checkForUpdate()
+            } finally {
+                _update.update { it.copy(checking = false) }
+            }
+        }
     }
 
     /** The chip's long press: this release's chip is waved away until something newer lands. */

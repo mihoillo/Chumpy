@@ -121,6 +121,7 @@ import slop.miho.chumpy.data.UiSettings
 import slop.miho.chumpy.ui.components.FlipTriangleTile
 import slop.miho.chumpy.ui.components.FoldingGroup
 import slop.miho.chumpy.ui.components.InfoChip
+import slop.miho.chumpy.ui.components.UpdateCard
 import slop.miho.chumpy.ui.components.InputMode
 import slop.miho.chumpy.ui.components.LocalInputMode
 import slop.miho.chumpy.ui.components.TriangleTilePolygon
@@ -132,6 +133,7 @@ import slop.miho.chumpy.ui.components.focusRing
 import slop.miho.chumpy.ui.components.pressBounce
 import slop.miho.chumpy.ui.components.rememberHapticPoke
 import slop.miho.chumpy.ui.fonts.FontPickerRow
+import slop.miho.chumpy.ui.UpdateUiState
 import slop.miho.chumpy.ui.theme.LocalUiSettings
 import slop.miho.chumpy.ui.theme.backdropScheme
 import slop.miho.chumpy.ui.wallpapers.LocalBackdropDark
@@ -1860,6 +1862,9 @@ private fun PlainRow(
 fun AboutScreen(
     coreVersion: String?,
     coreRunning: Boolean,
+    update: UpdateUiState = UpdateUiState(),
+    onUpdateChipTap: () -> Unit = {},
+    onCheckForUpdate: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
@@ -1935,6 +1940,26 @@ fun AboutScreen(
         // The greeting keeps its distance from the cards below, as on the welcome.
         Spacer(Modifier.height(24.dp))
 
+        // A release the repo holds beyond the running build: the failure card's own
+        // cut retold in the accent, under the hero and over the numbers. The tap
+        // downloads (the progress rides the live update notification) or hands the
+        // APK already on disk to the installer; a hidden release stays hidden here
+        // too — the long press waved it away until something newer lands.
+        if (update.available != null && !update.hidden) {
+            UpdateCard(
+                message = when {
+                    update.downloading -> stringResource(
+                        R.string.update_downloading_percent, update.downloadPercent,
+                    )
+                    update.downloadedFile != null -> stringResource(R.string.update_ready)
+                    else -> stringResource(R.string.update_available_chip)
+                },
+                onClick = onUpdateChipTap,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(16.dp))
+        }
+
         SettingsGroup(
             {
                 PlainRow(
@@ -1977,14 +2002,25 @@ fun AboutScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // The system's own per-app language sheet — the one place a language is picked,
-        // on every screen it can be picked from. Below Android 13 the sheet doesn't
-        // exist and the row stays out with it.
+        // The update check's own ask, over the language below it: the repo is polled
+        // on every open and this row asks again on demand. The system's own per-app
+        // language sheet joins it — below Android 13 the sheet doesn't exist and the
+        // row stays out with it.
+        val checkRow: @Composable () -> Unit = {
+            CheckForUpdatesRow(
+                checking = update.checking,
+                updateAvailable = update.available != null && !update.hidden,
+                onClick = onCheckForUpdate,
+            )
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             SettingsGroup(
-                {
-                    LanguageRow()
-                },
+                checkRow,
+                { LanguageRow() },
+            )
+        } else {
+            SettingsGroup(
+                checkRow,
             )
         }
 
@@ -2032,6 +2068,31 @@ private fun ExternalLinkRow(
     ) {
         context.externalAction { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
     }
+}
+
+/**
+ * The manual update check: the repo is polled on every open, and this row asks again —
+ * the answer riding the supporting line, the check in flight, the release waiting, or
+ * nothing beyond the running build.
+ */
+@Composable
+private fun CheckForUpdatesRow(
+    checking: Boolean,
+    updateAvailable: Boolean,
+    onClick: () -> Unit,
+) {
+    OutgoingRow(
+        title = stringResource(R.string.settings_about_check_updates),
+        supporting = stringResource(
+            when {
+                checking -> R.string.update_checking
+                updateAvailable -> R.string.update_available_chip
+                else -> R.string.update_up_to_date
+            },
+        ),
+        icon = R.drawable.ic_renew,
+        onClick = onClick,
+    )
 }
 
 /**
