@@ -6,8 +6,7 @@ import slop.miho.chumpy.db.computeLinkKey
 
 /**
  * The Clash YAML subscription dialect: a `proxies:` list of proxy maps, the format panels
- * serve to Clash-flavoured clients. Only the proxy entries matter — groups and rules are
- * the panel's own plumbing, and Chumpy routes everything itself.
+ * serve to Clash-flavoured clients. Supported inline rules are converted to Xray rules.
  *
  * The YAML is read by a deliberately small block parser (mappings, sequences, one-level
  * nesting, quoted scalars, flow lists, comments) — the subset clash proxy lists actually
@@ -25,7 +24,9 @@ object ClashYamlParser {
         val profiles = proxies.mapNotNull { entry ->
             (entry as? Map<*, *>)?.let(::proxyToProfile)
         }
-        return if (profiles.isEmpty()) null else profiles.distinctBy { it.computeLinkKey() }
+        if (profiles.isEmpty()) return null
+        val rules = ClashRouting.parse(root, profiles.map { it.remarks }.toSet())
+        return profiles.distinctBy { it.computeLinkKey() }.map { it.copy(routingRules = rules) }
     }
 
     /** One clash proxy map as a profile draft; null when its endpoint does not hold together. */
