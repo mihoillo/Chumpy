@@ -11,8 +11,8 @@ internal object WindowsXrayConfigBuilder {
         val config = buildJsonObject {
             put("log", buildJsonObject { put("loglevel", "warning") })
             put("inbounds", buildJsonArray { add(buildJsonObject {
-                put("tag", "socks-in"); put("listen", "127.0.0.1"); put("port", 10808)
-                put("protocol", "socks"); put("settings", buildJsonObject { put("auth", "noauth"); put("udp", true) })
+                put("tag", "http-in"); put("listen", "127.0.0.1"); put("port", 10809)
+                put("protocol", "http"); put("settings", buildJsonObject {})
             }) })
             put("outbounds", buildJsonArray {
                 add(OutboundBuilder.build(profile, "proxy"))
