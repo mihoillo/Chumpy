@@ -1505,7 +1505,21 @@ private fun MainPagerStrip(
                         derivedStateOf {
                             val position =
                                 if (dragPosition.isNaN()) stripPosition.value else dragPosition
-                            (0 until pageCount).filter { abs(it - position) < 1.5f }
+                            // The finger's own window follows the finger — a neighbor
+                            // slides in as it is pulled. A spring ride is not a tour,
+                            // though: the pages the strip merely passes over on its way
+                            // to a far landing never materialize — only the one it
+                            // leaves (until that is off screen too) and the one it
+                            // lands on, pre-built under the slide so the arrival
+                            // finds it warm.
+                            if (dragPosition.isNaN()) {
+                                (0 until pageCount).filter {
+                                    abs(it - position) < 1.5f ||
+                                        abs(it - targetPositionNow.value) < 1.5f
+                                }
+                            } else {
+                                (0 until pageCount).filter { abs(it - position) < 1.5f }
+                            }
                         }
                     }
                     // The strip's travel is a long spring or the finger's own drag — either
