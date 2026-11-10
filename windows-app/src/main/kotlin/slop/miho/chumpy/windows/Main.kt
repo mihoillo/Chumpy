@@ -82,12 +82,12 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
         val chooser = JFileChooser().apply { isMultiSelectionEnabled = true; fileFilter = FileNameExtensionFilter("Текстовые файлы", "txt", "conf") }
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return
         chooser.selectedFiles.forEach { file ->
-            file.readLines().map(String::trim).filter { it.contains("://") }.forEach { line ->
+            file.readLines().map(String::trim).filter { LinkParsers.parse(it) != null }.forEach { line ->
                 if ((0 until profiles.size()).none { profiles.getElementAt(it) == line }) profiles.addElement(line)
             }
         }
         saveProfiles()
-        status.text = "Сохранено ссылок: ${profiles.size()}"
+        status.text = "Импортировано поддерживаемых ссылок: ${profiles.size()}"
     }
     private fun saveProfiles() { profilesFile.writeText((0 until profiles.size()).joinToString("\n") { profiles.getElementAt(it) }) }
     private fun connect() {
