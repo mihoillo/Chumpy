@@ -7,6 +7,8 @@ import java.awt.Font
 import java.io.File
 import javax.swing.*
 import javax.swing.filechooser.FileNameExtensionFilter
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
 
 private enum class ConnectionMode(val label: String) {
     SYSTEM_PROXY("Системный прокси"), TUN("TUN (виртуальный адаптер)")
@@ -28,7 +30,10 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
     private val proxy = WindowsProxyController(home)
 
     init {
-        defaultCloseOperation = EXIT_ON_CLOSE
+        defaultCloseOperation = DO_NOTHING_ON_CLOSE
+        addWindowListener(object : WindowAdapter() {
+            override fun windowClosing(e: WindowEvent) { disconnect(); dispose() }
+        })
         minimumSize = Dimension(760, 540)
         size = Dimension(900, 650)
         setLocationRelativeTo(null)
