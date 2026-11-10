@@ -413,6 +413,7 @@ fun ServersScreen(
                                 sortMenuOpen = menuHost == SORT_MENU_HOST,
                                 onSortMenuOpenChange = { openMenu(if (it) SORT_MENU_HOST else null) },
                                 onSort = onSortServers,
+                                revealed = revealConcealed,
                                 onToggleReveal = { revealConcealed = !revealConcealed }, onPing = onPing)
                         }
                         if (dropdownOpen) {
@@ -531,6 +532,8 @@ private fun ServersHeader(
     sortMenuOpen: Boolean,
     onSortMenuOpenChange: (Boolean) -> Unit,
     onSort: (ServersSort) -> Unit,
+    /** Whether the concealed rows currently stand in the list — the reveal mode's own flag. */
+    revealed: Boolean,
     onToggleReveal: () -> Unit,
     onPing: () -> Unit,
 ) {
@@ -565,12 +568,14 @@ private fun ServersHeader(
         // The hidden ones' own count, the reveal mode's door: a tap calls them back into
         // their own block above the list, another puts them away again. The chip stays
         // gone while nothing is hidden — a list that never hides keeps its row quiet.
-        // The eye alone carries the meaning; the number alone carries the count.
+        // The eye alone carries the meaning; the number alone carries the count — the
+        // crossed-out one while the rows stay out of sight, the open one while they
+        // stand in the list: the chip says what it has done, not what it would do.
         if (state.concealed.isNotEmpty()) {
             Box(Modifier.graphicsLayer { this.alpha = alpha }) {
                 InfoChip(
                     value = state.concealed.size.toString(),
-                    icon = R.drawable.ic_visibility_off,
+                    icon = if (revealed) R.drawable.ic_visibility else R.drawable.ic_visibility_off,
                     animateValue = true,
                     onClick = onToggleReveal,
                 )

@@ -25,7 +25,7 @@
 
     <!-- Серверы -->
     <string name="servers_total">Серверов: %1$d</string>
-    <string name="servers_sort_default">Как в панели</string>
+    <string name="servers_sort_default">По конфигу</string>
     <string name="servers_sort_name">По имени</string>
     <string name="servers_sort_ping">По пингу</string>
     <string name="servers_sort_last_used">По использованию</string>

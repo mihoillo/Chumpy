@@ -2317,7 +2317,7 @@ private fun IconPreviewButton(
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val sky = Color(0xFF6FACED)
-    val night = Color(0xFF041420)
+    val night = Color(0xFF191919)
     val (background, art) = when (variant) {
         IconVariant.CHUMPY -> Color.White to sky
         IconVariant.INVERTED -> sky to Color.White

@@ -27,7 +27,7 @@
 
     <!-- Servers -->
     <string name="servers_total">Servers: %1$d</string>
-    <string name="servers_sort_default">Panel order</string>
+    <string name="servers_sort_default">By config</string>
     <string name="servers_sort_name">By name</string>
     <string name="servers_sort_ping">By ping</string>
     <string name="servers_sort_last_used">By last use</string>

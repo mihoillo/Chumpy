@@ -29,7 +29,7 @@ enum class FlagStyle { TWEMOJI, SYSTEM, GLOBE }
 
 /**
  * The launcher icon variant. CHUMPY is the flat sky-colored art on white; INVERTED swaps
- * the two; DARK is the white art on a near-black #041420; THEMED is the neutral art the
+ * the two; DARK is the white art on a near-black #191919; THEMED is the neutral art the
  * system's themed icons (Android 13+) dress in the monet palette — and that the app itself
  * colors from its own accent everywhere it draws (the QS tile, the picker's preview).
  */
