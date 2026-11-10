@@ -52,6 +52,7 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
             add(JScrollPane(profileList), BorderLayout.CENTER)
             add(JPanel(FlowLayout(FlowLayout.LEFT)).apply {
                 add(JButton("Импортировать ссылки…").apply { addActionListener { importLinks() } })
+                add(JButton("Импортировать QR-изображение…").apply { addActionListener { importQrImage() } })
                 add(JButton("Добавить подписку").apply { addActionListener { addSubscription() } })
                 add(JButton("Обновить подписки").apply { addActionListener { refreshSubscriptions() } })
                 add(JButton("Создать Xray-конфиг").apply { addActionListener { generateConfig() } })
@@ -120,6 +121,20 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
                 if (errors.isNotEmpty()) JOptionPane.showMessageDialog(this, errors.joinToString("\n"), "Ошибки подписок", JOptionPane.WARNING_MESSAGE)
             }
         }, "chumpy-subscriptions").start()
+    }
+    private fun importQrImage() {
+        val chooser = JFileChooser().apply { fileFilter = FileNameExtensionFilter("QR images", "png", "jpg", "jpeg", "bmp") }
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return
+        try {
+            val decoded = QrImageImporter.read(chooser.selectedFile)
+            val links = decoded.lineSequence().map(String::trim).filter { LinkParsers.parse(it) != null }.toList()
+            if (links.isEmpty()) error("QR-код не содержит поддерживаемых ссылок Chumpy.")
+            links.forEach { link -> if ((0 until profiles.size()).none { profiles.getElementAt(it) == link }) profiles.addElement(link) }
+            saveProfiles()
+            status.text = "QR импортирован: " + links.size + " ссылок"
+        } catch (e: Exception) {
+            JOptionPane.showMessageDialog(this, e.message ?: e.javaClass.simpleName, "QR-импорт", JOptionPane.ERROR_MESSAGE)
+        }
     }
     private fun importLinks() {
         val chooser = JFileChooser().apply { isMultiSelectionEnabled = true; fileFilter = FileNameExtensionFilter("Текстовые файлы", "txt", "conf") }
