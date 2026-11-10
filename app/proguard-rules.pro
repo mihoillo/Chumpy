@@ -3,6 +3,9 @@
 -keep class go.** { *; }
 -keep class libv2ray.** { *; }
 
+# The subscription logos' SVG renderer; it reads its own classes reflectively.
+-keep class com.caverock.androidsvg.** { *; }
+
 # Room entities are reflected over by the compiler-generated code only; keep the
 # kotlinx-serialization core off the shrinker's blind spots.
 -keepclassmembers class kotlinx.serialization.json.** { *** Companion; }

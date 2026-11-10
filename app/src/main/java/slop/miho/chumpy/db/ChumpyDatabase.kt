@@ -100,7 +100,7 @@ abstract class ProfileDao {
  */
 @Database(
     entities = [SubscriptionEntity::class, ProfileEntity::class],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 abstract class ChumpyDatabase : RoomDatabase() {
@@ -224,6 +224,16 @@ abstract class ChumpyDatabase : RoomDatabase() {
         val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE profiles ADD COLUMN lastUsedAt INTEGER")
+            }
+        }
+
+        /**
+         * v11: the subscription's `profile-logo` avatar — the cached image's file path;
+         * null means the default tile.
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN logoPath TEXT")
             }
         }
 

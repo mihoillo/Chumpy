@@ -81,8 +81,9 @@ class SubscriptionRepository(
                 }
                 require(parsed.isNotEmpty()) { "No server links found in the response" }
 
+                val id = UUID.randomUUID().toString()
                 val entity = SubscriptionEntity(
-                    id = UUID.randomUUID().toString(),
+                    id = id,
                     name = name?.takeIf { it.isNotBlank() }
                         ?: metadata.title
                         ?: fetcher.hostNameOf(url),
@@ -94,6 +95,7 @@ class SubscriptionRepository(
                     downloadBytes = metadata.downloadBytes,
                     totalBytes = metadata.totalBytes,
                     expireEpochSeconds = metadata.expireEpochSeconds,
+                    logoPath = refreshLogo(id, metadata.logoUrl, previousPath = null),
                 )
                 db.withTransaction {
                     subscriptions.upsert(entity)
@@ -120,6 +122,9 @@ class SubscriptionRepository(
                         }
                         require(parsed.isNotEmpty()) { "No server links found in the response" }
 
+                        // The avatar rides the same refresh; its download happens outside
+                        // the transaction — the DB is not held open over the network.
+                        val logoPath = refreshLogo(id, metadata.logoUrl, previousPath = entity.logoPath)
                         val updated = db.withTransaction {
                             val current = subscriptions.byId(id) ?: error("Subscription not found")
                             val old = profiles.bySubscriptionOnce(id)
@@ -132,6 +137,7 @@ class SubscriptionRepository(
                                 downloadBytes = metadata.downloadBytes,
                                 totalBytes = metadata.totalBytes,
                                 expireEpochSeconds = metadata.expireEpochSeconds,
+                                logoPath = logoPath,
                                 lastError = null,
                             )
                             subscriptions.upsert(updated)
@@ -156,6 +162,7 @@ class SubscriptionRepository(
 
     suspend fun deleteSubscription(id: String) = withContext(Dispatchers.IO) {
         subscriptions.delete(id)
+        logoFile(id).delete()
         WorkManager.getInstance(context).cancelUniqueWork(WORK_PREFIX + id)
         Log.i(TAG, "Deleted subscription $id")
     }
@@ -312,6 +319,49 @@ class SubscriptionRepository(
         return second.body to second.metadata.copy(
             geodataSources = GeodataSources.merge(first.metadata.geodataSources, second.metadata.geodataSources),
         )
+    }
+
+    /** The logo's own home: files/subscription-logos/<id>.img. */
+    private fun logoFile(id: String) = java.io.File(java.io.File(context.filesDir, "subscription-logos"), "$id.img")
+
+    /**
+     * Brings the card's avatar in line with the panel's `profile-logo` header, called on
+     * every refresh. A missing, empty or non-URL header clears the logo — the default
+     * tile — as does a body that is neither PNG nor SVG. A download that merely fails
+     * (the network's fault, not the panel's) keeps the last good one.
+     * Returns the path the row should carry, or null for the default tile.
+     */
+    private suspend fun refreshLogo(id: String, logoUrl: String?, previousPath: String?): String? {
+        val parsed = logoUrl?.let { fetcher.parseLogoUrl(it) }
+        if (parsed == null) {
+            previousPath?.let { logoFile(id).delete() }
+            return null
+        }
+        return try {
+            val bytes = fetcher.fetchLogo(parsed)
+            if (!isLogoBytes(bytes)) {
+                previousPath?.let { logoFile(id).delete() }
+                return null
+            }
+            val file = logoFile(id)
+            file.parentFile?.mkdirs()
+            file.writeBytes(bytes)
+            file.absolutePath
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Logo download failed, keeping the previous one: ${e.message}")
+            previousPath
+        }
+    }
+
+    /** PNG by its signature, SVG by its angle bracket — the two formats the tile renders. */
+    private fun isLogoBytes(bytes: ByteArray): Boolean {
+        if (bytes.size < 8) return false
+        val png = bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() &&
+            bytes[2] == 0x4E.toByte() && bytes[3] == 0x47.toByte()
+        if (png) return true
+        val head = String(bytes, 0, minOf(256, bytes.size), Charsets.UTF_8).trimStart()
+        return head.startsWith("<")
     }
 
     private fun scheduleAutoUpdate(subscription: SubscriptionEntity) {

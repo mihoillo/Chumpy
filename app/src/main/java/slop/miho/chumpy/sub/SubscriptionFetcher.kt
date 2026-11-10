@@ -45,6 +45,9 @@ class SubscriptionFetcher(
 
         /** Panels that serve anything larger are doing something else; do not OOM the app. */
         const val MAX_BODY_BYTES = 8 * 1024 * 1024
+
+        /** A logo past this is not an avatar; PNG/SVG weigh far less. */
+        const val MAX_LOGO_BYTES = 2 * 1024 * 1024
         val directClient by lazy {
             OkHttpClient.Builder()
             .connectTimeout(CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
@@ -139,6 +142,46 @@ class SubscriptionFetcher(
                     }
                     if (continuation.isActive) continuation.resume(Unit)
                 } catch (e: Exception) { if (continuation.isActive) continuation.resumeWithException(e) }
+            }
+        })
+    }
+
+    /**
+     * A `profile-logo` value's parsed form, or null when it is not a URL — the scheme
+     * is defaulted the subscription way (bare means https; a strict check would turn
+     * away the panels that omit it).
+     */
+    fun parseLogoUrl(rawUrl: String): okhttp3.HttpUrl? {
+        val trimmed = rawUrl.trim()
+        if (trimmed.isEmpty()) return null
+        return normalizeUrl(trimmed).toHttpUrlOrNull()
+    }
+
+    /**
+     * Downloads a `profile-logo` image (PNG or SVG), capped at [MAX_LOGO_BYTES]; rides
+     * the core's SOCKS inbound when the tunnel is up, like a subscription body.
+     * Throws [IOException] with a readable message on failure.
+     */
+    suspend fun fetchLogo(url: okhttp3.HttpUrl): ByteArray = suspendCancellableCoroutine { continuation ->
+        val client = if (tunnelUp()) tunnelClient else directClient
+        val call = client.newCall(Request.Builder().url(url).header("User-Agent", USER_AGENT).build())
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                if (continuation.isActive) continuation.resumeWithException(e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                try {
+                    val bytes = response.use {
+                        if (!it.isSuccessful) throw IOException("HTTP ${it.code}")
+                        it.body?.byteStream()?.use { stream -> stream.readNBytesCompat(MAX_LOGO_BYTES) }
+                            ?: throw IOException("Empty logo body")
+                    }
+                    if (continuation.isActive) continuation.resume(bytes)
+                } catch (e: Exception) {
+                    if (continuation.isActive) continuation.resumeWithException(e)
+                }
             }
         })
     }

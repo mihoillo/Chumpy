@@ -4,7 +4,8 @@ package slop.miho.chumpy.sub
  * The metadata panels attach to a subscription response — Hiddify's dialect, which is the
  * de-facto standard: traffic counters in `subscription-userinfo`, the display name in
  * `profile-title` (plain or base64-prefixed), a filename hint in `content-disposition`,
- * the refresh hint in `profile-update-interval`, and — on Happ panels — the routing
+ * the refresh hint in `profile-update-interval`, the card's avatar URL in
+ * `profile-logo`, and — on Happ panels — the routing
  * profile in `routing`, whose `Geoipurl`/`Geositeurl` name the provider's geodata.
  */
 data class SubscriptionMetadata(
@@ -15,6 +16,8 @@ data class SubscriptionMetadata(
     val expireEpochSeconds: Long = 0,
     val updateIntervalHours: Int? = null,
     val geodataSources: String = "",
+    /** The panel's `profile-logo`: a URL the card's avatar is downloaded from. */
+    val logoUrl: String? = null,
 )
 
 object SubscriptionHeaders {
@@ -38,6 +41,7 @@ object SubscriptionHeaders {
         first("content-disposition")?.let { meta = meta.copy(title = meta.title ?: parseFilename(it)) }
         first("profile-update-interval")?.let { parseUpdateInterval(it)?.let { h -> meta = meta.copy(updateIntervalHours = h) } }
         first("routing")?.let { meta = meta.copy(geodataSources = GeodataSources.fromHappHeader(it)) }
+        first("profile-logo")?.let { meta = meta.copy(logoUrl = it) }
         return meta
     }
 

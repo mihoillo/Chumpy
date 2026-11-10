@@ -56,6 +56,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.CircleShape
@@ -77,6 +78,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -89,10 +91,13 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
@@ -109,6 +114,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import java.text.DateFormat
 import java.util.Date
+import java.io.File
+import android.graphics.BitmapFactory
+import com.caverock.androidsvg.SVG
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -798,6 +806,7 @@ private fun SubscriptionReportFace(
                     } else {
                         R.drawable.ic_database
                     },
+                    logoPath = subscription.logoPath.takeIf { subscription.id != STANDALONE_SUBSCRIPTION_ID },
                 )
                 if (subscription.url.isNotEmpty()) {
                     UpdateButton(isUpdating = isUpdating, onClick = onUpdate)
@@ -867,6 +876,7 @@ private fun SubscriptionCompactFace(
                 } else {
                     R.drawable.ic_database
                 },
+                logoPath = subscription?.logoPath?.takeIf { subscription.id != STANDALONE_SUBSCRIPTION_ID },
             )
             if ((subscription?.url?.isNotEmpty()) == true) {
                 UpdateButton(isUpdating = isUpdating, onClick = onUpdate, width = 36.dp, height = 48.dp)
@@ -892,10 +902,11 @@ private fun SubscriptionCompactFace(
 
 /**
  * The subscription tile on its square backing — the database everywhere the collection
- * itself shows, the home-storage mark where the card folds into its collapse button.
+ * itself shows, the home-storage mark where the card folds into its collapse button,
+ * and the panel's own `profile-logo` avatar where it sent one.
  */
 @Composable
-private fun DatabaseTile(iconRes: Int = R.drawable.ic_database) {
+private fun DatabaseTile(iconRes: Int = R.drawable.ic_database, logoPath: String? = null) {
     val colors = MaterialTheme.colorScheme
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -904,13 +915,73 @@ private fun DatabaseTile(iconRes: Int = R.drawable.ic_database) {
         modifier = Modifier.size(48.dp),
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-            )
+            val logo = logoPath?.let { rememberLogo(it) }
+            if (logo != null) {
+                Image(
+                    bitmap = logo,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
+                )
+            } else {
+                Icon(
+                    painter = painterResource(iconRes),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
     }
+}
+
+/**
+ * A cached subscription logo, decoded off the main thread: PNG natively, SVG through
+ * androidsvg. A file that fails to decode answers null — the tile falls back to its
+ * stock icon rather than a hole.
+ */
+@Composable
+private fun rememberLogo(path: String): ImageBitmap? =
+    produceState<ImageBitmap?>(initialValue = null, path) {
+        value = withContext(Dispatchers.IO) { decodeLogo(path) }
+    }.value
+
+private fun decodeLogo(path: String): ImageBitmap? = try {
+    val bytes = File(path).readBytes()
+    when {
+        bytes.size < 8 -> null
+        // PNG's own signature.
+        bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() &&
+            bytes[2] == 0x4E.toByte() && bytes[3] == 0x47.toByte() ->
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        // Everything angle-bracketed is SVG here; the refresh already vetted the body.
+        else -> decodeSvgLogo(bytes)
+    }
+} catch (_: Exception) {
+    null
+}
+
+private fun decodeSvgLogo(bytes: ByteArray): ImageBitmap? = try {
+    val svg = SVG.getFromInputStream(bytes.inputStream())
+    // A viewBox-only SVG carries no intrinsic size; give it one so the render has bounds.
+    if (svg.documentWidth <= 0f || svg.documentHeight <= 0f) {
+        svg.setDocumentWidth(256f)
+        svg.setDocumentHeight(256f)
+    }
+    val picture = svg.renderToPicture()
+    // A hostile SVG can declare absurd bounds; the tile is 48dp, anything past 512px
+    // is wasted memory. Scaled to fit, aspect kept.
+    val cap = 512
+    val scale = minOf(1f, cap / picture.width.toFloat(), cap / picture.height.toFloat())
+    val width = (picture.width * scale).roundToInt().coerceAtLeast(1)
+    val height = (picture.height * scale).roundToInt().coerceAtLeast(1)
+    val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+    android.graphics.Canvas(bitmap).apply {
+        scale(scale, scale)
+        drawPicture(picture)
+    }
+    bitmap.asImageBitmap()
+} catch (_: Exception) {
+    null
 }
 
 /**

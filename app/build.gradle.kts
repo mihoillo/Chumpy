@@ -177,6 +177,8 @@ dependencies {
 
     // The QR scanner's decoder (com.google.zxing:core is the pure-Java part, no camera).
     implementation(libs.zxing.core)
+    // The subscription logos' SVG renderer; PNG decodes natively.
+    implementation(libs.androidsvg)
     // The QR scanner's camera: CameraX feeds the frames, zxing (above) decodes them.
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)

@@ -43,6 +43,13 @@ data class SubscriptionEntity(
     val lastError: String? = null,
 
     /**
+     * The cached `profile-logo` avatar's file, under files/subscription-logos; null
+     * means the default tile. Refreshed with the rest of the metadata — a panel that
+     * drops or empties the header takes the logo with it.
+     */
+    val logoPath: String? = null,
+
+    /**
      * The pin the row menu drives: pinned subscriptions stand the dropdown's ground
      * floor, first whatever the panel's birthday order says. A state like the auto
      * update, not a trait like the URL — it rides the row through metadata refreshes,
