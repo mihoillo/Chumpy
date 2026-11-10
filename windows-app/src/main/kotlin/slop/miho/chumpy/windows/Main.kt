@@ -1,0 +1,114 @@
+package slop.miho.chumpy.windows
+
+import java.awt.BorderLayout
+import java.awt.Dimension
+import java.awt.FlowLayout
+import java.awt.Font
+import java.io.File
+import javax.swing.*
+import javax.swing.filechooser.FileNameExtensionFilter
+
+private enum class ConnectionMode(val label: String) {
+    SYSTEM_PROXY("Системный прокси"), TUN("TUN (виртуальный адаптер)")
+}
+fun main() = SwingUtilities.invokeLater {
+    runCatching { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()) }
+    ChumpyWindow().isVisible = true
+}
+private class ChumpyWindow : JFrame("Chumpy — Windows") {
+    private val home = File(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), "Chumpy")
+    private val profilesFile = File(home, "profiles.txt")
+    private val profiles = DefaultListModel<String>()
+    private val profileList = JList(profiles)
+    private val mode = JComboBox(ConnectionMode.entries.toTypedArray())
+    private val enginePath = JTextField(30)
+    private val configPath = JTextField(30)
+    private val status = JLabel("Отключено", SwingConstants.CENTER)
+    private val engine = ManagedEngine()
+    private val proxy = WindowsProxyController(home)
+
+    init {
+        defaultCloseOperation = EXIT_ON_CLOSE
+        minimumSize = Dimension(760, 540)
+        size = Dimension(900, 650)
+        setLocationRelativeTo(null)
+        home.mkdirs()
+        if (profilesFile.isFile) profilesFile.readLines().filter { it.isNotBlank() }.forEach(profiles::addElement)
+
+        val root = JPanel(BorderLayout(12, 12)).apply { border = BorderFactory.createEmptyBorder(18, 18, 18, 18) }
+        root.add(JLabel("CHUMPY", SwingConstants.LEFT).apply { font = Font("Segoe UI", Font.BOLD, 28) }, BorderLayout.NORTH)
+        val center = JPanel(BorderLayout(10, 10))
+        val profilePanel = JPanel(BorderLayout(6, 6)).apply {
+            border = BorderFactory.createTitledBorder("Профили и ссылки")
+            add(JScrollPane(profileList), BorderLayout.CENTER)
+            add(JPanel(FlowLayout(FlowLayout.LEFT)).apply {
+                add(JButton("Импортировать ссылки…").apply { addActionListener { importLinks() } })
+                add(JButton("Удалить").apply { addActionListener { profileList.selectedIndices.sortedDescending().forEach(profiles::remove); saveProfiles() } })
+            }, BorderLayout.SOUTH)
+        }
+        center.add(profilePanel, BorderLayout.CENTER)
+        center.add(JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            border = BorderFactory.createTitledBorder("Подключение")
+            add(JLabel("Режим")); add(mode)
+            add(JLabel("Движок: xray.exe для прокси или sing-box.exe для TUN"))
+            add(pathRow(enginePath, "exe"))
+            add(JLabel("JSON-конфигурация выбранного движка")); add(pathRow(configPath, "json"))
+            add(JLabel("TUN требует Wintun и запуск от имени администратора."))
+        }, BorderLayout.SOUTH)
+        root.add(center, BorderLayout.CENTER)
+        root.add(JPanel(BorderLayout(8, 8)).apply {
+            status.font = Font("Segoe UI", Font.PLAIN, 15)
+            add(status, BorderLayout.NORTH)
+            add(JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
+                add(JButton("Отключить").apply { addActionListener { disconnect() } })
+                add(JButton("Подключить").apply { addActionListener { connect() } })
+            }, BorderLayout.SOUTH)
+        }, BorderLayout.SOUTH)
+        contentPane = root
+    }
+
+    private fun pathRow(field: JTextField, ext: String) = JPanel(BorderLayout(6, 0)).apply {
+        add(field, BorderLayout.CENTER)
+        add(JButton("Выбрать…").apply {
+            addActionListener {
+                val chooser = JFileChooser()
+                chooser.fileFilter = FileNameExtensionFilter("$ext files", ext)
+                if (chooser.showOpenDialog(this@ChumpyWindow) == JFileChooser.APPROVE_OPTION) field.text = chooser.selectedFile.absolutePath
+            }
+        }, BorderLayout.EAST)
+    }
+    private fun importLinks() {
+        val chooser = JFileChooser().apply { isMultiSelectionEnabled = true; fileFilter = FileNameExtensionFilter("Текстовые файлы", "txt", "conf") }
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return
+        chooser.selectedFiles.forEach { file ->
+            file.readLines().map(String::trim).filter { it.contains("://") }.forEach { line ->
+                if ((0 until profiles.size()).none { profiles.getElementAt(it) == line }) profiles.addElement(line)
+            }
+        }
+        saveProfiles()
+        status.text = "Сохранено ссылок: ${profiles.size()}"
+    }
+    private fun saveProfiles() { profilesFile.writeText((0 until profiles.size()).joinToString("\n") { profiles.getElementAt(it) }) }
+    private fun connect() {
+        val selected = mode.selectedItem as ConnectionMode
+        val exe = File(enginePath.text.trim()); val config = File(configPath.text.trim())
+        if (!exe.isFile || !config.isFile) {
+            JOptionPane.showMessageDialog(this, "Укажите существующие файлы движка и JSON-конфигурации.")
+            return
+        }
+        try {
+            engine.start(exe, config, selected == ConnectionMode.TUN)
+            if (selected == ConnectionMode.SYSTEM_PROXY) proxy.enable("127.0.0.1:10808")
+            status.text = "Запущено: ${selected.label}"
+        } catch (e: Exception) {
+            runCatching { engine.stop() }; runCatching { proxy.restore() }
+            JOptionPane.showMessageDialog(this, e.message ?: e.javaClass.simpleName, "Chumpy", JOptionPane.ERROR_MESSAGE)
+            status.text = "Ошибка запуска"
+        }
+    }
+    private fun disconnect() {
+        runCatching { proxy.restore() }; runCatching { engine.stop() }
+        status.text = "Отключено"
+    }
+}
