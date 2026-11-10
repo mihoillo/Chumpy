@@ -43,6 +43,7 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
             add(JScrollPane(profileList), BorderLayout.CENTER)
             add(JPanel(FlowLayout(FlowLayout.LEFT)).apply {
                 add(JButton("Импортировать ссылки…").apply { addActionListener { importLinks() } })
+                add(JButton("Создать Xray-конфиг").apply { addActionListener { generateConfig() } })
                 add(JButton("Удалить").apply { addActionListener { profileList.selectedIndices.sortedDescending().forEach(profiles::remove); saveProfiles() } })
             }, BorderLayout.SOUTH)
         }
@@ -90,6 +91,19 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
         status.text = "Импортировано поддерживаемых ссылок: ${profiles.size()}"
     }
     private fun saveProfiles() { profilesFile.writeText((0 until profiles.size()).joinToString("\n") { profiles.getElementAt(it) }) }
+    private fun generateConfig() {
+        val raw = profileList.selectedValue
+        if (raw.isNullOrBlank()) { JOptionPane.showMessageDialog(this, "Сначала выберите импортированную ссылку."); return }
+        try {
+            val profile = LinkParsers.parse(raw) ?: error("Ссылка больше не распознаётся.")
+            val generated = WindowsXrayConfigBuilder.write(profile, home)
+            configPath.text = generated.absolutePath
+            mode.selectedItem = ConnectionMode.SYSTEM_PROXY
+            status.text = "Xray-конфигурация создана для " + profile.type.name
+        } catch (e: Exception) {
+            JOptionPane.showMessageDialog(this, e.message ?: e.javaClass.simpleName, "Импорт профиля", JOptionPane.ERROR_MESSAGE)
+        }
+    }
     private fun connect() {
         val selected = mode.selectedItem as ConnectionMode
         val exe = File(enginePath.text.trim()); val config = File(configPath.text.trim())
