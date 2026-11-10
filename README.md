@@ -1,11 +1,14 @@
 <img src="icon.svg" width="96" alt="Chumpy" />
 
-# Chumpy
+# Chumpy-winpy-larpy 
 
-Yet another Xray client for VLESS and friends — dressed in Material Design 3 Expressive.
+Пошел нахуй 
+
+> [!WARNING] # ABSOLUTELY BUGGED PROJECT! 
 
 > **Alpha.** Still under development. If it crashes on you — and it might —
-> please report it in the [Issues tab](https://github.com/ChumpyXray/Chumpy/issues).
+> 
+
 
 ## Requirements
 
@@ -22,7 +25,7 @@ Signing reads `keystore.properties` at the repo root (not committed);
 without it the build falls back to the debug key.
 
 ## Thanks to
-
+> [Big bomba dev of this cool project](https://github.com/ChumpyXray/Chumpy/issues).
 - [Xray-core](https://github.com/XTLS/Xray-core) +
   [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite) — the engine
 - [v2rayNG](https://github.com/2dust/v2rayNG) — share-link parsers ported
