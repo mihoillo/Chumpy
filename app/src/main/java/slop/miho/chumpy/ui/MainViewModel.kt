@@ -424,7 +424,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val configurationMutex = Mutex()
     private var sweepJob: Job? = null
     @Volatile private var sweepGeneration = 0L
-    private val pingSemaphore = Semaphore(PING_CONCURRENCY)
+    private val pingSemaphore = Semaphore(MAX_PING_CONCURRENCY)
 
 
     init {
@@ -1007,7 +1007,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     try {
                         val next = java.util.concurrent.atomic.AtomicInteger()
-                        List(minOf(PING_CONCURRENCY, profiles.size)) {
+                        List(pingWorkerCount(profiles.size)) {
                             launch {
                                 while (currentCoroutineContext().isActive) {
                                     val profile = profiles.getOrNull(next.getAndIncrement()) ?: break
@@ -1312,8 +1312,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
 
     private companion object {
-        /** How many one-off measurement cores may run at once in ":core". */
-        const val PING_CONCURRENCY = 3
+        const val MAX_PING_CONCURRENCY = 10
+        const val PING_SERVERS_PER_WORKER = 10
+
+        fun pingWorkerCount(profileCount: Int): Int {
+            if (profileCount == 0) return 0
+            val workers = (profileCount - 1) / PING_SERVERS_PER_WORKER + 1
+            return minOf(workers, MAX_PING_CONCURRENCY)
+        }
 
         /** The graph window: history older than this falls off the left edge. */
         const val STATS_WINDOW_MILLIS = 15 * 60_000L
