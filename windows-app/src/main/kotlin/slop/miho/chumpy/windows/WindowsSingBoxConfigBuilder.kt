@@ -140,7 +140,13 @@ internal object WindowsSingBoxConfigBuilder {
                 put("type", "httpupgrade"); put("path", profile.path)
                 if (profile.host.isNotBlank()) put("host", profile.host)
             })
-            "tcp", "raw", "" -> Unit
+            "tcp", "raw", "" -> if (profile.headerType == "http") put("transport", buildJsonObject {
+                put("type", "http")
+                if (profile.host.isNotBlank()) put("host", buildJsonArray {
+                    profile.host.split(',').map(String::trim).filter(String::isNotBlank).forEach { add(JsonPrimitive(it)) }
+                })
+                put("path", buildJsonArray { add(JsonPrimitive(profile.path.ifBlank { "/" })) })
+            })
             else -> error("Неизвестный транспорт: ${profile.network}")
         }
     }
