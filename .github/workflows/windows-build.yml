@@ -17,3 +17,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build Windows app
         run: .\\gradlew.bat -p windows-app installDist
+      - name: Upload Windows distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chumpy-Windows
+          path: windows-app/build/install/Chumpy-Windows/
+          if-no-files-found: error
