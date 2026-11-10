@@ -5,7 +5,7 @@
 Пошел нахуй 
 
 > [!WARNING]
-> # ABSOLUTELY BUGGED PROJECT! 
+> ## ABSOLUTELY BUGGED PROJECT! 
 
 > **Alpha.** Still under development. If it crashes on you — and it might —
 > 
