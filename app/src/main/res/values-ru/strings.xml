@@ -25,10 +25,10 @@
 
     <!-- Серверы -->
     <string name="servers_total">Серверов: %1$d</string>
-    <string name="servers_sort_default">По конфигу</string>
-    <string name="servers_sort_name">По имени</string>
-    <string name="servers_sort_ping">По пингу</string>
-    <string name="servers_sort_last_used">По использованию</string>
+    <string name="servers_sort_default">по Конфигу</string>
+    <string name="servers_sort_name">по Имени</string>
+    <string name="servers_sort_ping">по Пингу</string>
+    <string name="servers_sort_last_used">по Использованию</string>
     <plurals name="servers_balancer_members">
         <item quantity="one">%1$d сервер</item>
         <item quantity="few">%1$d сервера</item>
