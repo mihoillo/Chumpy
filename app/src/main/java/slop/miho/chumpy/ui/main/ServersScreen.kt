@@ -387,13 +387,16 @@ fun ServersScreen(
                         // the dpad may not stop on what the fold has taken off the table. The
                         // entry wall makes it law at the grant itself — a move aimed under
                         // the dim dies at its edge.
-                        Box(Modifier.graphicsLayer { alpha = headerAlpha }
+                        Box(Modifier
                             .focusProperties {
                                 val out = menuHost != null || dropdownOpen
                                 canFocus = !out
                                 onEnter = { if (out) cancelFocusChange() }
                             }) {
+                            // The half-light itself is laid per chip inside: the sort chip
+                            // keeps its full paint while its own menu stands.
                             ServersHeader(state = state, expired = selectedSubscription?.let { isExpired(it) } == true,
+                                alpha = headerAlpha,
                                 sortMenuOpen = menuHost == SORT_MENU_HOST,
                                 onSortMenuOpenChange = { openMenu(if (it) SORT_MENU_HOST else null) },
                                 onSort = onSortServers,
@@ -444,7 +447,13 @@ fun ServersScreen(
                 // the dpad may not stop on what it has taken off the table. The entry
                 // wall makes it law at the grant itself — a move aimed under the dim
                 // dies at its edge, wherever in the list it was headed.
-                Box(Modifier.graphicsLayer { alpha = foldAlpha }
+                // A row that trades its place walks there on the fold's own spring —
+                // the offset rides a graphics layer, so a whole re-sort moving at once
+                // costs layers, never layout passes. The placement alone animates:
+                // rows are never born mid-list, they arrive with a fresh key and land
+                // where the list puts them, no fade to soften what would be a crowd.
+                Box(Modifier.animateItem(placementSpec = motion.defaultSpatialSpec())
+                    .graphicsLayer { alpha = foldAlpha }
                     .focusProperties {
                         val out = menuHost != null || dropdownOpen
                         canFocus = !out
@@ -484,15 +493,21 @@ fun ServersScreen(
 }
 
 /**
- * The chip row above the server list: how many servers the subscription carries and how
- * many answered the last sweep — a real-ping answer, not a cache — and the list's own
- * order, the one chip that opens a menu instead of a mode.
+ * The chip row above the server list: how many servers the subscription really carries —
+ * the balancers' internals included, duplicates out — and the list's own order, the one
+ * chip that opens a menu instead of a mode.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ServersHeader(
     state: ServersUiState,
     expired: Boolean,
+    /**
+     * The half-light the fold and the menus lay over the header — laid per chip here,
+     * not over the whole row: the chip whose own menu stands keeps its full paint, the
+     * same law the row menus keep their host bright by.
+     */
+    alpha: Float,
     sortMenuOpen: Boolean,
     onSortMenuOpenChange: (Boolean) -> Unit,
     onSort: (ServersSort) -> Unit,
@@ -507,27 +522,47 @@ private fun ServersHeader(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (state.profiles.isNotEmpty()) {
-            // Balancers are picks over servers, not servers — the counts count servers.
-            val servers = state.profiles.filter { it.type != ProfileType.BALANCER }
-            InfoChip(
-                value = stringResource(R.string.servers_total, servers.size),
-                icon = R.drawable.ic_servers,
-                animateValue = true,
-                onClick = onPing,
-            )
-            val reachable = servers.count { (it.testDelayMillis ?: -1L) >= 0L }
-            if (reachable > 0) {
+            Box(Modifier.graphicsLayer { this.alpha = alpha }) {
                 InfoChip(
-                    value = stringResource(R.string.servers_online, reachable),
-                    icon = R.drawable.ic_plug,
+                    value = stringResource(R.string.servers_total, state.totalServers),
+                    icon = R.drawable.ic_servers,
                     animateValue = true,
+                    onClick = onPing,
                 )
             }
-            // The list's own order: the chip wears the standing mode's name, the tap
-            // trades it for the small menu of the four. Same stance as the row menus —
-            // the popup under the chip, the list dropped into its half-light while it
-            // stands.
-            Box {
+        }
+        // The subscription's own red badge among the counts: a panel whose calendar
+        // has already run out says so at a glance, whatever the list's own health.
+        if (expired) {
+            Box(Modifier.graphicsLayer { this.alpha = alpha }) {
+                InfoChip(
+                    value = stringResource(R.string.subscription_expired_chip),
+                    container = colors.errorContainer.withSurfaceOpacity(),
+                    content = colors.onErrorContainer,
+                )
+            }
+        }
+        // The hidden ones' own count, the reveal mode's door: a tap calls them back into
+        // their own block above the list, another puts them away again. The chip stays
+        // gone while nothing is hidden — a list that never hides keeps its row quiet.
+        // The eye alone carries the meaning; the number alone carries the count.
+        if (state.concealed.isNotEmpty()) {
+            Box(Modifier.graphicsLayer { this.alpha = alpha }) {
+                InfoChip(
+                    value = state.concealed.size.toString(),
+                    icon = R.drawable.ic_visibility_off,
+                    animateValue = true,
+                    onClick = onToggleReveal,
+                )
+            }
+        }
+        // The list's own order, last in the row: the chip wears the standing mode's
+        // name, the tap trades it for the small menu of the four. Same stance as the
+        // row menus — the popup under the chip, the rest of the list dropped into its
+        // half-light while it stands. The chip itself keeps its full paint under its
+        // own menu, the way a row keeps its host bright.
+        if (state.profiles.isNotEmpty()) {
+            Box(Modifier.graphicsLayer { this.alpha = if (sortMenuOpen) 1f else alpha }) {
                 InfoChip(
                     value = stringResource(state.sort.labelRes),
                     icon = R.drawable.ic_sort,
@@ -558,27 +593,6 @@ private fun ServersHeader(
                     }
                 }
             }
-        }
-        // The subscription's own red badge among the counts: a panel whose calendar
-        // has already run out says so at a glance, whatever the list's own health.
-        if (expired) {
-            InfoChip(
-                value = stringResource(R.string.subscription_expired_chip),
-                container = colors.errorContainer.withSurfaceOpacity(),
-                content = colors.onErrorContainer,
-            )
-        }
-        // The hidden ones' own count, the reveal mode's door: a tap calls them back into
-        // their own block above the list, another puts them away again. The chip stays
-        // gone while nothing is hidden — a list that never hides keeps its row quiet.
-        // The eye alone carries the meaning; the number alone carries the count.
-        if (state.concealed.isNotEmpty()) {
-            InfoChip(
-                value = state.concealed.size.toString(),
-                icon = R.drawable.ic_visibility_off,
-                animateValue = true,
-                onClick = onToggleReveal,
-            )
         }
     }
 }

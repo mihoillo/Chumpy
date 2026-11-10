@@ -116,6 +116,12 @@ data class ServersUiState(
     val selectedProfileId: String? = null,
     /** The list's own order, the header's chip picks it. */
     val sort: ServersSort = ServersSort.DEFAULT,
+    /**
+     * The subscription's whole head of servers — the balancers' internals included,
+     * duplicates out: the same server standing on its own and inside a balancer
+     * counts once, by its link key.
+     */
+    val totalServers: Int = 0,
     /** Whether a real-ping sweep over the list is running (the pull-to-refresh action). */
     val isPinging: Boolean = false,
     /** Whether the subscription is being fetched right now (the update button). */
@@ -579,10 +585,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         (requested == STANDALONE_SUBSCRIPTION_ID || subscriptions.value.any { it.id == requested })) {
                         return@collect
                     }
-                    val (visible, concealed) = withContext(Dispatchers.Default) {
+                    val (visible, concealed, totalServers) = withContext(Dispatchers.Default) {
                         val sort = conn.serversSort.comparator()
-                        rows.filterNot { it.hidden || it.concealed }.sortedWith(sort) to
-                            rows.filter { it.concealed && !it.hidden }.sortedWith(sort)
+                        Triple(
+                            rows.filterNot { it.hidden || it.concealed }.sortedWith(sort),
+                            rows.filter { it.concealed && !it.hidden }.sortedWith(sort),
+                            rows.filter { it.type != ProfileType.BALANCER }.distinctBy { it.linkKey }.size,
+                        )
                     }
                     if (visible.none { it.id == conn.selectedProfileId } && visible.isNotEmpty()) {
                         ConnectionStore.update(app) { current ->
@@ -592,7 +601,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     _servers.update { state ->
                         state.copy(profiles = visible, concealed = concealed,
-                            sort = conn.serversSort,
+                            sort = conn.serversSort, totalServers = totalServers,
                             selectedProfileId = visible.firstOrNull { it.id == connection.value.selectedProfileId }?.id
                                 ?: visible.firstOrNull()?.id)
                     }
