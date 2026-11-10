@@ -4,7 +4,8 @@
 
 Пошел нахуй 
 
-> [!WARNING] # ABSOLUTELY BUGGED PROJECT! 
+> [!WARNING]
+> # ABSOLUTELY BUGGED PROJECT! 
 
 > **Alpha.** Still under development. If it crashes on you — and it might —
 > 
