@@ -246,6 +246,10 @@ class SubscriptionRepository(
     suspend fun setProfileDelay(id: String, delayMillis: Long?, testedAt: Long) =
         withContext(Dispatchers.IO) { profiles.setDelay(id, delayMillis, testedAt) }
 
+    /** Marks a row as just used — the pick that made it the connect's profile. */
+    suspend fun setProfileLastUsed(id: String, usedAt: Long) =
+        withContext(Dispatchers.IO) { profiles.setLastUsed(id, usedAt) }
+
     /** Pins or unpins a row — a targeted update, the row's identity untouched. */
     suspend fun setProfilePinned(id: String, pinned: Boolean) =
         withContext(Dispatchers.IO) { profiles.setPinned(id, pinned) }
@@ -279,6 +283,9 @@ class SubscriptionRepository(
                 linkKey = key,
                 testDelayMillis = old?.testDelayMillis,
                 lastTestAt = old?.lastTestAt,
+                // The last use rides the identity like the ping does: the chip's
+                // "last used" order keeps its memory through whatever ships next.
+                lastUsedAt = old?.lastUsedAt,
                 // The pin rides the identity like the ping does: a server the user
                 // pinned stays pinned through whatever the panel ships next.
                 pinned = old?.pinned ?: false,

@@ -36,6 +36,7 @@ object Graph {
             ChumpyDatabase.MIGRATION_6_7,
             ChumpyDatabase.MIGRATION_7_8,
             ChumpyDatabase.MIGRATION_8_9,
+            ChumpyDatabase.MIGRATION_9_10,
         ).build()
         subscriptions = SubscriptionRepository(
             context = context.applicationContext,

@@ -73,6 +73,10 @@ abstract class ProfileDao {
     @Query("UPDATE profiles SET testDelayMillis = :delayMillis, lastTestAt = :testedAt WHERE id = :id")
     abstract suspend fun setDelay(id: String, delayMillis: Long?, testedAt: Long)
 
+    /** The row's last use — a targeted update, the row's identity untouched. */
+    @Query("UPDATE profiles SET lastUsedAt = :usedAt WHERE id = :id")
+    abstract suspend fun setLastUsed(id: String, usedAt: Long)
+
     /** The pin's own switch — a targeted update, the row's identity untouched. */
     @Query("UPDATE profiles SET pinned = :pinned WHERE id = :id")
     abstract suspend fun setPinned(id: String, pinned: Boolean)
@@ -96,7 +100,7 @@ abstract class ProfileDao {
  */
 @Database(
     entities = [SubscriptionEntity::class, ProfileEntity::class],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class ChumpyDatabase : RoomDatabase() {
@@ -210,6 +214,16 @@ abstract class ChumpyDatabase : RoomDatabase() {
         val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE profiles ADD COLUMN geodataSources TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * v10: the servers list's own ordering grew a "last used" mode — the row's
+         * last pick as the connect's profile.
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE profiles ADD COLUMN lastUsedAt INTEGER")
             }
         }
 

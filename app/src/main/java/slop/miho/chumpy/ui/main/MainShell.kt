@@ -93,6 +93,7 @@ import slop.miho.chumpy.ui.ServersUiState
 import slop.miho.chumpy.ui.StatsUiState
 import slop.miho.chumpy.ui.UpdateUiState
 import slop.miho.chumpy.data.UiSettings
+import slop.miho.chumpy.data.ServersSort
 import slop.miho.chumpy.ui.components.InputMode
 import slop.miho.chumpy.ui.components.controllerFocusBoundary
 import slop.miho.chumpy.ui.components.LocalInputMode
@@ -466,6 +467,7 @@ fun MainShell(viewModel: MainViewModel) {
                     onToggleConcealed = viewModel::toggleProfileConcealed,
                     onToggleAutoUpdate = viewModel::setSubscriptionAutoUpdate,
                     onSelect = viewModel::selectProfile,
+                    onSortServers = viewModel::setServersSort,
                     onConnect = connectWithConsent,
                     onDisconnect = viewModel::disconnect,
                 )
@@ -530,6 +532,7 @@ fun MainShell(viewModel: MainViewModel) {
                     onToggleConcealed = viewModel::toggleProfileConcealed,
                     onToggleAutoUpdate = viewModel::setSubscriptionAutoUpdate,
                     onSelect = viewModel::selectProfile,
+                    onSortServers = viewModel::setServersSort,
                     onConnect = connectWithConsent,
                     onDisconnect = viewModel::disconnect,
                 )
@@ -736,6 +739,7 @@ private fun ShellDestinationPage(
     onToggleConcealed: (String, Boolean) -> Unit,
     onToggleAutoUpdate: (String, Boolean) -> Unit,
     onSelect: (String) -> Unit,
+    onSortServers: (ServersSort) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
@@ -784,6 +788,7 @@ private fun ShellDestinationPage(
                     onToggleSubscriptionPinned = onToggleSubscriptionPinned,
                     onToggleConcealed = onToggleConcealed,
                     onSelect = onSelect,
+                    onSortServers = onSortServers,
                 )
             }
             MainTab.STATS -> {
@@ -873,6 +878,7 @@ private fun TwoPaneShell(
     onToggleConcealed: (String, Boolean) -> Unit,
     onToggleAutoUpdate: (String, Boolean) -> Unit,
     onSelect: (String) -> Unit,
+    onSortServers: (ServersSort) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
@@ -963,6 +969,7 @@ private fun TwoPaneShell(
                     onToggleConcealed = onToggleConcealed,
                     onToggleAutoUpdate = onToggleAutoUpdate,
                     onSelect = onSelect,
+                    onSortServers = onSortServers,
                     onConnect = onConnect,
                     onDisconnect = onDisconnect,
                     blankHome = true,
@@ -1043,6 +1050,7 @@ private fun MainPagerStrip(
     onToggleConcealed: (String, Boolean) -> Unit,
     onToggleAutoUpdate: (String, Boolean) -> Unit,
     onSelect: (String) -> Unit,
+    onSortServers: (ServersSort) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
@@ -1168,6 +1176,7 @@ private fun MainPagerStrip(
                     onToggleConcealed = onToggleConcealed,
                     onToggleAutoUpdate = onToggleAutoUpdate,
                     onSelect = onSelect,
+                    onSortServers = onSortServers,
                     onConnect = onConnect,
                     onDisconnect = onDisconnect,
                 )

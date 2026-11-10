@@ -21,6 +21,8 @@ data class ConnectionSettings(
     /** The profile a connect uses; restored across restarts. */
     val selectedProfileId: String? = null,
     val routingMode: RoutingMode = RoutingMode.GLOBAL,
+    /** The servers list's own order — the header's chip picks it, and it sticks. */
+    val serversSort: ServersSort = ServersSort.DEFAULT,
     /** The URL real delay measurements fetch through the tested outbound. */
     val delayTestUrl: String = XrayConfigBuilder.DEFAULT_TEST_URL,
     /** Packages the tunnel leaves alone — the per-app bypass list, v2rayNG's arrangement. */
@@ -78,6 +80,9 @@ object ConnectionStore {
             selectedProfileId = json.optString(KEY_PROFILE).takeIf { it.isNotEmpty() },
             routingMode = RoutingMode.entries.firstOrNull { it.name == json.optString(KEY_ROUTING) }
                 ?: RoutingMode.GLOBAL,
+            serversSort = json.optString(KEY_SERVERS_SORT)
+                .let { stored -> ServersSort.entries.firstOrNull { it.name == stored } }
+                ?: ServersSort.DEFAULT,
             delayTestUrl = json.optString(KEY_TEST_URL).ifBlank { XrayConfigBuilder.DEFAULT_TEST_URL },
             bypassedApps = json.optJSONArray(KEY_BYPASS_APPS)?.let { apps ->
                 (0 until apps.length()).map { apps.getString(it) }.toSet()
@@ -106,6 +111,7 @@ object ConnectionStore {
             .put(KEY_SUB, settings.selectedSubscriptionId.orEmpty())
             .put(KEY_PROFILE, settings.selectedProfileId.orEmpty())
             .put(KEY_ROUTING, settings.routingMode.name)
+            .put(KEY_SERVERS_SORT, settings.serversSort.name)
             .put(KEY_TEST_URL, settings.delayTestUrl)
             .put(KEY_BYPASS_APPS, JSONArray(settings.bypassedApps.sorted()))
             .put(KEY_PER_APP, settings.perAppEnabled)
@@ -127,6 +133,9 @@ object ConnectionStore {
                         ?: if (stored == "RU_BYPASS") RoutingMode.BYPASS_RU else null
                 }
                 ?: RoutingMode.GLOBAL,
+            serversSort = prefs.getString(KEY_SERVERS_SORT, null)
+                ?.let { stored -> ServersSort.entries.firstOrNull { it.name == stored } }
+                ?: ServersSort.DEFAULT,
             delayTestUrl = prefs.getString(KEY_TEST_URL, null)?.takeIf { it.isNotBlank() }
                 ?: XrayConfigBuilder.DEFAULT_TEST_URL,
             bypassedApps = prefs.getStringSet(KEY_BYPASS_APPS, null)?.toSet() ?: emptySet(),
@@ -151,6 +160,7 @@ object ConnectionStore {
                 }
             }
             .putString(KEY_ROUTING, settings.routingMode.name)
+            .putString(KEY_SERVERS_SORT, settings.serversSort.name)
             .putString(KEY_TEST_URL, settings.delayTestUrl)
             .putBoolean(KEY_PER_APP, settings.perAppEnabled)
             .putBoolean(KEY_AUTO_RECONNECT, settings.autoReconnect)
@@ -161,6 +171,7 @@ object ConnectionStore {
     private const val KEY_SUB = "selected_subscription"
     private const val KEY_PROFILE = "selected_profile"
     private const val KEY_ROUTING = "routing_mode"
+    private const val KEY_SERVERS_SORT = "servers_sort"
     private const val KEY_TEST_URL = "delay_test_url"
     private const val KEY_BYPASS_APPS = "bypassed_apps"
     private const val KEY_PER_APP = "per_app_enabled"

@@ -121,6 +121,8 @@ import androidx.compose.ui.focus.focusRequester
 import slop.miho.chumpy.R
 import slop.miho.chumpy.data.DailyTraffic
 import slop.miho.chumpy.data.FlagStyle
+import slop.miho.chumpy.data.ServersSort
+import slop.miho.chumpy.data.comparator
 import slop.miho.chumpy.db.ProfileEntity
 import slop.miho.chumpy.db.ProfileType
 import slop.miho.chumpy.db.STANDALONE_SUBSCRIPTION_ID
@@ -181,6 +183,7 @@ fun ServersScreen(
     onToggleSubscriptionPinned: (String, Boolean) -> Unit,
     onToggleConcealed: (String, Boolean) -> Unit,
     onSelect: (String) -> Unit,
+    onSortServers: (ServersSort) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The subscription dropdown's open state; survives page switches so a dialog opened
@@ -311,9 +314,9 @@ fun ServersScreen(
             .calculateTopPadding() + 24.dp
         val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues()
             .calculateBottomPadding() + LocalBarReservedHeight.current
-        val rows = remember(state.profiles, state.concealed, revealConcealed) {
+        val rows = remember(state.profiles, state.concealed, revealConcealed, state.sort) {
             if (revealConcealed) (state.profiles + state.concealed).sortedWith(
-                compareBy({ !it.pinned }, { it.order }, { it.remarks }),
+                state.sort.comparator(),
             ) else state.profiles
         }
         val foldAlpha = lerp(1f, 0.45f, foldShown())
@@ -391,6 +394,9 @@ fun ServersScreen(
                                 onEnter = { if (out) cancelFocusChange() }
                             }) {
                             ServersHeader(state = state, expired = selectedSubscription?.let { isExpired(it) } == true,
+                                sortMenuOpen = menuHost == SORT_MENU_HOST,
+                                onSortMenuOpenChange = { openMenu(if (it) SORT_MENU_HOST else null) },
+                                onSort = onSortServers,
                                 onToggleReveal = { revealConcealed = !revealConcealed }, onPing = onPing)
                         }
                         if (dropdownOpen) {
@@ -479,17 +485,22 @@ fun ServersScreen(
 
 /**
  * The chip row above the server list: how many servers the subscription carries and how
- * many answered the last sweep — a real-ping answer, not a cache.
+ * many answered the last sweep — a real-ping answer, not a cache — and the list's own
+ * order, the one chip that opens a menu instead of a mode.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ServersHeader(
     state: ServersUiState,
     expired: Boolean,
+    sortMenuOpen: Boolean,
+    onSortMenuOpenChange: (Boolean) -> Unit,
+    onSort: (ServersSort) -> Unit,
     onToggleReveal: () -> Unit,
     onPing: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val poke = rememberHapticPoke()
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
@@ -511,6 +522,41 @@ private fun ServersHeader(
                     icon = R.drawable.ic_plug,
                     animateValue = true,
                 )
+            }
+            // The list's own order: the chip wears the standing mode's name, the tap
+            // trades it for the small menu of the four. Same stance as the row menus —
+            // the popup under the chip, the list dropped into its half-light while it
+            // stands.
+            Box {
+                InfoChip(
+                    value = stringResource(state.sort.labelRes),
+                    icon = R.drawable.ic_sort,
+                    onClick = {
+                        poke()
+                        onSortMenuOpenChange(true)
+                    },
+                )
+                CardMenu(expanded = sortMenuOpen, onDismissRequest = { onSortMenuOpenChange(false) }) {
+                    ServersSort.entries.forEach { mode ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(mode.labelRes)) },
+                            onClick = {
+                                onSortMenuOpenChange(false)
+                                poke()
+                                if (mode != state.sort) onSort(mode)
+                            },
+                            // The standing mode's own mark — the other rows keep the
+                            // slot as air so the names stay in one column.
+                            leadingIcon = {
+                                Icon(
+                                    painterResource(R.drawable.ic_check),
+                                    contentDescription = null,
+                                    tint = if (mode == state.sort) colors.primary else Color.Transparent,
+                                )
+                            },
+                        )
+                    }
+                }
             }
         }
         // The subscription's own red badge among the counts: a panel whose calendar
@@ -2553,6 +2599,13 @@ private fun CardActionsMenu(
 
 /** From this ping on (ms) a server counts as slow, and its ping is painted in the accent. */
 private const val HIGH_PING_MILLIS = 150
+
+/**
+ * The sort menu's [menuHost] claim: no row ever owns it, so the id never collides with a
+ * profile's or a subscription's, and the standing menu dims every card the same way a row's
+ * own menu does.
+ */
+private const val SORT_MENU_HOST = "sort"
 
 // ---------------------------------------------------------------- pride easter egg
 

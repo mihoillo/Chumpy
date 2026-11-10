@@ -135,6 +135,12 @@ data class ProfileEntity(
     /** The last real ping through the core, in millis; null when never measured. */
     val testDelayMillis: Long? = null,
     val lastTestAt: Long? = null,
+    /**
+     * When the row was last picked as the profile a connect uses; null when never.
+     * A state like the ping, not a trait like the port — it rides the row's identity
+     * through subscription updates, and never enters the link key.
+     */
+    val lastUsedAt: Long? = null,
 
     /**
      * The pin the row menu drives: pinned rows stand the list's ground floor, first

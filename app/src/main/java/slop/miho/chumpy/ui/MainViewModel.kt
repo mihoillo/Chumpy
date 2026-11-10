@@ -53,7 +53,9 @@ import slop.miho.chumpy.data.DailyTraffic
 import slop.miho.chumpy.data.DailyTrafficStore
 import slop.miho.chumpy.ui.components.splitLeadingFlag
 import slop.miho.chumpy.data.SettingsStore
+import slop.miho.chumpy.data.ServersSort
 import slop.miho.chumpy.data.UiSettings
+import slop.miho.chumpy.data.comparator
 import slop.miho.chumpy.sub.UpdateCheck
 import slop.miho.chumpy.sub.UpdatePrefs
 import slop.miho.chumpy.sub.UpdateRelease
@@ -112,6 +114,8 @@ data class ServersUiState(
      *  counts them and the reveal mode shows them. */
     val concealed: List<ProfileEntity> = emptyList(),
     val selectedProfileId: String? = null,
+    /** The list's own order, the header's chip picks it. */
+    val sort: ServersSort = ServersSort.DEFAULT,
     /** Whether a real-ping sweep over the list is running (the pull-to-refresh action). */
     val isPinging: Boolean = false,
     /** Whether the subscription is being fetched right now (the update button). */
@@ -576,8 +580,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         return@collect
                     }
                     val (visible, concealed) = withContext(Dispatchers.Default) {
-                        rows.filterNot { it.hidden || it.concealed }.sortedBy { !it.pinned } to
-                            rows.filter { it.concealed && !it.hidden }.sortedBy { !it.pinned }
+                        val sort = conn.serversSort.comparator()
+                        rows.filterNot { it.hidden || it.concealed }.sortedWith(sort) to
+                            rows.filter { it.concealed && !it.hidden }.sortedWith(sort)
                     }
                     if (visible.none { it.id == conn.selectedProfileId } && visible.isNotEmpty()) {
                         ConnectionStore.update(app) { current ->
@@ -587,6 +592,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     _servers.update { state ->
                         state.copy(profiles = visible, concealed = concealed,
+                            sort = conn.serversSort,
                             selectedProfileId = visible.firstOrNull { it.id == connection.value.selectedProfileId }?.id
                                 ?: visible.firstOrNull()?.id)
                     }
@@ -794,9 +800,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun selectProfile(id: String) {
         if (_servers.value.selectedProfileId == id) return
         ConnectionStore.update(app) { it.copy(selectedProfileId = id) }
+        // The pick is a use: the "last used" order remembers which hand the user played.
+        viewModelScope.launch { repository.setProfileLastUsed(id, System.currentTimeMillis()) }
         if (tunnelStatus.value.state in setOf(TunnelState.UP, TunnelState.CONNECTING)) {
             applyConfigAndConnect(_servers.value.profiles.firstOrNull { it.id == id })
         }
+    }
+
+    /**
+     * Picks the servers list's own order — the header's chip. The choice outlives the
+     * app: it rides the connection settings, and the list re-sorts itself off the same
+     * flow that carries them.
+     */
+    fun setServersSort(sort: ServersSort) {
+        ConnectionStore.update(app) { it.copy(serversSort = sort) }
     }
 
     // ------------------------------------------------------------ subscriptions actions
