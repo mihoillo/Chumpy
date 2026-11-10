@@ -1178,6 +1178,10 @@ private fun SubscriptionDropdown(
         groups.forEachIndexed { index, subscription ->
             val first = index == 0
             val last = index == groups.lastIndex
+            // Same law as the server rows: the menu's machinery is born only in the
+            // row that first holds it open, kept after for the exit walk.
+            var hosted by remember(subscription.id) { mutableStateOf(false) }
+            if (menuHost == subscription.id) hosted = true
             SubscriptionRow(
                 subscription = subscription,
                 selected = subscription.id == selectedId,
@@ -1192,12 +1196,19 @@ private fun SubscriptionDropdown(
                 // the delete that asks the heavier question. The loose configs' row
                 // owns no subscription, so it owns no menu either: its members answer
                 // their own long press in the server list below.
-                menu = if (subscription.id == STANDALONE_SUBSCRIPTION_ID) {
+                onMenuOpen = if (subscription.id == STANDALONE_SUBSCRIPTION_ID) {
+                    null
+                } else {
+                    { onMenuHostChange(subscription.id) }
+                },
+                menu = if (subscription.id == STANDALONE_SUBSCRIPTION_ID || !hosted) {
                     null
                 } else {
                     RowMenu(
                         open = menuHost == subscription.id,
-                        onOpenChange = { open -> onMenuHostChange(subscription.id.takeIf { open }) },
+                        onOpenChange = { open ->
+                            onMenuHostChange(subscription.id.takeIf { open })
+                        },
                         askingDelete = menuAskingDelete,
                         onAskingDeleteChange = onMenuAskingChange,
                         deleteQuestion = stringResource(R.string.subscription_delete_title),
@@ -1523,6 +1534,10 @@ private fun SubscriptionRow(
     week: List<DailyTraffic>,
     icon: Int,
     onClick: () -> Unit,
+    // The long press's door into the row's menu — null for the loose configs' row,
+    // which owns no menu. The menu's plumbing itself is born on first use (see
+    // SubscriptionDropdown), so the press can't ride on it.
+    onMenuOpen: (() -> Unit)?,
     menu: RowMenu?,
     dimmed: Boolean,
     shape: Shape,
@@ -1530,46 +1545,36 @@ private fun SubscriptionRow(
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val poke = rememberHapticPoke()
-    val containerColor by animateColorAsState(
-        targetValue = (if (selected) colors.primaryContainer else colors.surfaceContainer)
-            .copy(alpha = LocalSurfaceOpacity.current),
+    // The row's whole paint walks one progress — selection's own (see ServerRow).
+    val selection by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
         animationSpec = motion.defaultEffectsSpec(),
-        label = "subscription row container",
-    )
-    val contentColor by animateColorAsState(
-        targetValue = if (selected) colors.onPrimaryContainer else colors.onSurface,
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "subscription row content",
-    )
-    val supportingColor by animateColorAsState(
-        targetValue = if (selected) colors.onPrimaryContainer.copy(alpha = 0.78f) else colors.onSurfaceVariant,
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "subscription row supporting",
-    )
-    val iconContainerColor by animateColorAsState(
-        targetValue = if (selected) colors.primary else colors.secondaryContainer,
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "subscription row icon container",
-    )
-    val iconColor by animateColorAsState(
-        targetValue = if (selected) colors.onPrimary else colors.onSecondaryContainer,
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "subscription row icon",
+        label = "subscription row selection",
     )
     // Another row's open menu lays its half-light over this one — the chooser's own
     // 0.45, worn one row at a time while the menu stands.
-    val dimmedAlpha by animateFloatAsState(
+    val dim by animateFloatAsState(
         targetValue = if (dimmed) 0.45f else 1f,
         animationSpec = motion.defaultEffectsSpec(),
         label = "subscription row dim",
     )
+    val containerColor = lerp(colors.surfaceContainer, colors.primaryContainer, selection)
+        .copy(alpha = LocalSurfaceOpacity.current)
+    val contentColor = lerp(colors.onSurface, colors.onPrimaryContainer, selection)
+    val supportingColor = lerp(
+        colors.onSurfaceVariant,
+        colors.onPrimaryContainer.copy(alpha = 0.78f),
+        selection,
+    )
+    val iconContainerColor = lerp(colors.secondaryContainer, colors.primary, selection)
+    val iconColor = lerp(colors.onSecondaryContainer, colors.onPrimary, selection)
     Surface(
         shape = shape,
         color = containerColor,
         contentColor = contentColor,
         modifier = Modifier
             .fillMaxWidth()
-            .graphicsLayer { alpha = dimmedAlpha },
+            .graphicsLayer { alpha = dim },
     ) {
         ListItem(
             modifier = Modifier
@@ -1581,7 +1586,7 @@ private fun SubscriptionRow(
                 .clip(shape)
                 .focusRing(inset = true, gap = 1.dp)
                 .restoreControllerFocus(menu?.open == true)
-                .controllerContextMenu(menu?.let { rowMenu -> { rowMenu.onOpenChange(true) } })
+                .controllerContextMenu(onMenuOpen)
                 .combinedClickable(
                     role = Role.Button,
                     onClick = {
@@ -1590,10 +1595,10 @@ private fun SubscriptionRow(
                     },
                     // The long press opens the row's own menu — the pin, the URL, the
                     // delete — for the rows that have one.
-                    onLongClick = menu?.let { rowMenu ->
+                    onLongClick = onMenuOpen?.let { open ->
                         {
                             poke()
-                            rowMenu.onOpenChange(true)
+                            open()
                         }
                     },
                 ),
@@ -1993,6 +1998,12 @@ private fun ServerGroupRow(
         bottomStart = if (index == total - 1) outer.bottomStart else inner.bottomStart,
         bottomEnd = if (index == total - 1) outer.bottomEnd else inner.bottomEnd,
     )
+    // The menu's plumbing lives only in the row that holds it: born the first time
+    // this row opens its menu, kept after for the exit walk (the popup stands
+    // through its own fade), and gone with the row when the list recycles it. A
+    // list of a dozen rows carries one menu's machinery, not a dozen.
+    var hosted by remember(profile.id) { mutableStateOf(false) }
+    if (menuHost == profile.id) hosted = true
     ServerRow(
         profile = profile,
         selected = profile.id == selectedId,
@@ -2006,12 +2017,15 @@ private fun ServerGroupRow(
         } else {
             { onSelect(profile.id) }
         },
+        // The long press's own door — always open, unlike the menu it opens: the
+        // plumbing above is born on first use, so the press can't ride on it.
+        onMenuOpen = { onMenuHostChange(profile.id) },
         // Every config row carries the menu, but not every one the same
         // menu: the loose configs own themselves — the pin, the hide and
         // the delete are theirs, the copy of the link they were born from
         // too — while a subscription's configs answer to the subscription,
         // and their menu is the pin and the hide alone.
-        menu = RowMenu(
+        menu = if (hosted) RowMenu(
             open = menuHost == profile.id,
             onOpenChange = { open -> onMenuHostChange(profile.id.takeIf { open }) },
             askingDelete = menuAskingDelete,
@@ -2030,7 +2044,7 @@ private fun ServerGroupRow(
             canHide = true,
             concealed = profile.concealed,
             onToggleConcealed = { onToggleConcealed(profile.id, it) },
-        ),
+        ) else null,
         dimmed = menuHost != null && menuHost != profile.id,
         shape = shape,
     )
@@ -2079,6 +2093,9 @@ private fun ServerRow(
     flagStyle: FlagStyle,
     tunnelUp: Boolean,
     onSelect: () -> Unit,
+    // The long press's own door — always open, unlike the menu it opens: the menu's
+    // plumbing is born on first use (see ServerGroupRow), so the press can't ride on it.
+    onMenuOpen: () -> Unit,
     menu: RowMenu?,
     dimmed: Boolean,
     shape: Shape,
@@ -2102,67 +2119,50 @@ private fun ServerRow(
     val darkRow = colors.surface.luminance() < 0.5f
     val cyclingHue = if (pride != null) prideHueCycle() else null
 
-    val containerState = animateColorAsState(
-        targetValue = (if (selected) colors.primaryContainer else colors.surfaceContainer)
-            .copy(alpha = LocalSurfaceOpacity.current),
+    // The row's whole paint walks one progress — selection's own. Every color the
+    // row wears is a lerp between its two stances, so one float drives them all: no
+    // animator machinery standing per color on every row in the list, just the one
+    // that walks while this row is picked. The dim rides its own float, read in the
+    // layer below: a menu opening over the list never recomposes a row.
+    val selection by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
         animationSpec = motion.defaultEffectsSpec(),
-        label = "server container",
-    )
-    val contentColor by animateColorAsState(
-        targetValue = if (selected) colors.onPrimaryContainer else colors.onSurface,
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "server content",
-    )
-    val extraColor by animateColorAsState(
-        targetValue = if ((profile.testDelayMillis ?: 0L) >= HIGH_PING_MILLIS) {
-            colors.primary
-        } else {
-            contentColor.copy(alpha = contentColor.alpha * 0.62f)
-        },
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "server title extra",
-    )
-    val supportingColor by animateColorAsState(
-        targetValue = (if (selected) {
-            colors.onPrimaryContainer.copy(alpha = 0.78f)
-        } else {
-            colors.onSurfaceVariant
-        }),
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "server supporting",
-    )
-    val iconContainerState = animateColorAsState(
-        targetValue = if (selected) colors.primary else colors.secondaryContainer,
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "server icon container",
-    )
-    val iconColor by animateColorAsState(
-        targetValue = if (selected) colors.onPrimary else colors.onSecondaryContainer,
-        animationSpec = motion.defaultEffectsSpec(),
-        label = "server icon",
+        label = "server selection",
     )
     // Another row's open menu lays its half-light over this one — the same 0.45 the
     // chooser dims the whole list with, worn row by row. A concealed row wears it
     // always, the reveal mode's own uniform: half-light and the slashed eye at the
     // end saying what the chip called back.
-    val dimmedAlpha by animateFloatAsState(
+    val dim by animateFloatAsState(
         targetValue = if (dimmed || profile.concealed) 0.45f else 1f,
         animationSpec = motion.defaultEffectsSpec(),
         label = "server row dim",
     )
-
+    val contentColor = lerp(colors.onSurface, colors.onPrimaryContainer, selection)
+    val extraColor = if ((profile.testDelayMillis ?: 0L) >= HIGH_PING_MILLIS) {
+        colors.primary
+    } else {
+        contentColor.copy(alpha = contentColor.alpha * 0.62f)
+    }
+    val supportingColor = lerp(
+        colors.onSurfaceVariant,
+        colors.onPrimaryContainer.copy(alpha = 0.78f),
+        selection,
+    )
     // A pride row's container and tile are computed straight from the cycling hue — the
-    // hue itself is the animation, so the state animators bow out for those two.
+    // hue itself is the animation, so the lerp bows out for those two.
     val containerColor = if (cyclingHue != null) {
         prideColor(cyclingHue, selected, darkRow).copy(alpha = LocalSurfaceOpacity.current)
     } else {
-        containerState.value
+        lerp(colors.surfaceContainer, colors.primaryContainer, selection)
+            .copy(alpha = LocalSurfaceOpacity.current)
     }
     val iconContainerColor = if (cyclingHue != null) {
         prideTileColor(cyclingHue, selected, darkRow)
     } else {
-        iconContainerState.value
+        lerp(colors.secondaryContainer, colors.primary, selection)
     }
+    val iconColor = lerp(colors.onSecondaryContainer, colors.onPrimary, selection)
     val poke = rememberHapticPoke()
     // The sweep's answers land one by one, and each hand-over on the row's ping chip —
     // the old number out, the new one flying in — taps the soft poke: a sweep pokes a
@@ -2182,7 +2182,7 @@ private fun ServerRow(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .graphicsLayer { alpha = dimmedAlpha },
+            .graphicsLayer { alpha = dim },
     ) {
         Surface(
             shape = shape,
@@ -2196,7 +2196,7 @@ private fun ServerRow(
                     .clip(shape)
                     .focusRing(inset = true, gap = 1.dp)
                     .restoreControllerFocus(menu?.open == true)
-                    .controllerContextMenu(menu?.let { rowMenu -> { rowMenu.onOpenChange(true) } })
+                    .controllerContextMenu { onMenuOpen() }
                     .combinedClickable(
                         role = Role.Button,
                         onClick = {
@@ -2208,11 +2208,9 @@ private fun ServerRow(
                         // The long press opens the row's own menu — the pin, the
                         // link, the delete — for the loose configs, the rows that
                         // own themselves.
-                        onLongClick = menu?.let { rowMenu ->
-                            {
-                                poke()
-                                rowMenu.onOpenChange(true)
-                            }
+                        onLongClick = {
+                            poke()
+                            onMenuOpen()
                         },
                     ),
             headlineContent = {

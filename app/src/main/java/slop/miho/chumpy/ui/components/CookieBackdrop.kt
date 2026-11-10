@@ -28,6 +28,12 @@ import kotlin.math.PI
 import kotlin.random.Random
 
 /**
+ * One morph for every cookie in the app — immutable, drawn read-only, shared by all:
+ * building it is the expensive part of the backdrop, and one cookie is every cookie.
+ */
+private val CookieMorph = Morph(MaterialShapes.Circle, MaterialShapes.Cookie9Sided)
+
+/**
  * The selection mark's backdrop: a circle at rest that morphs into the MD3 9-sided cookie
  * when selected and back when deselected. The cookie keeps spinning slowly; the icon on top
  * of it stays upright. Without [animated] the shape freezes and only the morph still runs.
@@ -36,7 +42,7 @@ import kotlin.random.Random
  */
 @Composable
 fun CookieBackdrop(selected: Boolean, color: Color, animated: Boolean) {
-    val morph = remember { Morph(MaterialShapes.Circle, MaterialShapes.Cookie9Sided) }
+    val morph = CookieMorph
     val motion = MaterialTheme.motionScheme
     // 0 = circle, 1 = cookie. The spatial spring overshoots a little, and the morph happily
     // interpolates slightly past its range, which reads as a soft shape bounce.
@@ -76,6 +82,12 @@ fun CookieBackdrop(selected: Boolean, color: Color, animated: Boolean) {
             // here, in the layer, so the spin's frames never recompose the row.
             .graphicsLayer { rotationZ = (spinAngle?.value ?: restingAngle) * progress }
             .drawBehind {
+                // The resting circle needs none of the morph's walk — most rows never
+                // leave it, and their frames stop at a single drawCircle.
+                if (progress < 0.001f) {
+                    drawCircle(color)
+                    return@drawBehind
+                }
                 path.rewind()
                 var first = true
                 morph.forEachCubic(progress, cubic) { c ->
