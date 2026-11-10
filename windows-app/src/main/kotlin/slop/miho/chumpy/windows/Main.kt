@@ -205,7 +205,7 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
         }
         try {
             engine.start(exe, config, selected == ConnectionMode.TUN)
-            if (selected == ConnectionMode.SYSTEM_PROXY) proxy.enable("127.0.0.1:10808")
+            if (selected == ConnectionMode.SYSTEM_PROXY) proxy.enable("127.0.0.1:10809")
             status.text = "Запущено: ${selected.label}"
         } catch (e: Exception) {
             runCatching { engine.stop() }; runCatching { proxy.restore() }
