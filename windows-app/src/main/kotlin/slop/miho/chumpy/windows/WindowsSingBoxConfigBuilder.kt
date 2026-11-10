@@ -118,7 +118,7 @@ internal object WindowsSingBoxConfigBuilder {
             put("enabled", true)
             if (profile.sni.isNotBlank()) put("server_name", profile.sni)
             put("insecure", profile.allowInsecure)
-            if (profile.alpn.isNotBlank()) put("alpn", buildJsonArray { profile.alpn.split(',').map(String::trim).filter(String::isNotBlank).forEach(::add) })
+            if (profile.alpn.isNotBlank()) put("alpn", buildJsonArray { profile.alpn.split(',').map(String::trim).filter(String::isNotBlank).forEach { add(JsonPrimitive(it)) } })
             if (profile.fingerprint.isNotBlank()) put("utls", buildJsonObject { put("enabled", true); put("fingerprint", profile.fingerprint) })
             if (profile.security == "reality") put("reality", buildJsonObject {
                 put("enabled", true); put("public_key", profile.publicKey)
