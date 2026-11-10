@@ -24,6 +24,7 @@ internal object ClashRouting {
             for (entry in entries) {
                 val parts = (entry as? String)?.split(',')?.map(String::trim) ?: break
                 val type = parts.first().uppercase(Locale.ROOT)
+                if (type == "PROCESS-NAME") continue
                 val catchAll = type == "MATCH"
                 val target = parts.getOrNull(if (catchAll) 1 else 2) ?: break
                 val outbound = when (target) {
