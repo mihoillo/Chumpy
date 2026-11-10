@@ -49,6 +49,7 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
             add(JPanel(FlowLayout(FlowLayout.LEFT)).apply {
                 add(JButton("Импортировать ссылки…").apply { addActionListener { importLinks() } })
                 add(JButton("Создать Xray-конфиг").apply { addActionListener { generateConfig() } })
+                add(JButton("Создать TUN-конфиг").apply { addActionListener { generateTunConfig() } })
                 add(JButton("Удалить").apply { addActionListener { profileList.selectedIndices.sortedDescending().forEach(profiles::remove); saveProfiles() } })
             }, BorderLayout.SOUTH)
         }
@@ -96,6 +97,19 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
         status.text = "Импортировано поддерживаемых ссылок: ${profiles.size()}"
     }
     private fun saveProfiles() { profilesFile.writeText((0 until profiles.size()).joinToString("\n") { profiles.getElementAt(it) }) }
+    private fun generateTunConfig() {
+        val raw = profileList.selectedValue
+        if (raw.isNullOrBlank()) { JOptionPane.showMessageDialog(this, "Сначала выберите импортированную ссылку."); return }
+        try {
+            val profile = LinkParsers.parse(raw) ?: error("Ссылка больше не распознаётся.")
+            val generated = WindowsSingBoxConfigBuilder.write(profile, home)
+            configPath.text = generated.absolutePath
+            mode.selectedItem = ConnectionMode.TUN
+            status.text = "TUN-конфигурация создана для " + profile.type.name
+        } catch (e: Exception) {
+            JOptionPane.showMessageDialog(this, e.message ?: e.javaClass.simpleName, "Генерация TUN", JOptionPane.ERROR_MESSAGE)
+        }
+    }
     private fun generateConfig() {
         val raw = profileList.selectedValue
         if (raw.isNullOrBlank()) { JOptionPane.showMessageDialog(this, "Сначала выберите импортированную ссылку."); return }
