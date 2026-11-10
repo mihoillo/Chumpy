@@ -12,7 +12,7 @@ Windows is a separate Kotlin/JVM desktop application in `windows-app`. The origi
 - sing-box config generation for Windows TUN mode, including a TUN inbound and common outbound protocols/transports.
 - Launch/stop of the external native engine.
 - System-proxy mode backs up the current user's Windows proxy registry values and restores them on disconnect or normal app close.
-- GitHub Actions builds the Windows distribution and uploads it as a workflow artifact.
+- GitHub Actions builds the Windows distribution and packages a self-contained Windows app image with `Chumpy.exe` and uploads it as a workflow artifact.
 
 ## Current limitations
 
