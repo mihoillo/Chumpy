@@ -96,7 +96,7 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
         if (url.isBlank()) return
         if (!url.startsWith("https://") && !url.startsWith("http://")) { JOptionPane.showMessageDialog(this, "Нужна ссылка HTTP(S)."); return }
         if (url !in subscriptions) subscriptions.add(url)
-        subscriptionsFile.writeText(subscriptions.joinToString("\\n"))
+        subscriptionsFile.writeText(subscriptions.joinToString("\n"))
         refreshSubscriptions()
     }
     private fun refreshSubscriptions() {
@@ -117,7 +117,7 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
             SwingUtilities.invokeLater {
                 saveProfiles()
                 status.text = "Подписки обновлены; найдено ссылок: " + imported
-                if (errors.isNotEmpty()) JOptionPane.showMessageDialog(this, errors.joinToString("\\n"), "Ошибки подписок", JOptionPane.WARNING_MESSAGE)
+                if (errors.isNotEmpty()) JOptionPane.showMessageDialog(this, errors.joinToString("\n"), "Ошибки подписок", JOptionPane.WARNING_MESSAGE)
             }
         }, "chumpy-subscriptions").start()
     }
