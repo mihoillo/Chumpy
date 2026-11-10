@@ -20,6 +20,9 @@ fun main() = SwingUtilities.invokeLater {
 private class ChumpyWindow : JFrame("Chumpy — Windows") {
     private val home = File(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), "Chumpy")
     private val profilesFile = File(home, "profiles.txt")
+    private val subscriptionsFile = File(home, "subscriptions.txt")
+    private val subscriptions = mutableListOf<String>()
+    private val subscriptionImporter = SubscriptionImporter()
     private val profiles = DefaultListModel<String>()
     private val profileList = JList(profiles)
     private val mode = JComboBox(ConnectionMode.entries.toTypedArray())
@@ -39,6 +42,7 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
         setLocationRelativeTo(null)
         home.mkdirs()
         if (profilesFile.isFile) profilesFile.readLines().filter { it.isNotBlank() }.forEach(profiles::addElement)
+        if (subscriptionsFile.isFile) subscriptions.addAll(subscriptionsFile.readLines().filter { it.isNotBlank() })
 
         val root = JPanel(BorderLayout(12, 12)).apply { border = BorderFactory.createEmptyBorder(18, 18, 18, 18) }
         root.add(JLabel("CHUMPY", SwingConstants.LEFT).apply { font = Font("Segoe UI", Font.BOLD, 28) }, BorderLayout.NORTH)
@@ -48,6 +52,8 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
             add(JScrollPane(profileList), BorderLayout.CENTER)
             add(JPanel(FlowLayout(FlowLayout.LEFT)).apply {
                 add(JButton("Импортировать ссылки…").apply { addActionListener { importLinks() } })
+                add(JButton("Добавить подписку").apply { addActionListener { addSubscription() } })
+                add(JButton("Обновить подписки").apply { addActionListener { refreshSubscriptions() } })
                 add(JButton("Создать Xray-конфиг").apply { addActionListener { generateConfig() } })
                 add(JButton("Создать TUN-конфиг").apply { addActionListener { generateTunConfig() } })
                 add(JButton("Удалить").apply { addActionListener { profileList.selectedIndices.sortedDescending().forEach(profiles::remove); saveProfiles() } })
@@ -84,6 +90,36 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
                 if (chooser.showOpenDialog(this@ChumpyWindow) == JFileChooser.APPROVE_OPTION) field.text = chooser.selectedFile.absolutePath
             }
         }, BorderLayout.EAST)
+    }
+    private fun addSubscription() {
+        val url = JOptionPane.showInputDialog(this, "URL подписки:")?.trim().orEmpty()
+        if (url.isBlank()) return
+        if (!url.startsWith("https://") && !url.startsWith("http://")) { JOptionPane.showMessageDialog(this, "Нужна ссылка HTTP(S)."); return }
+        if (url !in subscriptions) subscriptions.add(url)
+        subscriptionsFile.writeText(subscriptions.joinToString("\\n"))
+        refreshSubscriptions()
+    }
+    private fun refreshSubscriptions() {
+        if (subscriptions.isEmpty()) { JOptionPane.showMessageDialog(this, "Сначала добавьте URL подписки."); return }
+        status.text = "Обновление подписок…"
+        Thread({
+            var imported = 0
+            val errors = mutableListOf<String>()
+            subscriptions.forEach { url ->
+                try {
+                    val links = subscriptionImporter.fetch(url)
+                    SwingUtilities.invokeLater {
+                        links.forEach { link -> if ((0 until profiles.size()).none { profiles.getElementAt(it) == link }) profiles.addElement(link) }
+                    }
+                    imported += links.size
+                } catch (e: Exception) { errors.add(url + ": " + (e.message ?: "ошибка")) }
+            }
+            SwingUtilities.invokeLater {
+                saveProfiles()
+                status.text = "Подписки обновлены; найдено ссылок: " + imported
+                if (errors.isNotEmpty()) JOptionPane.showMessageDialog(this, errors.joinToString("\\n"), "Ошибки подписок", JOptionPane.WARNING_MESSAGE)
+            }
+        }, "chumpy-subscriptions").start()
     }
     private fun importLinks() {
         val chooser = JFileChooser().apply { isMultiSelectionEnabled = true; fileFilter = FileNameExtensionFilter("Текстовые файлы", "txt", "conf") }
