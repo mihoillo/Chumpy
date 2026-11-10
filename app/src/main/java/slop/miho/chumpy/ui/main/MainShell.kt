@@ -1089,6 +1089,10 @@ private fun MainPagerStrip(
         // finger left it and settles the rest of the way to the landing page.
         val stripPosition = remember { Animatable(targetPosition.toFloat()) }
         var dragPosition by remember { mutableFloatStateOf(Float.NaN) }
+        // The spring ride's departure point, NaN while none runs: the ride's window
+        // is frozen here — the pages the strip leaves stay composed until it has
+        // carried them off screen — while the pages it passes over never get one.
+        var travelDeparture by remember { mutableFloatStateOf(Float.NaN) }
         // The slot of the page a direct-mode swipe is carrying out, MIN when none: the
         // dragged page alone translates by the drag — every other page stands still.
         var draggedSlot by remember { mutableIntStateOf(Int.MIN_VALUE) }
@@ -1098,7 +1102,11 @@ private fun MainPagerStrip(
         var dragAnimJob by remember { mutableStateOf<Job?>(null) }
         LaunchedEffect(targetPosition, directTransitions) {
             if (directTransitions) stripPosition.snapTo(targetPosition.toFloat())
-            else stripPosition.animateTo(targetPosition.toFloat(), motion.defaultSpatialSpec())
+            else {
+                travelDeparture = stripPosition.value
+                stripPosition.animateTo(targetPosition.toFloat(), motion.defaultSpatialSpec())
+                travelDeparture = Float.NaN
+            }
         }
 
         // The screen at a strip position: main tabs at 0..2, settings categories after them.
@@ -1246,10 +1254,12 @@ private fun MainPagerStrip(
                 if (expressive) {
                     scope.launch {
                         stripPosition.snapTo(hand)
+                        travelDeparture = hand
                         stripPosition.animateTo(
                             landing.toFloat(),
                             motion.defaultSpatialSpec(),
                         )
+                        travelDeparture = Float.NaN
                     }
                     dragPosition = Float.NaN
                     draggedSlot = Int.MIN_VALUE
@@ -1287,10 +1297,12 @@ private fun MainPagerStrip(
                     val hand = dragPosition
                     scope.launch {
                         stripPosition.snapTo(hand)
+                        travelDeparture = hand
                         stripPosition.animateTo(
                             targetPosition.toFloat(),
                             motion.defaultSpatialSpec(),
                         )
+                        travelDeparture = Float.NaN
                     }
                     dragPosition = Float.NaN
                     draggedSlot = Int.MIN_VALUE
@@ -1332,9 +1344,12 @@ private fun MainPagerStrip(
                     orientation = Orientation.Horizontal,
                     onDragStarted = {
                         // Whatever the released page was still doing — flying out or
-                        // springing home — stops here: the finger takes it over.
+                        // springing home — stops here: the finger takes it over. The
+                        // finger's own window covers whatever is on screen, so the
+                        // ride's frozen one steps aside.
                         dragAnimJob?.cancel()
                         dragAnimJob = null
+                        travelDeparture = Float.NaN
                         when {
                             // Mid-return spring: the finger takes the page over from
                             // wherever it has got to.
@@ -1361,10 +1376,12 @@ private fun MainPagerStrip(
                             val from = dragPosition
                             scope.launch {
                                 stripPosition.snapTo(from)
+                                travelDeparture = from
                                 stripPosition.animateTo(
                                     landing.toFloat(),
                                     motion.defaultSpatialSpec(),
                                 )
+                                travelDeparture = Float.NaN
                             }
                             dragPosition = Float.NaN
                             draggedSlot = Int.MIN_VALUE
@@ -1507,14 +1524,15 @@ private fun MainPagerStrip(
                                 if (dragPosition.isNaN()) stripPosition.value else dragPosition
                             // The finger's own window follows the finger — a neighbor
                             // slides in as it is pulled. A spring ride is not a tour,
-                            // though: the pages the strip merely passes over on its way
-                            // to a far landing never materialize — only the one it
-                            // leaves (until that is off screen too) and the one it
-                            // lands on, pre-built under the slide so the arrival
-                            // finds it warm.
+                            // though: its window is frozen at the departure (the pages
+                            // it leaves stay composed until it has carried them off
+                            // screen) plus the landing's, standing ready before the
+                            // ride arrives so the landing is warm. The pages in between
+                            // never materialize — the strip passes over them as the
+                            // void they are to this ride. At rest the two are one.
                             if (dragPosition.isNaN()) {
                                 (0 until pageCount).filter {
-                                    abs(it - position) < 1.5f ||
+                                    (!travelDeparture.isNaN() && abs(it - travelDeparture) < 1.5f) ||
                                         abs(it - targetPositionNow.value) < 1.5f
                                 }
                             } else {
