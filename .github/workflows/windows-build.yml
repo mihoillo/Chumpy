@@ -16,4 +16,4 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - name: Build Windows app
-        run: .\\gradlew.bat :windows-app:installDist
+        run: .\\gradlew.bat -p windows-app installDist
