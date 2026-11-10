@@ -18,4 +18,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Chumpy"
 
-include(":app")
+include(":app", ":windows-app")
