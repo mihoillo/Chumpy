@@ -22,7 +22,7 @@ internal class WindowsProxyController(private val dataDir: File) {
         val values = backup.readLines().associate { val p = it.split("=", limit = 2); p[0] to p.getOrElse(1) { "" } }
         run("reg", "add", key, "/v", "ProxyEnable", "/t", "REG_DWORD", "/d", (values["ProxyEnable"]?.toIntOrNull() ?: 0).toString(), "/f")
         val server = values["ProxyServer"].orEmpty()
-        if (server.isBlank()) run("reg", "delete", key, "/v", "ProxyServer", "/f", true)
+        if (server.isBlank()) run("reg", "delete", key, "/v", "ProxyServer", "/f", ignoreFailure = true)
         else run("reg", "add", key, "/v", "ProxyServer", "/t", "REG_SZ", "/d", server, "/f")
         backup.delete()
         refresh()
