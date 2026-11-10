@@ -19,6 +19,6 @@ Next: port the share-link parser and profile model, implement config generation,
 ## Build (JDK 21)
 
 ```powershell
-.\\gradlew.bat :windows-app:run
-.\\gradlew.bat :windows-app:installDist
+.\\gradlew.bat -p windows-app run
+.\\gradlew.bat -p windows-app installDist
 ```
