@@ -66,12 +66,12 @@ internal object WindowsSingBoxConfigBuilder {
                 }
                 ProfileType.WIREGUARD -> {
                     put("private_key", profile.wgSecretKey)
-                    put("local_address", buildJsonArray { profile.wgLocalAddress.split(',').map(String::trim).filter(String::isNotBlank).forEach(::add) })
+                    put("local_address", buildJsonArray { profile.wgLocalAddress.split(',').map(String::trim).filter(String::isNotBlank).forEach { add(JsonPrimitive(it)) } })
                     put("peer_public_key", profile.publicKey)
                     if (profile.wgPresharedKey.isNotBlank()) put("pre_shared_key", profile.wgPresharedKey)
                     put("mtu", if (profile.wgMtu > 0) profile.wgMtu else 1420)
                     val reserved = profile.wgReserved.split(',').mapNotNull { it.trim().toIntOrNull() }
-                    if (reserved.size == 3) put("reserved", buildJsonArray { reserved.forEach(::add) })
+                    if (reserved.size == 3) put("reserved", buildJsonArray { reserved.forEach { add(JsonPrimitive(it)) } })
                 }
                 ProfileType.BALANCER -> Unit
             }
@@ -89,7 +89,7 @@ internal object WindowsSingBoxConfigBuilder {
                 add(buildJsonObject {
                     put("type", "tun"); put("tag", "tun-in")
                     put("interface_name", "Chumpy")
-                    put("address", buildJsonArray { add("172.19.0.1/30") })
+                    put("address", buildJsonArray { add(JsonPrimitive("172.19.0.1/30")) })
                     put("mtu", 1500); put("auto_route", true); put("strict_route", true)
                     put("stack", "mixed"); put("sniff", true)
                 })
