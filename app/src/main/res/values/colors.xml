@@ -5,6 +5,6 @@
     <!-- The inverted variant's whole background: the art's own sky color. -->
     <color name="ic_launcher_background_sky">#6FACED</color>
     <!-- The dark variant's whole background: a near-black night sky. -->
-    <color name="ic_launcher_background_dark">#041420</color>
+    <color name="ic_launcher_background_dark">#191919</color>
     <color name="window_background">#FEF7FF</color>
 </resources>
