@@ -1,0 +1,19 @@
+name: Windows desktop build
+on:
+  push:
+    branches: [windows-port]
+  pull_request:
+    branches: [windows-port]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build Windows app
+        run: .\\gradlew.bat :windows-app:installDist
