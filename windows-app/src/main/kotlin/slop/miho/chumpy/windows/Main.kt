@@ -1,6 +1,7 @@
 package slop.miho.chumpy.windows
 
 import java.awt.BorderLayout
+import java.awt.Component
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
@@ -24,7 +25,18 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
     private val subscriptions = mutableListOf<String>()
     private val subscriptionImporter = SubscriptionImporter()
     private val profiles = DefaultListModel<String>()
-    private val profileList = JList(profiles)
+    private val profileList = JList(profiles).apply {
+        cellRenderer = object : DefaultListCellRenderer() {
+            override fun getListCellRendererComponent(list: JList<*>?, value: Any?, index: Int, isSelected: Boolean, cellHasFocus: Boolean): Component {
+                val label = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus) as JLabel
+                val raw = value as? String
+                val profile = raw?.let { LinkParsers.parse(it) }
+                label.text = if (profile == null) raw.orEmpty() else
+                    "${profile.remarks.ifBlank { profile.server }}  •  ${profile.server}:${profile.serverPort}  •  ${profile.type.name}"
+                return label
+            }
+        }
+    }
     private val mode = JComboBox(ConnectionMode.entries.toTypedArray())
     private val enginePath = JTextField(30)
     private val configPath = JTextField(30)
@@ -51,6 +63,7 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
             border = BorderFactory.createTitledBorder("Профили и ссылки")
             add(JScrollPane(profileList), BorderLayout.CENTER)
             add(JPanel(FlowLayout(FlowLayout.LEFT)).apply {
+                add(JButton("Вставить ссылку").apply { addActionListener { pasteLink() } })
                 add(JButton("Импортировать ссылки…").apply { addActionListener { importLinks() } })
                 add(JButton("Импортировать QR-изображение…").apply { addActionListener { importQrImage() } })
                 add(JButton("Добавить подписку").apply { addActionListener { addSubscription() } })
@@ -121,6 +134,15 @@ private class ChumpyWindow : JFrame("Chumpy — Windows") {
                 if (errors.isNotEmpty()) JOptionPane.showMessageDialog(this, errors.joinToString("\n"), "Ошибки подписок", JOptionPane.WARNING_MESSAGE)
             }
         }, "chumpy-subscriptions").start()
+    }
+    private fun pasteLink() {
+        val raw = JOptionPane.showInputDialog(this, "Вставь ссылку VMess / VLESS / Trojan / SS / SOCKS / Hy2 / WireGuard:")?.trim().orEmpty()
+        if (raw.isBlank()) return
+        val profile = LinkParsers.parse(raw)
+        if (profile == null) { JOptionPane.showMessageDialog(this, "Не удалось распознать ссылку или в ней не хватает обязательных данных."); return }
+        if ((0 until profiles.size()).none { profiles.getElementAt(it) == raw }) profiles.addElement(raw)
+        saveProfiles()
+        status.text = "Добавлен профиль: " + profile.server
     }
     private fun importQrImage() {
         val chooser = JFileChooser().apply { fileFilter = FileNameExtensionFilter("QR images", "png", "jpg", "jpeg", "bmp") }
