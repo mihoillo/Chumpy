@@ -39,7 +39,7 @@ internal class WindowsProxyController(private val dataDir: File) {
         check(ignoreFailure || code == 0) { "Команда Windows завершилась с кодом $code: $output" }
     }
     private fun refresh() {
-        val script = "Add-Type -Namespace WinInet -Name Native -MemberDefinition '[DllImport(\\\"wininet.dll\\\", SetLastError=true)] public static extern bool InternetSetOption(System.IntPtr hInternet, int dwOption, System.IntPtr lpBuffer, int dwBufferLength);'; [WinInet.Native]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null; [WinInet.Native]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0) | Out-Null"
+        val script = "Add-Type -Namespace WinInet -Name Native -MemberDefinition '[DllImport(\"wininet.dll\", SetLastError=true)] public static extern bool InternetSetOption(System.IntPtr hInternet, int dwOption, System.IntPtr lpBuffer, int dwBufferLength);'; [WinInet.Native]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null; [WinInet.Native]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0) | Out-Null"
         run("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
     }
 }
