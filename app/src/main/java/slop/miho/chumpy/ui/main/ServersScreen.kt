@@ -232,6 +232,19 @@ fun ServersScreen(
     val foldShown = { if (!foldHeightLead.isNaN()) foldHeightLead else foldHeight.value }
     val foldFade = { if (!foldAlphaLead.isNaN()) foldAlphaLead else foldAlpha.value }
 
+    // The reorder spring is for reorders only. The chooser's fold grows inside the same
+    // list, and every placement it shifts is a placement notification to the rows
+    // below — a spring there would leave them riding under the fold's own clock,
+    // late and bouncing, the two laid over each other for its whole settle. So the
+    // rows take the spring only once the fold is fully out of the picture — closed,
+    // settled, and no gesture holding a half-walked close.
+    val movesSettled by remember {
+        derivedStateOf {
+            !dropdownOpen && foldHeightLead.isNaN() && foldAlphaLead.isNaN() &&
+                !foldHeight.isRunning && !foldAlpha.isRunning
+        }
+    }
+
     val pageOnStage = slop.miho.chumpy.ui.wallpapers.LocalPageOnStage.current
     val controller = slop.miho.chumpy.ui.components.LocalInputMode.current == slop.miho.chumpy.ui.components.InputMode.CONTROLLER
     BackHandler(enabled = pageOnStage && controller && dropdownOpen) { dropdownOpen = false }
@@ -452,7 +465,14 @@ fun ServersScreen(
                 // costs layers, never layout passes. The placement alone animates:
                 // rows are never born mid-list, they arrive with a fresh key and land
                 // where the list puts them, no fade to soften what would be a crowd.
-                Box(Modifier.animateItem(placementSpec = motion.defaultSpatialSpec())
+                // While the fold stands or settles the spring steps aside — see
+                // [movesSettled] — so the rows never chase the fold's own clock.
+                Box(Modifier
+                    .then(if (movesSettled) {
+                        Modifier.animateItem(placementSpec = motion.defaultSpatialSpec())
+                    } else {
+                        Modifier
+                    })
                     .graphicsLayer { alpha = foldAlpha }
                     .focusProperties {
                         val out = menuHost != null || dropdownOpen
