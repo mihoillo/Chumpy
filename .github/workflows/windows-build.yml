@@ -16,7 +16,7 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - name: Build Windows app
-        run: .\\gradlew.bat -p windows-app installDist
+        run: .\\gradlew.bat -p windows-app test installDist
       - name: Package Windows executable
         run: jpackage --type app-image --name Chumpy --input windows-app/build/install/Chumpy-Windows/lib --main-jar Chumpy-Windows-0.1.0.jar --main-class slop.miho.chumpy.windows.MainKt --dest windows-app/build/package
       - name: Upload Windows distribution
