@@ -20,7 +20,7 @@ This is an active port, **not yet feature-equivalent to Android**. Live camera Q
 
 The Android `libv2ray.aar`, `VpnService`, Room database, and Android UI are not Windows binaries. Windows uses external native executables:
 
-- System proxy: Xray-core `xray.exe`, with the generated local SOCKS inbound on `127.0.0.1:10808`.
+- System proxy: Xray-core `xray.exe`, with the generated local HTTP proxy inbound on `127.0.0.1:10809`.
 - TUN: sing-box `sing-box.exe`, with the generated TUN config. Run Chumpy as Administrator and install/enable the official Wintun driver as required by your sing-box build.
 
 Xray and sing-box JSON formats are different. Do not swap their config files. Some less common transports are intentionally rejected by the first TUN config generator rather than producing a broken config.
