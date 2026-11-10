@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,6 +48,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
@@ -2190,7 +2192,10 @@ private fun ServerRow(
             contentColor = contentColor,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            ListItem(
+            // The row's body laid out by hand, to ListItem's own drawing — the M3
+            // component carries a colors machine and a defaults table every row paid
+            // for on every page open, and none of it ever left the defaults here.
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(shape)
@@ -2212,70 +2217,11 @@ private fun ServerRow(
                             poke()
                             onMenuOpen()
                         },
-                    ),
-            headlineContent = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = title,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
                     )
-                    // The last real ping: a number, "can't ping", or nothing at all yet.
-                    // A sweep's fresh answer takes the old one's seat with a hand-over:
-                    // the old fades out, the new flies in from the right — the rows trade
-                    // their numbers one by one as the sweep answers each of them. A
-                    // balancer wears no number: its member of the moment is the live
-                    // tunnel's own delay, which Home's chip reads.
-                    if (profile.type != ProfileType.BALANCER) AnimatedContent(
-                        targetState = profile.testDelayMillis to profile.lastTestAt,
-                        transitionSpec = {
-                            (fadeIn(motion.defaultEffectsSpec()) +
-                                slideInHorizontally(motion.defaultSpatialSpec()) { it / 2 }) togetherWith
-                                fadeOut(motion.defaultEffectsSpec())
-                        },
-                        label = "ping",
-                    ) { (delay, _) ->
-                        if (delay != null || profile.lastTestAt != null) {
-                            val text = when {
-                                delay == null || delay < 0 -> stringResource(R.string.servers_offline)
-                                else -> stringResource(R.string.servers_ping_ms, delay.toInt())
-                            }
-                            Text(
-                                text = "  ·  $text",
-                                color = extraColor,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
-            },
-            supportingContent = {
-                Text(
-                    text = if (profile.type == ProfileType.BALANCER) {
-                        // The balancer's own line: how wide it picks, and how.
-                        listOfNotNull(
-                            pluralStringResource(
-                                R.plurals.servers_balancer_members,
-                                profile.balancerMemberKeys.size,
-                                profile.balancerMemberKeys.size,
-                            ),
-                            balancerStrategyLabel(profile),
-                        ).joinToString("  ·  ")
-                    } else {
-                        // The addresses' curtain: the protocol keeps its name, the
-                        // endpoint keeps out of sight — no placeholder stands in,
-                        // the line just ends where the address began.
-                        listOfNotNull(
-                            protocolLabel(profile),
-                            if (masked) null else "${profile.server}:${profile.serverPort}",
-                        ).joinToString("  ·  ")
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            },
-            leadingContent = {
+                    // ListItem's own frame: 16dp at the sides, 8dp above and below.
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 // MD3 list leading icon: 24dp icon on a 40dp tonal container. Selection
                 // morphs the circle into the MD3 cookie — the pick's mark — and the
                 // cookie turns only while the tunnel is up: the spin is the connection's
@@ -2319,13 +2265,96 @@ private fun ServerRow(
                         )
                     }
                 }
-            },
-            // The concealed row's own mark: the slashed eye at the end, the chip's
-            // icon riding the row itself — the reveal mode's uniform. Otherwise no
-            // trailing mark: the picked row already wears the accent and the cookie,
-            // a checkmark on top of them would say the same thing a third time.
-            trailingContent = if (profile.concealed) {
-                {
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        // The last real ping: a number, "can't ping", or nothing at all
+                        // yet. A sweep's fresh answer takes the old one's seat with a
+                        // hand-over: the old fades out, the new flies in from the right —
+                        // the rows trade their numbers one by one as the sweep answers
+                        // each of them. A balancer wears no number: its member of the
+                        // moment is the live tunnel's own delay, which Home's chip reads.
+                        // Under simple transitions the number just takes its seat: the
+                        // hand-over rides a full transition per row, a price the weak
+                        // devices the mode is for pay on every page open, for an
+                        // animation they asked to shed.
+                        if (profile.type != ProfileType.BALANCER) {
+                            if (LocalUiSettings.current.simpleTransitions) {
+                                if (profile.testDelayMillis != null || profile.lastTestAt != null) {
+                                    Text(
+                                        text = "  ·  " + when {
+                                            profile.testDelayMillis == null || profile.testDelayMillis < 0 ->
+                                                stringResource(R.string.servers_offline)
+                                            else ->
+                                                stringResource(R.string.servers_ping_ms, profile.testDelayMillis.toInt())
+                                        },
+                                        color = extraColor,
+                                        maxLines = 1,
+                                    )
+                                }
+                            } else {
+                                AnimatedContent(
+                                    targetState = profile.testDelayMillis to profile.lastTestAt,
+                                    transitionSpec = {
+                                        (fadeIn(motion.defaultEffectsSpec()) +
+                                            slideInHorizontally(motion.defaultSpatialSpec()) { it / 2 }) togetherWith
+                                            fadeOut(motion.defaultEffectsSpec())
+                                    },
+                                    label = "ping",
+                                ) { (delay, _) ->
+                                    if (delay != null || profile.lastTestAt != null) {
+                                        val text = when {
+                                            delay == null || delay < 0 -> stringResource(R.string.servers_offline)
+                                            else -> stringResource(R.string.servers_ping_ms, delay.toInt())
+                                        }
+                                        Text(
+                                            text = "  ·  $text",
+                                            color = extraColor,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Text(
+                        text = if (profile.type == ProfileType.BALANCER) {
+                            // The balancer's own line: how wide it picks, and how.
+                            listOfNotNull(
+                                pluralStringResource(
+                                    R.plurals.servers_balancer_members,
+                                    profile.balancerMemberKeys.size,
+                                    profile.balancerMemberKeys.size,
+                                ),
+                                balancerStrategyLabel(profile),
+                            ).joinToString("  ·  ")
+                        } else {
+                            // The addresses' curtain: the protocol keeps its name, the
+                            // endpoint keeps out of sight — no placeholder stands in,
+                            // the line just ends where the address began.
+                            listOfNotNull(
+                                protocolLabel(profile),
+                                if (masked) null else "${profile.server}:${profile.serverPort}",
+                            ).joinToString("  ·  ")
+                        },
+                        color = supportingColor,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                // The concealed row's own mark: the slashed eye at the end, the chip's
+                // icon riding the row itself — the reveal mode's uniform. Otherwise no
+                // trailing mark: the picked row already wears the accent and the cookie,
+                // a checkmark on top of them would say the same thing a third time.
+                if (profile.concealed) {
+                    Spacer(Modifier.width(16.dp))
                     Icon(
                         painter = painterResource(R.drawable.ic_visibility_off),
                         contentDescription = stringResource(R.string.card_menu_concealed),
@@ -2333,21 +2362,7 @@ private fun ServerRow(
                         modifier = Modifier.size(20.dp),
                     )
                 }
-            } else {
-                null
-            },
-            colors = ListItemDefaults.colors(
-                // The row's Surface already paints the container; painting it here again
-                // stacked the translucent color twice, leaving these rows denser than the
-                // rest of the app's.
-                containerColor = Color.Transparent,
-                headlineColor = contentColor,
-                supportingColor = supportingColor,
-                leadingIconColor = contentColor,
-                trailingIconColor = supportingColor,
-            ),
-            tonalElevation = 0.dp,
-        )
+            }
         }
         // The row's own asks, standing over the row itself: the popup anchors to the
         // row's frame, so the menu drops out centered under the whole row.

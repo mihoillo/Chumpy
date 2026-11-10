@@ -768,7 +768,10 @@ private fun ShellDestinationPage(
                     else kotlinx.coroutines.flow.flowOf(statsFlow.value.week)
                 }
                 val week by weekFlow
-                    .collectAsStateWithLifecycle(initialValue = emptyList())
+                    // Seeded with the flow's own current value: an empty-list placeholder
+                    // would recompose the whole page a frame later, when the real week
+                    // arrives — the page would compose twice on every open.
+                    .collectAsStateWithLifecycle(initialValue = statsFlow.value.week)
                 val manualCount by manualProfileCount.collectOnStageAsState()
                 ServersScreen(
                     subscriptions = subscriptions,
