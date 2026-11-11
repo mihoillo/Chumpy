@@ -115,6 +115,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import java.text.DateFormat
 import java.util.Date
+import java.util.LinkedHashMap
 import java.io.File
 import android.graphics.BitmapFactory
 import com.caverock.androidsvg.SVG
@@ -937,16 +938,39 @@ private fun DatabaseTile(iconRes: Int = R.drawable.ic_database, logoPath: String
 
 /**
  * A cached subscription logo, decoded off the main thread: PNG natively, SVG through
- * androidsvg. A file that fails to decode answers null — the tile falls back to its
- * stock icon rather than a hole.
+ * androidsvg — and shelved after, so the disk and the decoders are paid once per file:
+ * a recycled row or a re-opened page reads the bitmap it already has. The shelf is
+ * keyed by the file's stamp (its path and write time together), so the refresh that
+ * rewrites the file drops the stale bitmap out on its own. A file that fails to decode
+ * answers null — the tile falls back to its stock icon rather than a hole — and
+ * failures are never shelved, so a retry costs only another read.
  */
 @Composable
 private fun rememberLogo(path: String): ImageBitmap? =
-    produceState<ImageBitmap?>(initialValue = null, path) {
-        value = withContext(Dispatchers.IO) { decodeLogo(path) }
+    produceState<ImageBitmap?>(initialValue = peekLogo(path), path) {
+        if (value == null) value = withContext(Dispatchers.IO) { decodeLogo(path) }
     }.value
 
-private fun decodeLogo(path: String): ImageBitmap? = try {
+/**
+ * The decoded logos' shelf: the last 32 bitmaps, served from memory. Subscriptions
+ * are few and the bitmaps are capped small, so 32 covers the app's whole collection
+ * with room for a stamp or two of churn.
+ */
+private val Logos = java.util.Collections.synchronizedMap(
+    object : LinkedHashMap<String, ImageBitmap>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap>): Boolean = size > 32
+    },
+)
+
+/** The file's identity on the shelf: its path and its write time in one key. */
+private fun logoStamp(path: String): String = "$path@${File(path).lastModified()}"
+
+private fun peekLogo(path: String): ImageBitmap? = Logos[logoStamp(path)]
+
+private fun decodeLogo(path: String): ImageBitmap? =
+    peekLogo(path) ?: decodeLogoBytes(path)?.also { Logos[logoStamp(path)] = it }
+
+private fun decodeLogoBytes(path: String): ImageBitmap? = try {
     val bytes = File(path).readBytes()
     when {
         bytes.size < 8 -> null
