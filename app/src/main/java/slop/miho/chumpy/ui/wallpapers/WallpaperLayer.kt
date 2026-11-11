@@ -214,7 +214,7 @@ internal fun rememberDecodedWallpaper(): DecodedWallpaper? {
  */
 @Composable
 internal fun WallpaperBackdrop(
-    image: ImageBitmap,
+    wallpaper: DecodedWallpaper,
     scale: () -> Float,
     blur: () -> Dp,
     scrim: Color,
@@ -224,6 +224,8 @@ internal fun WallpaperBackdrop(
     offsetY: () -> Float = { 0f },
     modifier: Modifier = Modifier,
 ) {
+    val image = wallpaper.image
+    val gif = rememberGifWallpaper(wallpaper)
     Box(modifier) {
         // The picture is drawn by hand at its true rect — the crop's cover factor with the
         // page zoom and the user's zoom multiplied in, centered, then slid by the pan —
@@ -260,21 +262,27 @@ internal fun WallpaperBackdrop(
                     // The offline grayscale lives on the picture alone: the theme's colors
                     // and everything drawn over it keep theirs, so the drain is a filter on
                     // this very draw, not a scheme change.
-                    val grayscale = if (desaturate > 0.001f) {
-                        ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1f - desaturate) })
-                    } else {
-                        null
-                    }
-                    drawImage(
-                        image = image,
-                        dstOffset = IntOffset(
-                            ((size.width - w) / 2f + tx).roundToInt(),
-                            ((size.height - h) / 2f + ty).roundToInt(),
-                        ),
-                        dstSize = IntSize(w.roundToInt(), h.roundToInt()),
-                        colorFilter = grayscale,
-                        filterQuality = FilterQuality.High,
+                    val origin = IntOffset(
+                        ((size.width - w) / 2f + tx).roundToInt(),
+                        ((size.height - h) / 2f + ty).roundToInt(),
                     )
+                    val dimensions = IntSize(w.roundToInt(), h.roundToInt())
+                    if (gif != null) {
+                        with(gif) { drawFrame(origin, dimensions, desaturate) }
+                    } else {
+                        val grayscale = if (desaturate > 0.001f) {
+                            ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1f - desaturate) })
+                        } else {
+                            null
+                        }
+                        drawImage(
+                            image = image,
+                            dstOffset = origin,
+                            dstSize = dimensions,
+                            colorFilter = grayscale,
+                            filterQuality = FilterQuality.High,
+                        )
+                    }
                 },
         )
         Box(
@@ -388,12 +396,18 @@ private fun decodeWallpaperUncached(file: File): DecodedWallpaper? {
         bitmap = next
         if (previous !== next) previous.recycle()
     }
-    replace(rotateByExif(file, bitmap))
+    val isGif = bounds.outMimeType == "image/gif"
+    val gifFile = file.takeIf {
+        isGif && bounds.outWidth.toLong() * bounds.outHeight <= MAX_GIF_SOURCE_PIXELS
+    }
     // Pictures saved with transparent or ghosted padding — sticker PNGs, rounded exports,
     // a scanner's faint frame — would wear that padding as picture: the screen-filling
     // crop would both cut the real content and leave see-through strips at the screen's
     // edges. Trim to the content first.
-    replace(trimTransparent(bitmap))
+    if (!isGif) {
+        replace(rotateByExif(file, bitmap))
+        replace(trimTransparent(bitmap))
+    }
     // The average luminance drives the adaptive text color: sampled on a sparse grid,
     // still plenty after the decode's own downsampling. Fully transparent pixels don't
     // count — they aren't picture.
@@ -429,7 +443,7 @@ private fun decodeWallpaperUncached(file: File): DecodedWallpaper? {
         ))
     }
     replace(bitmap.copy(Bitmap.Config.HARDWARE, false) ?: bitmap)
-    return DecodedWallpaper(bitmap.asImageBitmap(), luminance)
+    return DecodedWallpaper(bitmap.asImageBitmap(), luminance, gifFile)
 }
 
 /**
@@ -496,7 +510,7 @@ private fun rotateByExif(file: File, bitmap: Bitmap): Bitmap {
 }
 
 /** The decoded picture plus its average luminance, for the adaptive text color. */
-internal class DecodedWallpaper(val image: ImageBitmap, val luminance: Float)
+internal class DecodedWallpaper(val image: ImageBitmap, val luminance: Float, val gifFile: File?)
 
 /** How far the wallpaper grows away from Home, before the blur setting deepens it. */
 private const val WALLPAPER_ZOOM = 1.08f
@@ -512,6 +526,8 @@ private const val MAX_DECODE_DIM = 2048
 
 /** The decoded picture's pixel budget: ample for a phone screen under the full pinch zoom. */
 private const val MAX_DECODE_PIXELS = 8_000_000L
+
+private const val MAX_GIF_SOURCE_PIXELS = 16_000_000L
 
 /** Samples along the bitmap's shorter side when averaging the luminance. */
 private const val LUMINANCE_GRID = 64

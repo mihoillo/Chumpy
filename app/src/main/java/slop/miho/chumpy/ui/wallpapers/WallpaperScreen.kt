@@ -527,7 +527,7 @@ fun WallpaperScreen(
                 val desaturate = offlineDesaturation()
                 wallpaper?.let { decoded ->
                     WallpaperBackdrop(
-                        image = decoded.image,
+                        wallpaper = decoded,
                         // Pinching must track the fingers directly — no spring between them
                         // and the picture — so the edit mode reads its own scale, unanimated.
                         scale = { if (editPosition) editScale else scale },

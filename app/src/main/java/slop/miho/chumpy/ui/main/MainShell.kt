@@ -396,7 +396,7 @@ fun MainShell(viewModel: MainViewModel) {
             ) {
             wallpaper?.let { decoded ->
                 WallpaperBackdrop(
-                    image = decoded.image,
+                    wallpaper = decoded,
                     scale = { scale.value * (1f + arrivalReach * (1f - arrival.value)) },
                     blur = { blur.value },
                     scrim = scrim,
