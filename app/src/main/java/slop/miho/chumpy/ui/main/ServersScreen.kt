@@ -55,6 +55,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -1593,11 +1594,12 @@ private fun AddSubscriptionRow(
 
 /**
  * One subscription in the unfolded list: the server row's own anatomy, copied — the
- * [Surface] подложка with the segmented shape, the [ListItem] inside it, the 40dp
- * leading tile whose round backdrop morphs into the pick's cookie, the name and the
- * update stamp in the headline, what the panel reports in the supporting slot. A long
- * press is the delete question — for the rows that carry one; the loose configs' row
- * passes null and a press just falls through.
+ * [Surface] подложка with the segmented shape, the [ListItem] inside it, the 48dp
+ * leading tile wearing the card's own square when picked (a circle at rest), the name
+ * and the update stamp in the headline, what the panel reports in the supporting
+ * slot. A panel that sent a `profile-logo` wears it in the tile, over the paint. A
+ * long press is the delete question — for the rows that carry one; the loose configs'
+ * row passes null and a press just falls through.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1717,23 +1719,39 @@ private fun SubscriptionRow(
                 )
             },
             leadingContent = {
-                // MD3 list leading icon: 24dp icon on a 40dp tonal container. Selection
-                // morphs the circle into the slowly spinning MD3 cookie — the pick's mark.
+                // The card's own tile, in the list's hand: 48dp, a circle at rest that
+                // squares itself off into the card's 16dp corners as the pick — the
+                // corner rides the row's selection progress, so the morph walks with
+                // the rest of the paint. A panel that sent its logo wears it over the
+                // paint, filling the tile.
+                val tileCorner by animateDpAsState(
+                    targetValue = if (selected) 16.dp else 24.dp,
+                    animationSpec = motion.defaultSpatialSpec(),
+                    label = "subscription tile corner",
+                )
+                val logo = subscription.logoPath?.let { rememberLogo(it) }
                 Box(
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(tileCorner))
+                        .background(iconContainerColor),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CookieBackdrop(
-                        selected = selected,
-                        color = iconContainerColor,
-                        animated = true,
-                    )
-                    Icon(
-                        painter = painterResource(icon),
-                        contentDescription = null,
-                        tint = iconColor,
-                        modifier = Modifier.size(24.dp),
-                    )
+                    if (logo != null) {
+                        Image(
+                            bitmap = logo,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(icon),
+                            contentDescription = null,
+                            tint = iconColor,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                 }
             },
             colors = ListItemDefaults.colors(
