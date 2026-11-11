@@ -243,6 +243,13 @@ fun ServersScreen(
     // otherwise.
     val foldShown = { if (!foldHeightLead.isNaN()) foldHeightLead else foldHeight.value }
     val foldFade = { if (!foldAlphaLead.isNaN()) foldAlphaLead else foldAlpha.value }
+    // The rows' own reading of the fold's half-light: the same 0.45 the header wears,
+    // computed in the row's own layer at draw time — the fold's frames walk the layer,
+    // never the composition. The row carries its dim itself (see [ServerRow]) because a
+    // group layer over the whole row composites into a buffer of the row's bounds and
+    // shears off the pin that rides outside the card's edge — the very half-light would
+    // cut the mark it was meant to carry.
+    val rowFoldDim = remember { { lerp(1f, 0.45f, foldShown()) } }
 
     // The reorder spring is for reorders only. The chooser's fold grows inside the same
     // list, and every placement it shifts is a placement notification to the rows
@@ -486,7 +493,6 @@ fun ServersScreen(
                     } else {
                         Modifier
                     })
-                    .graphicsLayer { alpha = foldAlpha }
                     .focusProperties {
                         val out = menuHost != null || dropdownOpen
                         canFocus = !out
@@ -508,6 +514,10 @@ fun ServersScreen(
                         menuAskingDelete = menuAskingDelete,
                         onMenuAskingChange = { menuAskingDelete = it },
                         onCopyText = { text -> clipboard.setText(AnnotatedString(text)) },
+                        // The fold's half-light rides the row's own layers now — the
+                        // group alpha that used to stand here sheared the pinned row's
+                        // overhanging pin off at the row's edge whenever it dimmed.
+                        foldDim = rowFoldDim,
                     )
                     if (dropdownOpen) {
                         Box(Modifier.matchParentSize()
@@ -2104,6 +2114,8 @@ private fun ServerGroupRow(
     menuAskingDelete: Boolean,
     onMenuAskingChange: (Boolean) -> Unit,
     onCopyText: (String) -> Unit,
+    /** The fold's half-light over the rows, read at draw time — see [ServerRow]. */
+    foldDim: () -> Float,
 ) {
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.extraSmall
@@ -2162,6 +2174,7 @@ private fun ServerGroupRow(
         ) else null,
         dimmed = menuHost != null && menuHost != profile.id,
         shape = shape,
+        foldDim = foldDim,
     )
 }
 
@@ -2214,6 +2227,12 @@ private fun ServerRow(
     menu: RowMenu?,
     dimmed: Boolean,
     shape: Shape,
+    // The fold's half-light over the list, read in the row's layers at draw time so
+    // the fold's frames never recompose it. The row dims itself in pieces — the card
+    // here, the pin below — instead of one group over the whole row: a grouped layer
+    // composites into a buffer the size of the row's bounds and shears the pin off at
+    // the card's edge the moment the dim asks for that buffer.
+    foldDim: () -> Float = { 1f },
 ) {
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
@@ -2292,18 +2311,21 @@ private fun ServerRow(
 
     // The row's own frame, clipping to nothing: every Surface clips to its shape,
     // and the pin rides the top-right corner half over the edge — so the pin stands
-    // outside the card, pinned through it from the frame. The dim wears the frame,
-    // so the pin follows the card wherever the list's light goes.
+    // outside the card, pinned through it from the frame. The frame wears no dim of
+    // its own: a layer with alpha over it would composite into a buffer the size of
+    // the row and shear the pin off at the card's edge. The dim rides the card and
+    // the pin each in their own layer instead, so the one follows the other into
+    // the half-light without losing the pin's overhang.
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer { alpha = dim },
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Surface(
             shape = shape,
             color = containerColor,
             contentColor = contentColor,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { alpha = dim * foldDim() },
         ) {
             // The row's body laid out by hand, to ListItem's own drawing — the M3
             // component carries a colors machine and a defaults table every row paid
@@ -2508,19 +2530,30 @@ private fun ServerRow(
         // the tilt rolls clockwise, 15° to 45°: the needle walks into the card, the
         // head leans out of the corner. The dice roll once per row and stay rolled —
         // the same row shows the same pin every time it comes around.
+        // The pin carries the row's dim in its own layer, apart from the card: a group
+        // over the whole row would shear it off at the row's edge the moment the dim
+        // composites (see the frame above). The padded frame gives the tilt its room
+        // inside the layer's buffer — a rotation alone never clips, but a rotation
+        // inside a dimmed layer clips at the buffer's edge.
         if (profile.pinned) {
-            Icon(
-                painter = painterResource(R.drawable.ic_keep),
-                contentDescription = stringResource(R.string.card_menu_pinned),
-                tint = MaterialTheme.colorScheme.primary,
+            Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = 8.dp, y = (-6).dp)
-                    .size(28.dp)
-                    .graphicsLayer {
-                        rotationZ = (profile.id.hashCode().mod(31)) + 15f
-                    },
-            )
+                    .offset(x = 16.dp, y = (-14).dp)
+                    .padding(8.dp)
+                    .graphicsLayer { alpha = dim * foldDim() },
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_keep),
+                    contentDescription = stringResource(R.string.card_menu_pinned),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .graphicsLayer {
+                            rotationZ = (profile.id.hashCode().mod(31)) + 15f
+                        },
+                )
+            }
         }
     }
 }
