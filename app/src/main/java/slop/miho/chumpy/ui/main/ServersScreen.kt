@@ -2307,6 +2307,10 @@ private fun ServerRow(
                             onMenuOpen()
                         },
                     )
+                    // ListItem's own floor: a two-line row stands at least 72dp tall —
+                    // the M3 measure's minimum, which the hand layout shed, squashing
+                    // the rows into thin strips.
+                    .heightIn(min = 72.dp)
                     // ListItem's own frame: 16dp at the sides, 8dp above and below.
                     .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
