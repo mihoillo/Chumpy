@@ -1594,9 +1594,9 @@ private fun AddSubscriptionRow(
 
 /**
  * One subscription in the unfolded list: the server row's own anatomy, copied — the
- * [Surface] подложка with the segmented shape, the [ListItem] inside it, the 48dp
- * leading tile wearing the card's own square when picked (a circle at rest), the name
- * and the update stamp in the headline, what the panel reports in the supporting
+ * [Surface] подложка with the segmented shape, the [ListItem] inside it, the 40dp
+ * leading tile that squares itself off when picked (a circle at rest), the name and
+ * the update stamp in the headline, what the panel reports in the supporting
  * slot. A panel that sent a `profile-logo` wears it in the tile, over the paint. A
  * long press is the delete question — for the rows that carry one; the loose configs'
  * row passes null and a press just falls through.
@@ -1719,20 +1719,20 @@ private fun SubscriptionRow(
                 )
             },
             leadingContent = {
-                // The card's own tile, in the list's hand: 48dp, a circle at rest that
-                // squares itself off into the card's 16dp corners as the pick — the
-                // corner rides the row's selection progress, so the morph walks with
-                // the rest of the paint. A panel that sent its logo wears it over the
-                // paint, filling the tile.
+                // The pick's own mark, in the list's hand: the 40dp tile, a circle at
+                // rest that squares itself off as the pick — the card's square shape,
+                // scaled to the smaller tile. The corner rides the row's selection
+                // progress, so the morph walks with the rest of the paint. A panel that
+                // sent its logo wears it over the paint, filling the tile.
                 val tileCorner by animateDpAsState(
-                    targetValue = if (selected) 16.dp else 24.dp,
+                    targetValue = if (selected) 13.dp else 20.dp,
                     animationSpec = motion.defaultSpatialSpec(),
                     label = "subscription tile corner",
                 )
                 val logo = subscription.logoPath?.let { rememberLogo(it) }
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(40.dp)
                         .clip(RoundedCornerShape(tileCorner))
                         .background(iconContainerColor),
                     contentAlignment = Alignment.Center,
