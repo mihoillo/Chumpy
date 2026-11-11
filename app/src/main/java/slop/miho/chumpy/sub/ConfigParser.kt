@@ -67,6 +67,7 @@ object ConfigParser {
             else -> return null
         }
         if (configs.none { it.array("outbounds") != null }) return null
+        val singBoxProfiles = configs.flatMap(SingBoxOutbounds::parse)
 
         // One config's reading, tag and profile together.
         val bundles = configs.map { config ->
@@ -137,7 +138,7 @@ object ConfigParser {
                 }
             }
         }
-        return if (profiles.isEmpty()) null else profiles
+        return (profiles + singBoxProfiles).ifEmpty { null }
     }
 
     /**

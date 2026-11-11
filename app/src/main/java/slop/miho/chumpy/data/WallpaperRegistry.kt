@@ -101,7 +101,7 @@ object WallpaperRegistry {
     /** Logcat tag for the import's diagnostics: the swallowed failures live here. */
     private const val TAG = "Chumpy/Wallpaper"
 
-    private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "bmp", "heic", "heif")
+    private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "bmp", "heic", "heif", "gif")
 
     /** Wallpapers past this are wasting space; screens never need more. */
     private const val MAX_IMAGE_BYTES = 40L * 1024 * 1024

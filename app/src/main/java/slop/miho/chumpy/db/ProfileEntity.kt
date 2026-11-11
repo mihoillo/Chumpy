@@ -88,6 +88,7 @@ data class ProfileEntity(
     val fingerprint: String = "",
     val flow: String = "",
     val allowInsecure: Boolean = false,
+    val tlsTrustCertificate: String? = null,
     /** REALITY public key (WireGuard peer key on WIREGUARD profiles). */
     val publicKey: String = "",
     val shortId: String = "",
@@ -97,6 +98,8 @@ data class ProfileEntity(
     val obfsPassword: String = "",
     val portHopping: String = "",
     val portHoppingInterval: String = "",
+    val hysteriaUpMbps: Int? = null,
+    val hysteriaDownMbps: Int? = null,
 
     // WireGuard.
     val wgSecretKey: String = "",
@@ -208,6 +211,10 @@ fun ProfileEntity.computeLinkKey(): String {
             wgLocalAddress,
             wgMtu.toString(),
             wgReserved,
+        ) + listOfNotNull(
+            tlsTrustCertificate?.let { "tlsTrustCertificate:$it" },
+            hysteriaUpMbps?.let { "hysteriaUpMbps:$it" },
+            hysteriaDownMbps?.let { "hysteriaDownMbps:$it" },
         )
     }.joinToString("\u0001")
     val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(Charsets.UTF_8))

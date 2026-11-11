@@ -396,7 +396,7 @@ fun MainShell(viewModel: MainViewModel) {
             ) {
             wallpaper?.let { decoded ->
                 WallpaperBackdrop(
-                    image = decoded.image,
+                    wallpaper = decoded,
                     scale = { scale.value * (1f + arrivalReach * (1f - arrival.value)) },
                     blur = { blur.value },
                     scrim = scrim,
@@ -763,15 +763,16 @@ private fun ShellDestinationPage(
                 // here: the flow itself ticks once a second, while the week
                 // changes only on a flush — so only the page recomposes then.
                 val onStage = LocalPageOnStage.current
+                val initialWeek = remember(statsFlow, onStage) { statsFlow.value.week }
                 val weekFlow = remember(statsFlow, onStage) {
                     if (onStage) statsFlow.map { it.week }.distinctUntilChanged()
-                    else kotlinx.coroutines.flow.flowOf(statsFlow.value.week)
+                    else kotlinx.coroutines.flow.flowOf(initialWeek)
                 }
                 val week by weekFlow
                     // Seeded with the flow's own current value: an empty-list placeholder
                     // would recompose the whole page a frame later, when the real week
                     // arrives — the page would compose twice on every open.
-                    .collectAsStateWithLifecycle(initialValue = statsFlow.value.week)
+                    .collectAsStateWithLifecycle(initialValue = initialWeek)
                 val manualCount by manualProfileCount.collectOnStageAsState()
                 ServersScreen(
                     subscriptions = subscriptions,
